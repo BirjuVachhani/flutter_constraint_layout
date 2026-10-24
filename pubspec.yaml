@@ -10,11 +10,7 @@ publish_to: none
 environment:
   sdk: ^3.12.0
 
-# Note: playground/ is a local-only scratch app excluded from VCS (see
-# .gitignore). It must not be listed here, or pub get would fail on a
-# fresh clone where the directory does not exist.
-#
-# packages/flutter_constraint_layout_lints is likewise absent on purpose: an analyzer
+# packages/flutter_constraint_layout_lints is absent on purpose: an analyzer
 # plugin is resolved by the analysis server from its own path, and adding it
 # here would pull the analyzer into every member's resolution.
 workspace:

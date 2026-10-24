@@ -7,7 +7,7 @@ path dependency compiled from source). A line is covered if *either* suite
 reached it, so the two reports are unioned rather than compared.
 
 The Flutter side only records those engine lines when it is run with
-`--coverage-package=constraint_engine`; see the repo README.
+`--coverage-package=constraint_engine`; see CONTRIBUTING.md (Coverage).
 
 Usage:
     python3 tool/coverage_report.py [--scope lib|engine|all] [--missing FILE]

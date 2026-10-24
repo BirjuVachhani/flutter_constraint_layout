@@ -213,8 +213,8 @@ class _FeatureBlock extends StatelessWidget {
 
 /// The at-a-glance feature grid near the top of the page: the full surface the
 /// package covers, each with a one-line description. Its selling points (a
-/// complete port and a Flutter-native API) are stated on their own terms, not as
-/// a comparison to anything else.
+/// faithful port and a Flutter-native API) are stated on their own terms, not
+/// as a comparison to anything else.
 class _FeaturesOverview extends StatelessWidget {
   const _FeaturesOverview();
 
@@ -285,10 +285,10 @@ class _FeaturesOverview extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SectionHeading(
-              title: 'Everything ConstraintLayout does, in Dart.',
+              title: 'ConstraintLayout\'s toolkit, in Dart.',
               subtitle:
-                  'A faithful, complete port with a Flutter-native API. These '
-                  'are the pieces you get, all behind a single import.',
+                  'A faithful port with a Flutter-native API. These are the '
+                  'pieces you get, all behind a single import.',
             ),
             SizedBox(height: compact ? 24 : 36),
             LayoutBuilder(

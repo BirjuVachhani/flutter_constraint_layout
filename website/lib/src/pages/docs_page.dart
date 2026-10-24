@@ -724,14 +724,19 @@ List<Widget> _content(BuildContext context, String id) {
         DocProse(
           'The rest of these docs walk the features one at a time, each with a '
           'live example you can read beside the layout it produces. Everything '
-          'is behind a single import.',
+          'is behind a single import. These docs are a guided tour; the '
+          'package README on pub.dev is the full guide and also covers '
+          'z-order, sizing inside scroll views, the debug overlay, common '
+          'mistakes, and the limitations.',
         ),
       ];
     case 'features':
       return const [
         DocProse(
-          'The whole of Android\'s ConstraintLayout is here, behind a single '
-          'import and a Flutter-native API. At a glance, this is what you get:',
+          'Most of Android\'s ConstraintLayout is here, behind a single import '
+          'and a Flutter-native API. MotionLayout, `ConstraintSet`, and the '
+          '`Group`, `Layer`, and `Placeholder` helpers are not ported. At a '
+          'glance, this is what you get:',
         ),
         DocH3('Positioning'),
         DocBullets([
@@ -849,25 +854,68 @@ List<Widget> _content(BuildContext context, String id) {
         ),
         const DocH3('The links'),
         const DocTable(
-          headers: ['Your edge', 'Links to', 'Constructors'],
+          headers: ['Your edge', 'Kind', 'Constructors (the target\'s edge)'],
           rows: [
             [
               '`left` / `right`',
               'Absolute horizontal edges',
-              '`.leftOf` `.rightOf`',
+              '`.leftOf` `.rightOf` `.startOf` `.endOf`',
             ],
             [
               '`start` / `end`',
               'RTL-aware horizontal edges',
-              '`.startOf` `.endOf`',
+              '`.startOf` `.endOf` `.leftOf` `.rightOf`',
             ],
             ['`top` / `bottom`', 'Vertical edges', '`.topOf` `.bottomOf`'],
-            ['`baseline`', 'Text baseline', '`.baselineOf`'],
+            [
+              '`baseline`',
+              'Text baseline',
+              '`.baselineOf` `.topOf` `.bottomOf`',
+            ],
+            [
+              '`circle`',
+              'Center, on a circle around the target\'s center',
+              '`.around` (see **Circular positioning**)',
+            ],
           ],
         ),
         const DocProse(
-          'Every link takes a `margin`, and a `goneMargin` used instead when the '
-          'target is `gone` (see **Visibility**).',
+          'Every link constructor except `.around` takes a `margin`, and a '
+          '`goneMargin` used instead when the target is `gone` (see '
+          '**Visibility**). A `top` or `bottom` link to `.baselineOf` is '
+          'ignored; align baselines through `baseline`.',
+        ),
+        const DocNote(
+          'Build each id the same way everywhere it appears. For ids made in a '
+          'loop with `Symbol(\'item\$i\')`, refer to them through the same '
+          'call, for example a helper `Symbol item(int i) => '
+          'Symbol(\'item\$i\');`, never through a literal such as `#item0` or a '
+          '`const Symbol(\'item0\')`. Release and profile WebAssembly builds, '
+          'and builds compiled with `--obfuscate`, rename symbol literals, so '
+          'there `#item0` is not equal to `Symbol(\'item0\')` and a link that '
+          'mixes the two forms is silently skipped. Debug builds treat them as '
+          'equal, so the mistake does not show up while you develop.',
+        ),
+        const DocH3('Right-to-left'),
+        const DocProse(
+          '`start` and `end` follow the text direction: the layout\'s '
+          '`textDirection`, otherwise the ambient `Directionality`. A layout '
+          'written with them mirrors in right-to-left text, but these do not:',
+        ),
+        const DocBullets([
+          '`horizontalBias` is measured from the left in both directions (0 is '
+              'the left end, 1 the right end), including a packed chain\'s bias.',
+          'Guidelines are placed from the left (`begin`, `percent`) or the '
+              'right (`end`).',
+          'A barrier\'s `margin` always moves it right or down.',
+          '`ConstraintGrid` fills its cells from the left.',
+        ]),
+        const DocProse(
+          '`ConstraintFlow` does mirror: in right-to-left text its rows start at '
+          'the right edge, and `contentHorizontalBias` is measured from the '
+          'start. For a layout that mirrors fully, pick bias and guideline '
+          'values from the text direction, for example '
+          '`horizontalBias: isRtl ? 0.8 : 0.2`.',
         ),
       ];
     case 'centering-bias':
@@ -875,8 +923,10 @@ List<Widget> _content(BuildContext context, String id) {
         const DocProse(
           'Give a widget **both** opposing anchors on an axis (start and end, or '
           'top and bottom) and it centers between them. Add `horizontalBias` or '
-          '`verticalBias` to slide it along that axis: 0 hugs the start or top, 1 '
-          'hugs the end or bottom, and the default 0.5 is dead center.',
+          '`verticalBias` to slide it along that axis: 0 hugs the left or top, 1 '
+          'hugs the right or bottom, and the default 0.5 is dead center. '
+          '`horizontalBias` is measured from the left in both text directions '
+          '(see **Anchors & links**).',
         ),
         docExamples['centering-bias']!,
         const DocProse(
@@ -899,7 +949,11 @@ List<Widget> _content(BuildContext context, String id) {
           headers: ['Dimension', 'Sizes to'],
           rows: [
             ['`.wrapContent`', 'The child\'s own content (the default).'],
-            ['`.matchParent`', 'The full parent, ignoring anchors.'],
+            [
+              '`.matchParent`',
+              'The parent\'s full size. Link targets are ignored, but their '
+                  'margins still inset it.',
+            ],
             [
               '`.matchConstraint`',
               'The space between the two opposing anchors.',
@@ -1070,7 +1124,9 @@ List<Widget> _content(BuildContext context, String id) {
         const DocProse(
           'Set `horizontalGap` and `verticalGap` for the spacing between items '
           'and runs, and `horizontalChainStyle` / `contentHorizontalBias` to '
-          'control how each run distributes its slack, exactly as a chain does.',
+          'control how each run distributes its slack, as a chain\'s style and '
+          'bias do. Unlike a chain\'s bias, `contentHorizontalBias` is measured '
+          'from the start, so it mirrors in right-to-left text.',
         ),
       ];
     case 'grid':
@@ -1143,9 +1199,12 @@ List<Widget> _content(BuildContext context, String id) {
           '`LinearSystem`, which implements the **Cassowary** algorithm (the same '
           'family behind Apple\'s Auto Layout). A layout takes this path when it '
           'contains a barrier, a `circle` link, a `.constrainedWrap` size, a '
-          '`ConstraintFlow` or `ConstraintGrid`, or a chain with a `gone` or '
-          'aspect-ratio member, and when a chain or a child anchored on both '
-          'sides runs along an axis where the layout sizes to its content.',
+          '`ConstraintFlow` or `ConstraintGrid`, an `aspectRatio` child whose '
+          'width and height are both `.matchConstraint`, or a chain with a '
+          '`gone` or aspect-ratio member. It also takes this path when the '
+          'layout sizes to its content along an axis that has a chain, a child '
+          'anchored on both sides, or a child extending outside the layout, '
+          'and for anything else the graph cannot resolve directly.',
         ),
         DocH3('Persistent, incremental model'),
         DocProse(
@@ -1154,11 +1213,17 @@ List<Widget> _content(BuildContext context, String id) {
           'possible:',
         ),
         DocBullets([
-          '**fast**: nothing layout-affecting changed, so the engine is skipped '
-              'and the previous geometry reused. This carries scrolling and '
-              'animation over a static graph.',
-          '**in-place**: a margin, bias, or dimension changed, so the model is '
-              'updated in place and re-resolved without a rebuild.',
+          '**fast**: nothing layout-affecting changed, the incoming constraints '
+              'are the same, and no child\'s size or position depends on its '
+              'content: no `.wrapContent` or `.constrainedWrap` size, no '
+              '`.matchConstraint`, `.spread`, or `.percent` size missing one of '
+              'its two links, and no baseline alignment. The engine is skipped '
+              'and the previous geometry reused.',
+          '**in-place**: a link, margin, bias, size, ratio, chain style, '
+              'weight, or visibility changed, so the model is updated in place '
+              'and re-resolved without a rebuild. New incoming constraints, and '
+              'any pass the fast tier does not cover, also re-resolve the '
+              'existing model.',
           '**rebuild**: the child set or a helper changed structurally, so the '
               'model is rebuilt from scratch.',
         ]),
@@ -1176,7 +1241,11 @@ List<Widget> _content(BuildContext context, String id) {
           'verified at parity with the released core 1.1.1 (only the Grid '
           'helper still follows the pinned revision), and nearly all of '
           'upstream\'s core test suite is ported and green, so a given layout '
-          'resolves to the same result Android produces.',
+          'resolves to the same result Android produces. The exception is '
+          'right-to-left text: Android mirrors the horizontal bias of views '
+          'constrained with start and end, and by default the position of '
+          'vertical guidelines, while this port mirrors neither (see '
+          '**Anchors & links**).',
         ),
         DocProse(
           'The one structural departure is the entry path: Android runs the '

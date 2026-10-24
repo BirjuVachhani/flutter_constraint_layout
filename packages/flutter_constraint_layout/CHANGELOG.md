@@ -18,6 +18,10 @@ Initial release.
   `debugShowChains`, `debugShowBlueprint`, `debugChainColor`, and
   `debugBlueprintLabelStyle`, enabled outside debug builds with
   `ConstraintLayout.allowDebugFlags`.
-- A persistent engine model invalidated in tiers (fast, in-place, rebuild), so
-  a frame whose constraints did not change skips the engine entirely.
+- A persistent engine model invalidated in tiers (fast, in-place, rebuild).
+  When nothing layout-affecting changed, the incoming constraints are the same,
+  and no child's size or position depends on its content (no `.wrapContent` or
+  `.constrainedWrap()` size, no match-constraint size missing one of its two
+  links, and no baseline alignment), a layout pass reuses the previous geometry
+  without running the engine.
 - Built on `constraint_engine` 1.0.0.

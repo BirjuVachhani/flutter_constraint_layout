@@ -158,7 +158,7 @@ final SpecimenGroup _actions = SpecimenGroup(
           const SpecLabel('with icon'),
           const SpecWrap(
             children: [
-              SiteBadge('v0.1.0', icon: SiteIcons.folders),
+              SiteBadge('v1.0.0', icon: SiteIcons.folders),
               SiteBadge(
                 'Passing',
                 icon: SiteIcons.check,

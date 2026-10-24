@@ -215,6 +215,39 @@ list. Like `Positioned` in a `Stack`, `Constrained` must be a direct child of
 its `ConstraintLayout` (a widget whose `build` returns a `Constrained` also
 works). For ids generated in a loop, use `Symbol('item$i')`.
 
+**Build each id the same way everywhere.** A child's id and every link or
+`referenced` entry that names it must use the same form: the literal (such as
+`#avatar`) everywhere, or `Symbol(...)` everywhere. Release and profile
+WebAssembly builds (`flutter build web --wasm`), and builds compiled with
+`--obfuscate`, rename symbol literals, so there `#item0` is not equal to
+`Symbol('item0')`; a `const Symbol('item0')` is renamed like the literal. A
+link or `referenced` entry that names a child in the other form targets an
+unknown id, which those builds skip without an error (see
+[unknown and duplicate ids](#unknown-and-duplicate-ids)). Debug builds treat
+the forms as equal, so the mistake does not show up while you develop. For ids
+built in a loop, a helper keeps every reference in the same form:
+
+```dart
+Symbol row(int i) => Symbol('row$i');
+
+Widget rows(List<String> labels) {
+  return ConstraintLayout(
+    children: [
+      for (final (i, label) in labels.indexed)
+        Constrained(
+          id: row(i),
+          start: .startOf(parent, margin: 16),
+          // The first row links to the layout, each later one to the row above.
+          top: i == 0
+              ? .topOf(parent, margin: 16)
+              : .bottomOf(row(i - 1), margin: 8),
+          child: Text(label),
+        ),
+    ],
+  );
+}
+```
+
 **The layout itself is `parent`.** The package exports a constant named
 `parent` that targets the `ConstraintLayout`. It is reserved: do not use
 `#parent` as a child id.
@@ -1073,6 +1106,14 @@ ConstraintLayout(
   | `DebugLabelStyle.both` | the id with the runtime type below it (the default) |
   | `DebugLabelStyle.none` | no text |
 
+  The labels are reliable in debug builds. Profile and release builds do not
+  record which widget created each child, so the type label falls back to the
+  type of the child's render object, without its `Render` prefix (`Paragraph`
+  for a `Text`). Release web builds, WebAssembly builds in profile or release
+  mode, and builds compiled with `--obfuscate` minify that name as well, and
+  the WebAssembly and `--obfuscate` builds also rename ids written as symbol
+  literals (ids built at run time with `Symbol(...)` keep their names).
+
 When a widget is not where you expect it, turn on `debugShowChains` and compare
 the drawing with your links:
 
@@ -1096,7 +1137,10 @@ ConstraintLayout.allowDebugFlags = true; // defaults to kDebugMode
 ```
 
 Enabling it keeps the overlay's rendering code in the release binary, so leave
-it at the default unless you need the overlays there. The real-world examples
+it at the default unless you need the overlays there. Outside debug builds the
+blueprint labels can be unreadable (see `debugBlueprintLabelStyle` above), so
+for a showcase or screenshots consider
+`debugBlueprintLabelStyle: DebugLabelStyle.none`. The real-world examples
 on the home page of [constraints.birju.dev](https://constraints.birju.dev) have
 chains and blueprint toggles, so you can see both modes without running
 anything. The design notes for the overlay are in
@@ -1137,7 +1181,10 @@ Constrained link targets unknown id Symbol("titel"). Targets must be `parent` or
 unknown ids the same way. The layout pass is abandoned, so the other children
 are not positioned until the id is fixed. In profile and release builds the
 check is compiled out: the bad link or reference is skipped (a skipped link
-leaves its edge unconstrained), and the rest of the layout resolves.
+leaves its edge unconstrained), and the rest of the layout resolves. In profile
+and release WebAssembly builds and in `--obfuscate` builds, a link that writes
+an id in a different form from the child's id (`#item0` for `Symbol('item0')`)
+is skipped the same way; see [core concepts](#core-concepts).
 
 **Two children with the same id.** This is not reported at runtime: links to
 that id resolve to the last child that uses it.
@@ -1198,10 +1245,10 @@ The engine model also persists between frames and is invalidated in tiers, so a
 frame does no more work than its changes require:
 
 - **Fast:** nothing that affects layout changed, the incoming constraints are
-  the same, and no child's size can depend on its content (no `.wrapContent` or
-  `.constrainedWrap()` sizes, no match-constraint size that lacks one of its
-  two links, and no baseline alignment). The engine is skipped and the previous
-  geometry is reused.
+  the same, and no child's size or position can depend on its content (no
+  `.wrapContent` or `.constrainedWrap()` sizes, no match-constraint size that
+  lacks one of its two links, and no baseline alignment). The engine is skipped
+  and the previous geometry is reused.
 - **In place:** a `Constrained` property changed (a link, margin, bias, size,
   ratio, chain style, weight, or visibility). The affected widgets are updated
   in the existing model, which is then solved again. New incoming constraints,
