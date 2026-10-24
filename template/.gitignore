@@ -1,6 +1,33 @@
+# site_kit is standalone (not a member of the surrounding pub workspace), so
+# it carries a complete ignore file of its own and stays correct when copied
+# out into another repository.
+
+# Miscellaneous
+*.log
+*.swp
+.DS_Store
+Thumbs.db
+.history
+
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Flutter/Dart/Pub related
 .dart_tool/
 .packages
-build/
-pubspec.lock
+.pub-cache/
+.pub/
 .flutter-plugins
 .flutter-plugins-dependencies
+pubspec.lock
+**/doc/api/
+
+# Build artifacts and coverage
+build/
+coverage/
+
+# Golden-test failure output
+**/test/**/failures/

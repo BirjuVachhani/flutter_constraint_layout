@@ -1,0 +1,20 @@
+# This analyzer plugin is standalone (not a member of the surrounding pub
+# workspace), so it carries a complete ignore file of its own.
+
+.DS_Store
+*.log
+
+# IntelliJ / Android Studio
+*.iml
+.idea/
+
+# Dart/Pub related
+.dart_tool/
+.packages
+.pub/
+pubspec.lock
+doc/api/
+
+# Build artifacts and coverage
+build/
+coverage/

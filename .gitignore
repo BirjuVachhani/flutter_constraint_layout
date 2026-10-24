@@ -1,16 +1,33 @@
+# Patterns are unanchored unless they start with "/", so each one applies in
+# every workspace member (packages/, website/) as well as the standalone
+# packages (packages/flutter_constraint_layout_lints, template/), which also
+# carry their own .gitignore so they stay self-contained when copied out.
+
 # Miscellaneous
 *.class
 *.log
 *.pyc
 *.swp
+*.swo
+*~
 .DS_Store
+Thumbs.db
 .atom/
+.build/
 .buildlog/
 .history
 .svn/
+.swiftpm/
 migrate_working_dir/
 
-# IntelliJ related
+# Local environment and secrets
+.env
+.env.*
+*.keystore
+*.jks
+key.properties
+
+# IntelliJ related. Shared run configurations live in .run/ and stay tracked.
 *.iml
 *.ipr
 *.iws
@@ -30,11 +47,34 @@ pubspec.lock
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
 
-# Build artifacts and coverage, in every workspace member (packages/,
-# website/, etc.). The root itself is a shell and builds nothing.
+# Build artifacts and coverage, in every package. The root itself is a shell
+# and builds nothing.
 build/
 coverage/
+
+# Golden-test failure output. flutter_test writes the diff images into a
+# failures/ directory next to the goldens whenever a comparison fails.
+**/test/**/failures/
+
+# Platform build output for the Flutter apps (website, storyboard).
+**/ios/Flutter/.last_build_id
+**/Flutter/ephemeral/
+**/Pods/
+**/xcuserdata/
+**/dgph
+**/android/.gradle/
+**/android/local.properties
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+
+# Symbolication and obfuscation maps
+app.*.symbols
+app.*.map.json
 
 # Byte-code cache from the tool/ coverage scripts.
 __pycache__/

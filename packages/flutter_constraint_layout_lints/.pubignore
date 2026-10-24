@@ -1,0 +1,7 @@
+# Files left out of the published package. A .pubignore replaces this
+# directory's .gitignore for publishing, so its rules are repeated here.
+.dart_tool/
+build/
+coverage/
+doc/api/
+pubspec.lock

@@ -1,4 +1,13 @@
-# The storyboard is a development-only app; it is not part of the published
-# package (and pulling it in would drag its own lockfile and web scaffolding
-# along).
+# Files left out of a published or packaged copy of site_kit. A .pubignore
+# replaces this directory's .gitignore for publishing, so its rules are
+# repeated here.
+
+# The storyboard is a development-only app; it is not part of the package (and
+# pulling it in would drag its own lockfile and web scaffolding along).
 storyboard/
+
+.dart_tool/
+build/
+coverage/
+doc/api/
+pubspec.lock
