@@ -110,7 +110,7 @@ dependencies:
 dependencies:
   site_kit:
     git:
-      url: https://github.com/BirjuVachhani/constraint_layout.git
+      url: https://github.com/BirjuVachhani/flutter_constraint_layout.git
       path: template
 ```
 

@@ -7,8 +7,8 @@ description: >-
   library.
 
 version: 1.0.0
-repository: https://github.com/BirjuVachhani/constraint_layout/tree/main/template
-issue_tracker: https://github.com/BirjuVachhani/constraint_layout/issues
+repository: https://github.com/BirjuVachhani/flutter_constraint_layout/tree/main/template
+issue_tracker: https://github.com/BirjuVachhani/flutter_constraint_layout/issues
 
 # Not published: depend on it by path or by git (see README.md).
 publish_to: none

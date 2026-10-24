@@ -5,8 +5,8 @@
 This file is the flutter_constraint_layout docs page in a single Markdown file, meant to be fed to an LLM or read offline. It mirrors the live docs at https://constraints.birju.dev/docs (the docs page is the source of truth). It is a guided tour of the features, not the full reference: the package README is the full guide, covering every option plus z-order, sizing inside scroll views and intrinsic sizing, the debug overlay, unknown and duplicate ids, common mistakes, performance, and the limitations and differences from Android.
 
 - Package: https://pub.dev/packages/flutter_constraint_layout
-- Full guide (package README): https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/flutter_constraint_layout/README.md
-- Source: https://github.com/BirjuVachhani/constraint_layout
+- Full guide (package README): https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/flutter_constraint_layout/README.md
+- Source: https://github.com/BirjuVachhani/flutter_constraint_layout
 
 ## Introduction
 

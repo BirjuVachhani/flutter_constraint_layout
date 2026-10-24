@@ -11,17 +11,17 @@ flutter_constraint_layout is pure Dart (no native code, no platform setup) and r
 ## Docs
 
 - [flutter_constraint_layout documentation (Markdown)](https://constraints.birju.dev/docs.md): The entire docs page as one Markdown file. Fetch and read this in full for accurate API usage, constraint syntax, code examples, and layout patterns; prefer it over guessing.
-- [Package README (full guide)](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/flutter_constraint_layout/README.md): The complete user guide, also shown on pub.dev: every link, dimension, and helper option, z-order, right-to-left rules, sizing and scrolling, the debug overlay, unknown and duplicate ids, common mistakes, performance, and the limitations and differences from Android. Read it for anything the docs page does not cover.
+- [Package README (full guide)](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/flutter_constraint_layout/README.md): The complete user guide, also shown on pub.dev: every link, dimension, and helper option, z-order, right-to-left rules, sizing and scrolling, the debug overlay, unknown and duplicate ids, common mistakes, performance, and the limitations and differences from Android. Read it for anything the docs page does not cover.
 
 ## Reference
 
 - [Package on pub.dev](https://pub.dev/packages/flutter_constraint_layout): Versions, API reference, and install instructions.
-- [Source on GitHub](https://github.com/BirjuVachhani/constraint_layout): Repository, issues, and changelog.
+- [Source on GitHub](https://github.com/BirjuVachhani/flutter_constraint_layout): Repository, issues, and changelog.
 - [Live documentation site](https://constraints.birju.dev/docs): The interactive docs, with every example rendered live beside its code.
 
 ## Optional
 
-- [flutter_constraint_layout_lints](https://github.com/BirjuVachhani/constraint_layout/tree/main/packages/flutter_constraint_layout_lints): An analyzer plugin that warns about duplicate and undefined constraint ids (`duplicate_constraint_id`, `undefined_constraint_id`).
-- [constraint_engine](https://github.com/BirjuVachhani/constraint_layout/tree/main/packages/constraint_engine): The pure-Dart layout engine underneath, with no Flutter dependency.
+- [flutter_constraint_layout_lints](https://github.com/BirjuVachhani/flutter_constraint_layout/tree/main/packages/flutter_constraint_layout_lints): An analyzer plugin that warns about duplicate and undefined constraint ids (`duplicate_constraint_id`, `undefined_constraint_id`).
+- [constraint_engine](https://github.com/BirjuVachhani/flutter_constraint_layout/tree/main/packages/constraint_engine): The pure-Dart layout engine underneath, with no Flutter dependency.
 - [Android ConstraintLayout (upstream)](https://developer.android.com/develop/ui/views/layout/constraint-layout): The original Android layout this package ports. Its constraint concepts carry over; MotionLayout, `ConstraintSet`, `Group`, `Layer`, and `Placeholder` are not ported, and the package README lists the remaining differences.
 - [androidx constraintlayout core](https://github.com/androidx/constraintlayout): The Java source the layout engine is ported from.

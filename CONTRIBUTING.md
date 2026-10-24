@@ -4,7 +4,7 @@ This is the development guide for the flutter_constraint_layout repository. To
 use the packages, start with the [README](README.md).
 
 Questions, bug reports, and feature requests go to the
-[issue tracker](https://github.com/BirjuVachhani/constraint_layout/issues).
+[issue tracker](https://github.com/BirjuVachhani/flutter_constraint_layout/issues).
 Pull requests target `main`; run the checks below for the packages you touched
 before opening one, since CI runs the same ones.
 
@@ -49,8 +49,8 @@ Use the latest Flutter stable release, which is what CI runs. The packages need
 Dart 3.12 and Flutter 3.44 or later.
 
 ```sh
-git clone https://github.com/BirjuVachhani/constraint_layout.git
-cd constraint_layout
+git clone https://github.com/BirjuVachhani/flutter_constraint_layout.git
+cd flutter_constraint_layout
 flutter pub get
 ```
 
@@ -266,7 +266,7 @@ which upstream tests are ported. To move the port forward:
 
 - Package READMEs are rendered on pub.dev, so they link to repository files
   with absolute URLs
-  (`https://github.com/BirjuVachhani/constraint_layout/blob/main/<path>`).
+  (`https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/<path>`).
   Docs that live only in the repository, such as this file, the root README,
   and `docs/`, use relative links.
 - The docs page on the website,

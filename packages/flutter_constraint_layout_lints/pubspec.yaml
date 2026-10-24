@@ -4,8 +4,8 @@ description: >-
   undefined constraint ids as you edit, before they misplace a widget.
 version: 1.0.0
 homepage: https://constraints.birju.dev
-repository: https://github.com/BirjuVachhani/constraint_layout/tree/main/packages/flutter_constraint_layout_lints
-issue_tracker: https://github.com/BirjuVachhani/constraint_layout/issues
+repository: https://github.com/BirjuVachhani/flutter_constraint_layout/tree/main/packages/flutter_constraint_layout_lints
+issue_tracker: https://github.com/BirjuVachhani/flutter_constraint_layout/issues
 topics:
   - lints
   - analyzer

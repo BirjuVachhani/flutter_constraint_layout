@@ -43,7 +43,7 @@ import 'package:constraint_engine/constraint_engine.dart';
 ## Usage
 
 This walkthrough builds the top of the layout in the
-[runnable example](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/constraint_engine/example/constraint_engine_example.dart):
+[runnable example](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/example/constraint_engine_example.dart):
 a fixed-size logo, a label that wraps its text, and a banner that stretches
 across the container. The code uses Dart's dot shorthands, so `.left` stands
 for `ConstraintAnchorType.left` and `.wrapContent` for
@@ -465,7 +465,7 @@ barrier's position.
 
 Upstream works the other way around: its default path is the solver, with the
 graph as an optional optimization. The graph is the cheaper path. The bundled
-[resolver benchmark](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/constraint_engine/benchmark/resolver_benchmark.dart)
+[resolver benchmark](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/benchmark/resolver_benchmark.dart)
 times both on generated screens of increasing size, and a solver-routed screen
 takes ten or more times as long as a graph-resolved one (run it with
 `dart run benchmark/resolver_benchmark.dart`).
@@ -498,7 +498,7 @@ become top-level Dart enums (`ConstraintAnchor.Type.LEFT` is
 constants are lower case (`Guideline.vertical`, `Barrier.left`), a few
 overloads get their own names (`connectAnchors`, `setDimensionRatioString`,
 `setGuidePercentInt`), and `double` replaces `float`. The
-[porting guide](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/constraint_engine/test/PORTING_GUIDE.md)
+[porting guide](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/test/PORTING_GUIDE.md)
 maps each of these.
 
 The library also exports the solver's building blocks (`LinearSystem`,
@@ -527,9 +527,9 @@ core has changed since (its flags, for example, became a bitmask).
   optimizers (the graph-first entry plays their role); and `Metrics`.
 
 Upstream's core unit tests for the ported code are ported to Dart under
-[`test/`](https://github.com/BirjuVachhani/constraint_layout/tree/main/packages/constraint_engine/test),
+[`test/`](https://github.com/BirjuVachhani/flutter_constraint_layout/tree/main/packages/constraint_engine/test),
 keeping upstream's class and method names.
-[UPSTREAM.md](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/constraint_engine/UPSTREAM.md)
+[UPSTREAM.md](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/UPSTREAM.md)
 maps each upstream test class to its Dart file and lists the ones left out,
 each with its reason. It also records the pinned revision, the parity check,
 and every intentional divergence, such as `double` arithmetic where upstream
@@ -546,5 +546,5 @@ androidx.constraintlayout core, Copyright (C) The Android Open Source Project,
 and carry `SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause`: the upstream portions
 remain under the Apache License, Version 2.0, and the modifications are under
 the BSD 3-Clause License. The
-[LICENSE](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/constraint_engine/LICENSE)
+[LICENSE](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/LICENSE)
 file contains both licenses.

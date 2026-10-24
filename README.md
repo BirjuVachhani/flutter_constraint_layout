@@ -129,7 +129,7 @@ API.
   an AI assistant: [docs.md](https://constraints.birju.dev/docs.md), with a
   summary in [llms.txt](https://constraints.birju.dev/llms.txt)
 - Questions, bug reports, and feature requests:
-  [GitHub issues](https://github.com/BirjuVachhani/constraint_layout/issues)
+  [GitHub issues](https://github.com/BirjuVachhani/flutter_constraint_layout/issues)
 
 ## Contributing
 

@@ -1,8 +1,8 @@
 # flutter_constraint_layout
 
 [![pub package](https://img.shields.io/pub/v/flutter_constraint_layout.svg)](https://pub.dev/packages/flutter_constraint_layout)
-[![CI](https://github.com/BirjuVachhani/constraint_layout/actions/workflows/test.yml/badge.svg)](https://github.com/BirjuVachhani/constraint_layout/actions/workflows/test.yml)
-[![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/flutter_constraint_layout/LICENSE)
+[![CI](https://github.com/BirjuVachhani/flutter_constraint_layout/actions/workflows/test.yml/badge.svg)](https://github.com/BirjuVachhani/flutter_constraint_layout/actions/workflows/test.yml)
+[![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/flutter_constraint_layout/LICENSE)
 
 Android's ConstraintLayout for Flutter. Instead of nesting `Row`, `Column`,
 `Stack`, and `Padding`, put every child directly in one flat
@@ -203,7 +203,7 @@ class Greeting extends StatelessWidget {
 To see the links you just wrote, add `debugShowChains: true` to the
 `ConstraintLayout` and hot reload: each link is drawn over the app (see
 [debug visualization](#debug-visualization)). Another runnable app lives in
-[`example/main.dart`](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/flutter_constraint_layout/example/main.dart).
+[`example/main.dart`](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/flutter_constraint_layout/example/main.dart).
 
 ## Core concepts
 
@@ -1161,7 +1161,7 @@ for a showcase or screenshots consider
 on the home page of [constraints.birju.dev](https://constraints.birju.dev) have
 chains and blueprint toggles, so you can see both modes without running
 anything. The design notes for the overlay are in
-[docs/DEBUG_VISUALIZATION.md](https://github.com/BirjuVachhani/constraint_layout/blob/main/docs/DEBUG_VISUALIZATION.md).
+[docs/DEBUG_VISUALIZATION.md](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/docs/DEBUG_VISUALIZATION.md).
 
 ## Common mistakes
 
@@ -1245,7 +1245,7 @@ chains, and `invisible` or `gone` children outside chains all stay on the
 graph.
 
 The engine's benchmark
-([`resolver_benchmark.dart`](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/constraint_engine/benchmark/resolver_benchmark.dart))
+([`resolver_benchmark.dart`](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/benchmark/resolver_benchmark.dart))
 shows the difference. Compiled ahead of time and run on an Apple M4, a
 synthetic layout of 1,200 fixed-size widgets (50 rows, each a 24-widget chain)
 re-resolved on the graph path in a median of about 0.4 ms, and was built and
@@ -1324,7 +1324,7 @@ upstream commit `9cd4b5a4079a14175f91dc897abd83270799364a`, its solver and
 widget classes are verified at parity with the released core 1.1.1 (only the
 Grid helper still follows the pinned commit), and nearly all of upstream's core
 tests are ported and passing;
-[UPSTREAM.md](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/constraint_engine/UPSTREAM.md)
+[UPSTREAM.md](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/UPSTREAM.md)
 records the pin, the parity check, and every intentional divergence. During
 layout the engine measures children through Flutter's own `RenderBox.layout`,
 solves the constraints, and the layout places each child at the resolved
@@ -1345,14 +1345,14 @@ paths produce the same result Android does.
 ## Links
 
 - Documentation: [constraints.birju.dev/docs](https://constraints.birju.dev/docs)
-- Repository: [github.com/BirjuVachhani/constraint_layout](https://github.com/BirjuVachhani/constraint_layout)
-- Issue tracker: [github.com/BirjuVachhani/constraint_layout/issues](https://github.com/BirjuVachhani/constraint_layout/issues)
-- Changelog: [CHANGELOG.md](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/flutter_constraint_layout/CHANGELOG.md)
+- Repository: [github.com/BirjuVachhani/flutter_constraint_layout](https://github.com/BirjuVachhani/flutter_constraint_layout)
+- Issue tracker: [github.com/BirjuVachhani/flutter_constraint_layout/issues](https://github.com/BirjuVachhani/flutter_constraint_layout/issues)
+- Changelog: [CHANGELOG.md](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/flutter_constraint_layout/CHANGELOG.md)
 
 ## License
 
 BSD 3-Clause. See
-[LICENSE](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/flutter_constraint_layout/LICENSE).
+[LICENSE](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/flutter_constraint_layout/LICENSE).
 The debug visualization adapts the rendering of Android Studio's layout editor:
 `lib/src/debug/debug_painter.dart` and `lib/src/debug/debug_palette.dart` keep
 the Android Open Source Project's copyright line and are also covered by the

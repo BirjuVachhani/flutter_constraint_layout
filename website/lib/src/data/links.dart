@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 /// External URLs referenced across the site.
 abstract final class Links {
   static const String github =
-      'https://github.com/BirjuVachhani/constraint_layout';
+      'https://github.com/BirjuVachhani/flutter_constraint_layout';
   static const String pubDev = 'https://pub.dev/packages/flutter_constraint_layout';
   static const String author = 'https://github.com/BirjuVachhani';
 
