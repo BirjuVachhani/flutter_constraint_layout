@@ -23,18 +23,21 @@ migrate_working_dir/
 
 # Flutter/Dart/Pub related
 # Libraries should not include pubspec.lock, per https://dart.dev/guides/libraries/private-files#pubspeclock.
-# This repo is a pub workspace, so a single lock file lives at the root;
-# the unanchored pattern also covers any lock file in workspace members.
+# This repo is a pub workspace, so a single lock file lives at the workspace
+# root; the unanchored pattern also covers any lock file in members.
 pubspec.lock
 **/doc/api/
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 
-# Build artifacts and coverage, in the root package and all workspace
-# members (packages/, website/, etc.).
+# Build artifacts and coverage, in every workspace member (packages/,
+# website/, etc.). The root itself is a shell and builds nothing.
 build/
 coverage/
+
+# Byte-code cache from the tool/ coverage scripts.
+__pycache__/
 
 # Local-only directories, excluded from VCS entirely
 inspo/

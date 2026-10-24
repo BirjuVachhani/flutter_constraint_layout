@@ -49,8 +49,9 @@ jobs:
           cache: true
 
       - name: Resolve workspace dependencies
-        # Run at the repo root so the whole pub workspace (root package,
-        # packages/constraint_engine, website) resolves together.
+        # Run at the repo root so the whole pub workspace
+        # (packages/constraint_engine, packages/constraint_layout, website)
+        # resolves together.
         run: flutter pub get
 
       - name: Build website (WASM)

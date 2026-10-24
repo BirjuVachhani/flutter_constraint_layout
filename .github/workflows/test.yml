@@ -1,8 +1,8 @@
 name: Tests
 
 # Runs the full test suite for every workspace package. Everything runs on
-# macOS because the debug golden tests (test/debug/goldens/*.png) are generated
-# on macOS and are sensitive to platform font/raster differences.
+# macOS because the golden tests (packages/constraint_layout/test/**/goldens/*.png)
+# are generated on macOS and are sensitive to platform font/raster differences.
 
 on:
   push:
@@ -32,8 +32,9 @@ jobs:
           cache: true
 
       - name: Resolve workspace dependencies
-        # One resolve at the root covers every workspace member (root package,
-        # packages/constraint_engine, website).
+        # The root is a workspace shell with no code of its own; one resolve
+        # here covers every member (packages/constraint_engine,
+        # packages/constraint_layout, website).
         run: flutter pub get
 
       - name: Analyze
@@ -44,4 +45,5 @@ jobs:
         run: dart test
 
       - name: Package tests (constraint_layout, incl. goldens)
+        working-directory: packages/constraint_layout
         run: flutter test

@@ -20,7 +20,7 @@ dependencies:
 
   # The package this site showcases (the local workspace copy).
   constraint_layout:
-    path: ../
+    path: ../packages/constraint_layout
 
   # Syntax highlighting for the docs code blocks, themed with the Pierre
   # light/dark pair (see lib/src/highlight/highlighter_service.dart). Web
