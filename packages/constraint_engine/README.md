@@ -252,7 +252,9 @@ modes are `ConstraintWidget` constants:
 - `MATCH_CONSTRAINT_WRAP` uses the content's size, capped at the space between
   the anchors. The measurer may be asked about such an axis as
   `matchConstraint`, so check the widget's `mMatchConstraintDefaultWidth` (or
-  `mMatchConstraintDefaultHeight`) and report the content's size there too.
+  `mMatchConstraintDefaultHeight`) and report the content's size there too,
+  except when it is measured again after a solve (see
+  [the measurer](#the-measurer)).
 - `MATCH_CONSTRAINT_PERCENT` takes `percent` (0 to 1) of the container's size,
   even when the widget is anchored to siblings. Passing a `percent` between 0
   and 1 with the spread mode switches to this mode.
@@ -386,6 +388,17 @@ so set all four every time. Report the content's natural size on
 `wrapContent` axes (and on `MATCH_CONSTRAINT_WRAP` axes), and echo the
 proposed size on the others.
 
+After the solver has run, `layout()` measures some children again (see
+[how resolution works](#how-resolution-works)), first with
+`TRY_GIVEN_DIMENSIONS` and then with `USE_GIVEN_DIMENSIONS`. On those passes
+the proposed size of a `MATCH_CONSTRAINT_WRAP` axis is the solver's, capped by
+the anchors and by the min and max. Measure the content at that size, so that
+content that reflows, such as wrapping text, sizes its other axis there.
+Android's measurer does so on `USE_GIVEN_DIMENSIONS`, and on
+`TRY_GIVEN_DIMENSIONS` once the other axis is stable (the content's last
+measured size on it is the widget's current size); until then it measures the
+content again.
+
 `Flow` and `GridCore` are virtual layouts: helpers that arrange the widgets
 added to them into wrapping rows or columns, or into a grid. They size
 themselves, and work out how to arrange their widgets, in a measure pass of
@@ -434,7 +447,11 @@ is typical.
    `layout()` restores the widget state from before the graph pass,
    re-measures wrap-sized children, and solves the layout as a system of
    linear equations and inequalities with the ported `LinearSystem`. The
-   solver gets the same input upstream's solver would.
+   solver gets the same input upstream's solver would. A child whose content
+   size on one axis depends on a size the solver set on the other (a
+   `matchConstraint` axis, or a `MATCH_CONSTRAINT_WRAP` axis the solver
+   capped) is then measured again at that size, and the layout is solved
+   again if a size changed, as upstream's `BasicMeasure.solverMeasure` does.
 
 The graph declines, and hands the whole layout to the solver, for chains with
 `GONE` or ratio-sized members, chains along a `wrapContent` axis of the

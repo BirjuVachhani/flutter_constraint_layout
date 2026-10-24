@@ -409,7 +409,7 @@ ConstraintLayout(
 | `.fixed(n)` | Exactly `n` logical pixels. |
 | `.matchConstraint` | Fills the space between the two links on that axis, less their margins. With only one link, the child sizes to its content. |
 | `.spread(min: a, max: b)` | Like `.matchConstraint`, kept between `min` and `max` (both optional). |
-| `.constrainedWrap(min: a, max: b)` | The child's own size, but no larger than the space between its links, and kept between `min` and `max`. Suits content that does not reflow; see the note below. |
+| `.constrainedWrap(min: a, max: b)` | The child's own size, but no larger than the space between its links, and kept between `min` and `max`. When the cap applies, the other dimension follows the capped size, so text wraps inside the links; see the note below. |
 | `.percent(f, min: a, max: b)` | The fraction `f` (0 to 1) of the layout's size on that axis, kept between `min` and `max`. |
 | `.matchParent` | The layout's full size on that axis. Where the links point is ignored, but their margins still inset it. |
 
@@ -457,10 +457,9 @@ ConstraintLayout(
 > **Long text between two links.** A `Text` with the default `.wrapContent` is
 > measured against the whole layout's width, so a long one grows past its links
 > and overflows them. Give it `.matchConstraint` to fill the space between the
-> links: it wraps inside them and its height follows. `.constrainedWrap()` caps
-> the width in the same way but keeps the height measured before the cap, so use
-> it for single-line text (with `maxLines: 1` and an ellipsis, as above), not for
-> text that wraps.
+> links, or `.constrainedWrap()` to keep a short text as narrow as its content:
+> either way a long text wraps inside the links and its height follows. To keep
+> it on one line instead, add `maxLines: 1` and an ellipsis, as above.
 
 ### Aspect ratio
 
@@ -1157,7 +1156,7 @@ then look for the symptom here.
 | A child sits at the layout's left or top edge. | It has no link on that axis, or it is not wrapped in `Constrained`. | Link it on that axis, inside a `Constrained`. |
 | A child linked on both sides of an axis does not stretch. | Links only position it; at the default `.wrapContent` size it centers between them. | Set `width: .matchConstraint` (or `height:`). |
 | A `.matchConstraint` child is only as big as its content. | It is linked on only one side of that axis. | Link both sides. |
-| Long text overlaps its neighbors or runs off the layout. | A `.wrapContent` `Text` is measured against the layout's full width. | Set `width: .matchConstraint`. |
+| Long text overlaps its neighbors or runs off the layout. | A `.wrapContent` `Text` is measured against the layout's full width. | Set `width: .matchConstraint`, or `.constrainedWrap()` to keep short text as narrow as its content. |
 | `Incorrect use of ParentDataWidget.` | Another widget, such as `Padding`, sits between the `ConstraintLayout` and the `Constrained`. | Move it inside: `Constrained(child: Padding(...))`. |
 | `Constrained link targets unknown id ...` | A typo, or an id from another `ConstraintLayout`: ids are scoped to one layout. | Fix the id; see [unknown and duplicate ids](#unknown-and-duplicate-ids). |
 | A widget lines up with the wrong sibling. | Two children share an id. | Rename one; see [unknown and duplicate ids](#unknown-and-duplicate-ids). |
@@ -1270,11 +1269,6 @@ Changing `zIndex` or a debug flag only repaints.
   fixed sizes, margins, and gaps are rounded to the nearest integer, and
   children are placed at whole-pixel offsets. An edge can therefore land up to
   a logical pixel away from where fractional arithmetic would put it.
-- **`.constrainedWrap()` does not re-measure height.** When it caps a child's
-  width, the child keeps the height it measured at its natural width, so text
-  that wraps at the capped width can be clipped. Use `.matchConstraint` or
-  `.spread(max: ...)` for text that wraps; both measure the height at the final
-  width.
 - **A `goneMargin` of 0 means "not set".** When the target is gone, the
   regular `margin` stays in effect; you cannot replace it with exactly 0.
 - **Right-to-left.** Android mirrors the horizontal bias of views constrained

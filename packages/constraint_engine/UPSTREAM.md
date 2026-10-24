@@ -86,7 +86,15 @@ relevant code, and include:
   barrier's `HelperReferences` run only ever resolves its start, never its end
   or dimension. Pre-graph widget state is snapshotted and restored before the
   fallback, and wrap-sized children are re-measured, so the solver sees the
-  same input upstream's would.
+  same input upstream's would. After the fallback solve, children with a
+  solver-sized axis (a matchConstraint axis with both anchors, or a
+  MATCH_CONSTRAINT_WRAP axis, which the solver caps) and a content-sized
+  other axis (wrapContent or MATCH_CONSTRAINT_WRAP) are measured again, with
+  TRY_GIVEN_DIMENSIONS and then USE_GIVEN_DIMENSIONS, and the layout is solved
+  again when a size changed. Upstream runs that loop in
+  `BasicMeasure.solverMeasure`, around `layout()` (which does not measure
+  again after solving), for every widget with a matchConstraint axis; the
+  port runs it only for those combinations.
 - Upstream's "width/height measured too small" clamp in the solver loop is
   omitted: it relies on the unported Direct optimizer pre-sizing wrap
   containers, and would wrongly squash wrap containers whose entry size is

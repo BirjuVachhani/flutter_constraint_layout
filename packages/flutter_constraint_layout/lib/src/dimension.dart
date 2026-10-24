@@ -55,7 +55,9 @@ sealed class Dimension {
   /// opposing anchors, optionally bounded by [min] and [max].
   ///
   /// Android `0dp` with `layout_constraintWidth_default="wrap"`: unlike plain
-  /// [wrapContent], the content size is capped by the constraints.
+  /// [wrapContent], the content size is capped by the constraints. A capped
+  /// child is measured again at the capped size, so its other dimension
+  /// follows: text that wraps takes the height it needs at the capped width.
   const factory Dimension.constrainedWrap({double? min, double? max}) =
       MatchConstraintDimension.constrainedWrap;
 
