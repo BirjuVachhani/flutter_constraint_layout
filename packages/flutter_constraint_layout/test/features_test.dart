@@ -711,6 +711,41 @@ void main() {
   // values in a right-to-left layout: the horizontal bias of a child with any
   // start/end link, and the position of a vertical guideline.
   group('right-to-left', () {
+
+    for (final direction in TextDirection.values) {
+      testWidgets('start/end links replace both absolute links (${direction.name})',
+          (tester) async {
+        await tester.pumpWidget(host([
+          Constrained(
+            id: #start,
+            start: .startOf(parent),
+            left: .leftOf(parent),
+            right: .rightOf(parent),
+            top: .topOf(parent),
+            horizontalBias: 0.25,
+            width: .fixed(100),
+            height: .fixed(20),
+            child: box(#start),
+          ),
+          Constrained(
+            id: #end,
+            end: .endOf(parent),
+            left: .leftOf(parent),
+            right: .rightOf(parent),
+            top: .bottomOf(#start),
+            horizontalBias: 0.25,
+            width: .fixed(100),
+            height: .fixed(20),
+            child: box(#end),
+          ),
+        ], direction: direction));
+        expect(rectOf(tester, #start).left,
+            direction == TextDirection.ltr ? 0 : 700);
+        expect(rectOf(tester, #end).left,
+            direction == TextDirection.ltr ? 700 : 0);
+      });
+    }
+
     const rtl = TextDirection.rtl;
 
     // 700 of free width around each child, and 500 of free height around
@@ -949,6 +984,90 @@ void main() {
         ),
       ], direction: rtl));
       expect(rectOf(tester, #marker).left, 610);
+    });
+
+    // Three 24-wide members between 24-px outer margins.
+    List<Widget> marginChain(ChainStyle style) => [
+          for (var i = 0; i < 3; i++)
+            Constrained(
+              id: Symbol('c$i'),
+              start: i == 0
+                  ? .startOf(parent, margin: 24)
+                  : .endOf(Symbol('c${i - 1}')),
+              end: i == 2
+                  ? .endOf(parent, margin: 24)
+                  : .startOf(Symbol('c${i + 1}')),
+              top: .topOf(parent),
+              width: .fixed(24),
+              height: .fixed(24),
+              horizontalChainStyle: i == 0 ? style : null,
+              child: box(Symbol('c$i')),
+            ),
+        ];
+
+    for (final style in ChainStyle.values) {
+      testWidgets('a ${style.name} chain with margins mirrors',
+          (tester) async {
+        await tester.pumpWidget(host(marginChain(style)));
+        final ltr = [
+          for (var i = 0; i < 3; i++) rectOf(tester, Symbol('c$i')),
+        ];
+        await tester.pumpWidget(host(marginChain(style), direction: rtl));
+        for (var i = 0; i < 3; i++) {
+          expect(rectOf(tester, Symbol('c$i')).left, 800 - ltr[i].right);
+        }
+      });
+    }
+
+    testWidgets('a weighted chain with margins mirrors', (tester) async {
+      await tester.pumpWidget(host([
+        Constrained(
+          id: #cancel,
+          start: .startOf(parent, margin: 16),
+          end: .startOf(#confirm, margin: 8),
+          top: .topOf(parent),
+          width: .matchConstraint,
+          height: .fixed(40),
+          horizontalWeight: 1,
+          child: box(#cancel),
+        ),
+        Constrained(
+          id: #confirm,
+          start: .endOf(#cancel),
+          end: .endOf(parent, margin: 16),
+          top: .topOf(parent),
+          width: .matchConstraint,
+          height: .fixed(40),
+          horizontalWeight: 2,
+          child: box(#confirm),
+        ),
+      ], direction: rtl));
+      expect(rectOf(tester, #cancel), const Rect.fromLTRB(531, 0, 784, 40));
+      expect(rectOf(tester, #confirm), const Rect.fromLTRB(16, 0, 523, 40));
+    });
+
+    testWidgets('a vertical chain with margins ignores the text direction',
+        (tester) async {
+      await tester.pumpWidget(host([
+        for (var i = 0; i < 3; i++)
+          Constrained(
+            id: Symbol('v$i'),
+            start: .startOf(parent),
+            top: i == 0
+                ? .topOf(parent, margin: 40)
+                : .bottomOf(Symbol('v${i - 1}')),
+            bottom: i == 2
+                ? .bottomOf(parent, margin: 40)
+                : .topOf(Symbol('v${i + 1}')),
+            width: .fixed(50),
+            height: .fixed(50),
+            verticalChainStyle: i == 0 ? ChainStyle.spreadInside : null,
+            child: box(Symbol('v$i')),
+          ),
+      ], direction: rtl));
+      expect(rectOf(tester, Symbol('v0')).top, 40);
+      expect(rectOf(tester, Symbol('v1')).top, 275);
+      expect(rectOf(tester, Symbol('v2')).top, 510);
     });
   });
 }

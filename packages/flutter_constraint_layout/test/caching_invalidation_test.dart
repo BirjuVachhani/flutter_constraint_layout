@@ -1004,6 +1004,110 @@ void main() {
           reason: 'content growth inside the caps must reach the container');
       await expectMatchesFresh(tester, () => children(const Size(120, 60)));
     });
+
+    testWidgets('both capped axes keep following a leaf without a baseline',
+        (tester) async {
+      await tester.pumpWidget(host([
+        Constrained(
+          id: #a,
+          left: .leftOf(parent),
+          right: .rightOf(parent),
+          top: .topOf(parent),
+          bottom: .bottomOf(parent),
+          width: .constrainedWrap(max: 200),
+          height: .constrainedWrap(max: 100),
+          child: const IntrinsicBox(Size(300, 150)),
+        ),
+        Constrained(
+          id: #below,
+          left: .leftOf(parent),
+          top: .bottomOf(#a),
+          width: .fixed(10),
+          height: .fixed(10),
+          child: const SizedBox(),
+        ),
+      ]));
+      final ro = layoutOf(tester);
+      final leaf = tester.renderObject<RenderIntrinsicBox>(
+          find.byType(IntrinsicBox));
+      expect(leaf.constraints.isTight, isTrue,
+          reason: 'both caps really leave the child tightly constrained');
+      expect(geometryOf(tester)[1], [300.0, 250.0, 200.0, 100.0]);
+      final builds = ro.debugModelBuilds;
+      final applies = ro.debugConfigApplies;
+
+      for (final natural in [
+        const Size(80, 40),
+        const Size(300, 150),
+        const Size(120, 60),
+      ]) {
+        final engine = ro.debugEnginePasses;
+        // No widget rebuild or parent-data change: only the leaf's own
+        // layout dirtiness can reach the container. Its real baseline is null.
+        leaf.natural = natural;
+        await tester.pump();
+        final w = natural.width.clamp(0.0, 200.0);
+        final h = natural.height.clamp(0.0, 100.0);
+        expect(geometryOf(tester)[1], [(800 - w) / 2, (600 - h) / 2, w, h]);
+        expect(geometryOf(tester)[2][1], (600 + h) / 2,
+            reason: 'the sibling must follow the resized child');
+        expect(ro.debugEnginePasses, engine + 1);
+        expect(ro.debugModelBuilds, builds);
+        expect(ro.debugConfigApplies, applies);
+      }
+    });
+
+    for (final dir in TextDirection.values) {
+      testWidgets('constrainedWrap on both axes follows content after both '
+          'caps bind (${dir.name})', (tester) async {
+        const size = Size(400, 600);
+        const long = 'AAAAAAAAA BBBBBBBBB CCCCCCCCC DDDDDDDDD';
+        const short = 'Short';
+        List<Widget> children(String text) => [
+              Constrained(
+                id: #t,
+                start: .startOf(parent, margin: 16),
+                end: .endOf(parent, margin: 16),
+                top: .topOf(parent),
+                bottom: .bottomOf(parent),
+                width: .constrainedWrap(),
+                height: .constrainedWrap(max: 30),
+                child: Text(text, style: const TextStyle(fontSize: 20)),
+              ),
+              Constrained(
+                id: #below,
+                start: .startOf(parent),
+                top: .bottomOf(#t),
+                width: .fixed(10),
+                height: .fixed(10),
+                child: const SizedBox(),
+              ),
+            ];
+        await tester.pumpWidget(host(children(long), size: size, dir: dir));
+        final ro = layoutOf(tester);
+        expect(geometryOf(tester)[1], [16.0, 285.0, 368.0, 30.0]);
+        final builds = ro.debugModelBuilds;
+        final applies = ro.debugConfigApplies;
+        final engine = ro.debugEnginePasses;
+
+        // Only Text changes. Measuring the cap required tight constraints on
+        // both axes, but its next content change must still reach the layout.
+        await tester.pumpWidget(host(children(short), size: size, dir: dir));
+        expect(ro.debugEnginePasses, engine + 1);
+        expect(geometryOf(tester)[1], [150.0, 290.0, 100.0, 20.0]);
+        expect(geometryOf(tester)[2][1], 310.0,
+            reason: 'a dependent sibling must follow the shrunken text');
+
+        await tester.pumpWidget(host(children(long), size: size, dir: dir));
+        expect(ro.debugEnginePasses, engine + 2);
+        expect(geometryOf(tester)[1], [16.0, 285.0, 368.0, 30.0]);
+        expect(geometryOf(tester)[2][1], 315.0);
+        expect(ro.debugModelBuilds, builds);
+        expect(ro.debugConfigApplies, applies);
+        await expectMatchesFresh(tester, () => children(long),
+            size: size, dir: dir);
+      });
+    }
   });
 
   group('paint-only changes', () {

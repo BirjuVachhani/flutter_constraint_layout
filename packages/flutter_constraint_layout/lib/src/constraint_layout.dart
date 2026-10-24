@@ -439,6 +439,15 @@ class RenderConstraintLayout extends RenderBox
       if (!keepMeasuredLayout) {
         rb.layout(BoxConstraints.tight(Size(ew, eh)));
       }
+      // A capped child can need tight constraints on both axes. Flutter then
+      // makes it a relayout boundary, even though its next content change can
+      // change the size this container resolves for it. A baseline query
+      // establishes a layout dependency across that boundary (including when
+      // there is no real baseline), so the change still re-runs the engine.
+      // Fixed-size children keep their independent relayout boundaries.
+      if (rb.constraints.isTight && _isContentDependent(_modelChildData[i])) {
+        rb.getDistanceToBaseline(TextBaseline.alphabetic, onlyReal: true);
+      }
       _modelChildData[i].offset = Offset(
         w.getX().toDouble(),
         w.getY().toDouble(),
@@ -613,10 +622,15 @@ class RenderConstraintLayout extends RenderBox
       ConstraintVisibility.gone => ConstraintWidget.GONE,
     });
 
-    _connectH(w, HorizontalEdge.left, pd.left);
-    _connectH(w, HorizontalEdge.right, pd.right);
-    _connectH(w, HorizontalEdge.start, pd.start);
-    _connectH(w, HorizontalEdge.end, pd.end);
+    // Android resolves start/end as a pair: when either is set, all absolute
+    // left/right links are ignored, not just the link on the same side.
+    if (pd.start != null || pd.end != null) {
+      _connectH(w, HorizontalEdge.start, pd.start);
+      _connectH(w, HorizontalEdge.end, pd.end);
+    } else {
+      _connectH(w, HorizontalEdge.left, pd.left);
+      _connectH(w, HorizontalEdge.right, pd.right);
+    }
     _connectV(w, VerticalEdge.top, pd.top);
     _connectV(w, VerticalEdge.bottom, pd.bottom);
     _connectV(w, VerticalEdge.baseline, pd.baseline);
@@ -862,8 +876,13 @@ class RenderConstraintLayout extends RenderBox
   /// missing. Helper children (guidelines, barriers) have no content.
   bool _isContentDependent(ConstraintParentData pd) {
     if (pd.helperKind != HelperKind.none) return false;
-    final hasLeft = pd.left != null || (_ltr ? pd.start : pd.end) != null;
-    final hasRight = pd.right != null || (_ltr ? pd.end : pd.start) != null;
+    final directional = pd.start != null || pd.end != null;
+    final hasLeft = directional
+        ? (_ltr ? pd.start : pd.end) != null
+        : pd.left != null;
+    final hasRight = directional
+        ? (_ltr ? pd.end : pd.start) != null
+        : pd.right != null;
     final hasTop = pd.top != null;
     final hasBottom = pd.bottom != null;
 

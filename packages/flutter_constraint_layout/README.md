@@ -937,6 +937,11 @@ Some things do not mirror:
 - `ConstraintGrid` fills its cells from the left in both directions (upstream's
   grid does not handle right-to-left either).
 
+As on Android, `start` and `end` take precedence as a pair: when either is
+set, the child's `left` and `right` links are ignored. Prefer one pair or the
+other rather than mixing them. For example, `start: .startOf(parent)` with
+`right: .rightOf(parent)` has only one active horizontal link, not two.
+
 ## A complete example
 
 A complete app: a profile card in a `ListView`, with a ratio-sized cover, an
@@ -1235,14 +1240,15 @@ solver when it contains any of:
 - a `circle` link or a `.constrainedWrap()` size,
 - `aspectRatio` on a child whose width and height are both `.matchConstraint`,
 - a chain with a `gone` member or a member sized by `aspectRatio`,
+- in a right-to-left layout, a chain with a margin on any of its links,
 - on an axis where the layout sizes to its content (such as the scrolling axis
   of a list): a chain along that axis, a child linked on both sides of that
   axis, or a child that extends outside the layout,
 - anything else the graph cannot resolve directly.
 
 Guidelines, baselines, bias, percent and bounded sizes, weighted and packed
-chains, and `invisible` or `gone` children outside chains all stay on the
-graph.
+chains (in a right-to-left layout, those without margins), and `invisible` or
+`gone` children outside chains all stay on the graph.
 
 The engine's benchmark
 ([`resolver_benchmark.dart`](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/benchmark/resolver_benchmark.dart))

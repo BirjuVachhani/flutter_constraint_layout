@@ -59,9 +59,15 @@ class Constrained extends ParentDataWidget<ConstraintParentData> {
   final HorizontalLink? right;
 
   /// Positions this widget's start edge (RTL-aware).
+  ///
+  /// As on Android, setting either [start] or [end] ignores both [left] and
+  /// [right], in either text direction.
   final HorizontalLink? start;
 
   /// Positions this widget's end edge (RTL-aware).
+  ///
+  /// As on Android, setting either [start] or [end] ignores both [left] and
+  /// [right], in either text direction.
   final HorizontalLink? end;
 
   /// Positions this widget's top edge.
