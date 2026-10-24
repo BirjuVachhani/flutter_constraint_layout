@@ -1,10 +1,16 @@
 name: flutter_constraint_layout_lints
 description: >-
-  Analyzer plugin with lint rules for the flutter_constraint_layout Flutter package.
-  Catches constraint mistakes that only show up at runtime, such as two
-  Constrained children sharing an id inside the same ConstraintLayout.
-version: 0.1.0
-publish_to: none
+  Analyzer plugin for flutter_constraint_layout that flags duplicate and
+  undefined constraint ids as you edit, before they misplace a widget.
+version: 1.0.0
+homepage: https://constraints.birju.dev
+repository: https://github.com/BirjuVachhani/constraint_layout/tree/main/packages/flutter_constraint_layout_lints
+issue_tracker: https://github.com/BirjuVachhani/constraint_layout/issues
+topics:
+  - lints
+  - analyzer
+  - analyzer-plugin
+  - constraint-layout
 
 # Deliberately NOT a workspace member. Analyzer plugins run in their own
 # isolate against an analyzer version pinned to the Dart SDK, which would

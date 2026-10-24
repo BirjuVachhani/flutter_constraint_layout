@@ -6,8 +6,11 @@ description: >-
   URL routing, SEO metadata, syntax-highlighted code blocks, and a component
   library.
 
-version: 0.1.0
+version: 1.0.0
+repository: https://github.com/BirjuVachhani/constraint_layout/tree/main/template
+issue_tracker: https://github.com/BirjuVachhani/constraint_layout/issues
 
+# Not published: depend on it by path or by git (see README.md).
 publish_to: none
 
 environment:

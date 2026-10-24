@@ -1,10 +1,20 @@
 name: constraint_engine
 description: >-
-  Pure-Dart constraint resolution engine ported from Android ConstraintLayout's
-  dependency-graph solver. No Flutter dependency. Consumed by the flutter_constraint_layout
-  Flutter package. The Cassowary fallback for cyclic graphs lands here in phase 2.
-version: 0.1.0
-publish_to: none
+  A pure-Dart port of the Android ConstraintLayout engine: a dependency-graph
+  resolver with a Cassowary linear solver fallback. No Flutter dependency.
+version: 1.0.0
+homepage: https://constraints.birju.dev
+repository: https://github.com/BirjuVachhani/constraint_layout/tree/main/packages/constraint_engine
+issue_tracker: https://github.com/BirjuVachhani/constraint_layout/issues
+topics:
+  - layout
+  - constraint-layout
+  - constraints
+  - cassowary
+  - solver
+
+# Resolved together with every other member from the workspace root two
+# directories up.
 resolution: workspace
 
 environment:
