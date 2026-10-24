@@ -4,7 +4,12 @@ import 'package:flutter/material.dart';
 import '../data/links.dart';
 import '../theme/tokens.dart';
 
-/// The wordmark: a semibold mono `flutter_constraint_layout` that links home, followed
+/// The text of the site's wordmark: the package name, set in mono. The nav,
+/// the footer, and the social-preview banner (tool/render_banner_test.dart)
+/// all read it from here.
+const String wordmark = 'flutter_constraint_layout';
+
+/// The wordmark: a semibold mono [wordmark] that links home, followed
 /// by a muted tagline (`for Flutter by <author>`) whose author name is a link.
 /// The tagline is hidden on compact layouts, like a `hidden md:inline`
 /// treatment.
@@ -48,7 +53,7 @@ class _BrandState extends State<Brand> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Text(
-          'flutter_constraint_layout',
+          wordmark,
           style: TextStyle(
             fontFamily: AppFonts.mono,
             fontSize: 15.5,
@@ -164,7 +169,7 @@ class _FooterBrandState extends State<FooterBrand> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Text(
-          'flutter_constraint_layout',
+          wordmark,
           style: TextStyle(
             fontFamily: AppFonts.mono,
             fontSize: 15.5,
