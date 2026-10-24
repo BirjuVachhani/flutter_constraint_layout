@@ -63,46 +63,62 @@ class _BrandState extends State<Brand> {
       ),
     );
 
-    final brand = Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
-      children: [
-        word,
-        if (showTagline) ...[
-          const SizedBox(width: 6),
-          // Flexible so the tagline ellipsizes instead of overflowing when the
-          // nav row is tight (e.g. near the compact/wide breakpoint).
-          Flexible(
-            child: Text.rich(
-              TextSpan(
-                style: TextStyle(
-                  fontFamily: AppFonts.sans,
-                  fontSize: 14,
-                  height: 20 / 14,
-                  color: colors.mutedForeground,
-                ),
-                children: [
-                  const TextSpan(text: 'for Flutter by '),
-                  TextSpan(
-                    text: 'Birju Vachhani',
-                    recognizer: _authorTap,
-                    onEnter: (_) => setState(() => _authorHovered = true),
-                    onExit: (_) => setState(() => _authorHovered = false),
-                    mouseCursor: SystemMouseCursors.click,
-                    style: TextStyle(
-                      color: _authorHovered
-                          ? colors.foreground.withValues(alpha: 0.8)
-                          : colors.mutedForeground,
-                    ),
-                  ),
-                ],
-              ),
-              overflow: TextOverflow.ellipsis,
+    // The wordmark keeps its natural size while it fits and scales down when
+    // the row is narrower than the name (a 320px phone, beside the nav
+    // actions), so a name of any length never runs under them. The tagline
+    // yields first: it gets only the room the wordmark leaves.
+    final brand = LayoutBuilder(
+      builder: (context, constraints) => Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: word,
             ),
           ),
+          if (showTagline)
+            // Flexible so the tagline ellipsizes instead of overflowing when
+            // the nav row is tight (e.g. near the compact/wide breakpoint). The
+            // gap sits inside it, so a wordmark that fills the row leaves
+            // nothing to overflow.
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsetsDirectional.only(start: 6),
+                child: Text.rich(
+                  TextSpan(
+                    style: TextStyle(
+                      fontFamily: AppFonts.sans,
+                      fontSize: 14,
+                      height: 20 / 14,
+                      color: colors.mutedForeground,
+                    ),
+                    children: [
+                      const TextSpan(text: 'for Flutter by '),
+                      TextSpan(
+                        text: 'Birju Vachhani',
+                        recognizer: _authorTap,
+                        onEnter: (_) => setState(() => _authorHovered = true),
+                        onExit: (_) => setState(() => _authorHovered = false),
+                        mouseCursor: SystemMouseCursors.click,
+                        style: TextStyle(
+                          color: _authorHovered
+                              ? colors.foreground.withValues(alpha: 0.8)
+                              : colors.mutedForeground,
+                        ),
+                      ),
+                    ],
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
         ],
-      ],
+      ),
     );
 
     return SelectionContainer.disabled(child: brand);
@@ -163,41 +179,41 @@ class _FooterBrandState extends State<FooterBrand> {
       ),
     );
 
-    final brand = Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
+    // A Wrap, not a Row: when the wordmark and tagline do not fit on one line
+    // (a phone-width footer), the tagline moves below the wordmark whole
+    // instead of squeezing into a narrow column beside it, and a wordmark
+    // wider than the footer scales down. Geist and Geist Mono share vertical
+    // metrics, so the two 20px lines sit on one baseline when they share a run.
+    final brand = Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 6,
       children: [
-        word,
-        const SizedBox(width: 6),
-        // Flexible so the tagline wraps instead of overflowing when the brand
-        // is laid out in a narrow column (mobile footer).
-        Flexible(
-          child: Text.rich(
-            TextSpan(
-              style: TextStyle(
-                fontFamily: AppFonts.sans,
-                fontSize: 14,
-                height: 20 / 14,
-                color: colors.mutedForeground,
-              ),
-              children: [
-                const TextSpan(text: 'for flutter by '),
-                TextSpan(
-                  text: 'Birju Vachhani',
-                  recognizer: _authorTap,
-                  onEnter: (_) => setState(() => _authorHovered = true),
-                  onExit: (_) => setState(() => _authorHovered = false),
-                  mouseCursor: SystemMouseCursors.click,
-                  style: TextStyle(
-                    color: _authorHovered
-                        ? colors.foreground.withValues(alpha: 0.8)
-                        : colors.mutedForeground,
-                  ),
-                ),
-              ],
+        FittedBox(fit: BoxFit.scaleDown, child: word),
+        Text.rich(
+          TextSpan(
+            style: TextStyle(
+              fontFamily: AppFonts.sans,
+              fontSize: 14,
+              height: 20 / 14,
+              color: colors.mutedForeground,
             ),
+            children: [
+              const TextSpan(text: 'for Flutter by '),
+              TextSpan(
+                text: 'Birju Vachhani',
+                recognizer: _authorTap,
+                onEnter: (_) => setState(() => _authorHovered = true),
+                onExit: (_) => setState(() => _authorHovered = false),
+                mouseCursor: SystemMouseCursors.click,
+                style: TextStyle(
+                  color: _authorHovered
+                      ? colors.foreground.withValues(alpha: 0.8)
+                      : colors.mutedForeground,
+                ),
+              ),
+            ],
           ),
+          textAlign: TextAlign.center,
         ),
       ],
     );

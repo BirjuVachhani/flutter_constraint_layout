@@ -131,13 +131,22 @@ class InstallCommand extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              command,
-              style: const TextStyle(
-                fontFamily: AppFonts.mono,
-                fontSize: 15,
-                letterSpacing: -0.2,
-                color: Colors.white,
+            // The command keeps its size while it fits and scales down when
+            // the pill is narrower (a phone-width hero), so the copy button
+            // stays inside the pill whatever the command's length.
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  command,
+                  style: const TextStyle(
+                    fontFamily: AppFonts.mono,
+                    fontSize: 15,
+                    letterSpacing: -0.2,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 14),

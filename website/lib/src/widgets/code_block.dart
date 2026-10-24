@@ -15,7 +15,8 @@ import 'copy_button.dart';
 /// If [filename] is given the block gains a header: a file-code
 /// glyph, the file name, and the copy button on the right, separated from the
 /// code by a hairline. Without a filename there is no header chrome and a subtle
-/// copy button floats in the top-right instead.
+/// copy button sits in the top-right instead, in a strip of its own beside the
+/// code so it never covers a character.
 class CodeBlock extends StatelessWidget {
   const CodeBlock({
     super.key,
@@ -81,8 +82,9 @@ class CodeBlock extends StatelessWidget {
     final border = onBg.withValues(alpha: 0.10);
 
     // With a header the copy button lives in the header; without one it floats
-    // over the code in the top-right.
+    // in the top-right, beside the code rather than over it.
     final hasHeader = filename != null;
+    final floatingCopy = !hasHeader && showCopy;
 
     // Async highlighting: the block shows the plain code first and swaps to the
     // highlighted result when tokenization finishes, with the shared
@@ -119,7 +121,9 @@ class CodeBlock extends StatelessWidget {
         left: 15.6,
         top: hasHeader && !showDividers ? 0 : 12,
         bottom: 12,
-        right: 15.6,
+        // Beside a floating chip, its strip already leaves one inset of air, so
+        // the code's own end padding only tops that gap up to the usual 15.6.
+        right: floatingCopy ? 15.6 - _CopyChip.inset : 15.6,
       ),
     );
 
@@ -148,11 +152,20 @@ class CodeBlock extends StatelessWidget {
           )
         : Stack(
             children: [
-              body,
-              if (showCopy)
+              // The chip gets a strip of its own: the code's viewport ends an
+              // inset short of the chip, so a long line scrolls up to it, never
+              // under it, and its last characters stay readable at the end.
+              if (floatingCopy)
+                Padding(
+                  padding: const EdgeInsets.only(right: _CopyChip.strip),
+                  child: body,
+                )
+              else
+                body,
+              if (floatingCopy)
                 Positioned(
-                  top: 8,
-                  right: 8,
+                  top: _CopyChip.inset,
+                  right: _CopyChip.inset,
                   child: _CopyChip(text: trimmed, onBg: onBg, bg: bg),
                 ),
             ],
@@ -249,6 +262,19 @@ class _CopyChip extends StatelessWidget {
   final Color onBg;
   final Color bg;
 
+  /// Gap between the chip and the card's top and right edges.
+  static const double inset = 8;
+
+  /// Size of the copy glyph.
+  static const double _glyph = 15;
+
+  /// The chip's width: the glyph plus [CopyButton]'s 6px padding on each side.
+  static const double _extent = _glyph + 2 * 6;
+
+  /// Width of the strip the chip takes beside the code: the chip with an
+  /// [inset] on each side.
+  static const double strip = inset + _extent + inset;
+
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
@@ -261,7 +287,7 @@ class _CopyChip extends StatelessWidget {
         text: text,
         color: onBg.withValues(alpha: 0.55),
         hoverColor: onBg,
-        size: 15,
+        size: _glyph,
       ),
     );
   }

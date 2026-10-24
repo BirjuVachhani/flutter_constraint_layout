@@ -1,4 +1,5 @@
 import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../highlight/highlighter_service.dart';
@@ -191,6 +192,11 @@ class _PreviewPaneState extends State<_PreviewPane> {
   /// builders construct a plain `ConstraintLayout`, so this is how the toggles
   /// reach it without every builder having to thread the flags through. A root
   /// that is not a `ConstraintLayout` is returned untouched.
+  ///
+  /// Outside a debug build the blueprint draws no labels. A label names the
+  /// child by its `Symbol` id and widget type, which only a debug build reports
+  /// faithfully: the release web build minifies type names, and dart2wasm
+  /// Symbol-literal ids too, so a label would read like `minified:Class497`.
   Widget _applyDebug(Widget rendered) {
     if (!_showChains && !_showBlueprint) return rendered;
     if (rendered is ConstraintLayout) {
@@ -200,7 +206,9 @@ class _PreviewPaneState extends State<_PreviewPane> {
         debugShowChains: _showChains,
         debugShowBlueprint: _showBlueprint,
         debugChainColor: rendered.debugChainColor,
-        debugBlueprintLabelStyle: rendered.debugBlueprintLabelStyle,
+        debugBlueprintLabelStyle: kDebugMode
+            ? rendered.debugBlueprintLabelStyle
+            : DebugLabelStyle.none,
         children: rendered.children,
       );
     }
@@ -397,14 +405,18 @@ class _DebugToggle extends StatelessWidget {
               children: [
                 Icon(icon, size: 12, color: active ? accent : fg),
                 const SizedBox(width: 5),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontFamily: AppFonts.mono,
-                    fontSize: 11.5,
-                    height: 1.0,
-                    color: fg,
-                    fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                // The Semantics above already carries the label; excluding the
+                // visible text keeps screen readers from announcing it twice.
+                ExcludeSemantics(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontFamily: AppFonts.mono,
+                      fontSize: 11.5,
+                      height: 1.0,
+                      color: fg,
+                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                    ),
                   ),
                 ),
               ],
