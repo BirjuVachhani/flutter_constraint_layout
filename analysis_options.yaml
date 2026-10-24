@@ -1,5 +1,14 @@
 include: package:flutter_lints/flutter.yaml
 
+# Workspace-root options. Analyzer plugins may only be configured here (an
+# inner member's options file is rejected with `plugins_in_inner_options`), so
+# members that want the plugin `include:` this file rather than redeclaring it.
+#
+# Dogfoods this repo's own analyzer plugin. Restart the analysis server after
+# editing this section for the change to take effect.
+plugins:
+  constraint_layout_lints:
+    path: packages/constraint_layout_lints
 
 formatter:
   trailing_commas: preserve
