@@ -125,7 +125,7 @@ final _Measurer sMeasurer = _Measurer();
 The solver is ported, so tests that call solver APIs (`getSystem()`, `addToSolver(...)`,
 `updateFromSolver(...)`, `resetSolverVariables(...)`, `getCache()`, `minimize()`) or use
 circular positioning (`connectCircularConstraint`) are ported and run like any other.
-`../UPSTREAM.md` lists four ported tests that still leave those solver runs out.
+`../UPSTREAM.md` lists three ported tests that still leave those solver runs out.
 
 - Keep every run when a test repeats a layout under several optimization levels
   (`OPTIMIZATION_NONE`, `OPTIMIZATION_STANDARD`, `OPTIMIZATION_GRAPH`, ...): port each

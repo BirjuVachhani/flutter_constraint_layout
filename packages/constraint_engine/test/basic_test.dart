@@ -760,7 +760,31 @@ void main() {
     });
 
     test('testSimpleCircleConstraint', () {
-      // requires connectCircularConstraint (Cassowary solver, phase 2)
+      final root = ConstraintWidgetContainer.rect(0, 0, 600, 800);
+      root.setMeasurer(sMeasurer);
+      final a = ConstraintWidget.size(100, 30);
+      final b = ConstraintWidget.size(100, 30);
+
+      root.setDebugName('root');
+      a.setDebugName('A');
+      b.setDebugName('B');
+
+      root.add(a);
+      root.add(b);
+
+      a.setHorizontalDimensionBehaviour(DimensionBehaviour.fixed);
+      a.setVerticalDimensionBehaviour(DimensionBehaviour.fixed);
+      b.setHorizontalDimensionBehaviour(DimensionBehaviour.fixed);
+      b.setVerticalDimensionBehaviour(DimensionBehaviour.fixed);
+
+      a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top, 8);
+      a.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left, 8);
+      b.connectCircularConstraint(a, 30, 50);
+
+      root.setOptimizationLevel(Optimizer.OPTIMIZATION_GRAPH);
+      root.measure(Optimizer.OPTIMIZATION_GRAPH, BasicMeasure.EXACTLY, 600,
+          BasicMeasure.EXACTLY, 800, 0, 0, 0, 0);
+      // Upstream prints A and B here without asserting.
     });
 
     test('testRatioChainConstraint', () {

@@ -153,10 +153,8 @@ conversion.
 That is 265 tests: every active upstream test in those files, plus
 `NestedLayout.testNestedLayout`, which is disabled upstream and skipped here.
 
-Four of those tests are ported only in part, without the solver runs upstream
-makes. `BasicTest.testSimpleCircleConstraint` is an empty placeholder;
-upstream lays out a circular constraint and prints the result without
-asserting. In `WidgetsPositioningTest`, `testBaselinePositioning` keeps its
+Three of those tests are ported only in part, without the solver runs upstream
+makes. In `WidgetsPositioningTest`, `testBaselinePositioning` keeps its
 `layout()` assertion but drops the repeat of it after solving the widgets in
 every order (`runTestOnWidgets`), `testWidgetPositionMove` asserts its widths
 without solving at all, and `testWidgetInfeasiblePosition`, whose assertions
