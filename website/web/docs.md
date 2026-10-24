@@ -145,18 +145,17 @@ Every link constructor except `.around` takes a `margin`, and a `goneMargin` use
 
 ### Right-to-left
 
-`start` and `end` follow the text direction: the layout's `textDirection`, otherwise the ambient `Directionality`. A layout written with them mirrors in right-to-left text, but these do not:
+`start` and `end` follow the text direction: the layout's `textDirection`, otherwise the ambient `Directionality`. A layout written with them mirrors in right-to-left text, and, following Android's rules, so do these:
 
-- `horizontalBias` is measured from the left in both directions (0 is the left end, 1 the right end), including a packed chain's bias.
-- Guidelines are placed from the left (`begin`, `percent`) or the right (`end`).
-- A barrier's `margin` always moves it right or down.
-- `ConstraintGrid` fills its cells from the left.
+- The horizontal bias of a child with a `start` or `end` link: it becomes `1 - horizontalBias`, so it is measured from the start, a packed chain's bias included. A child linked only with `left` and `right` keeps its bias measured from the left.
+- Vertical guidelines: `begin` and `percent` are measured from the right and `end` from the left. Horizontal guidelines do not change.
+- `ConstraintFlow`: its rows start at the right edge, and `contentHorizontalBias` is measured from the start.
 
-`ConstraintFlow` does mirror: in right-to-left text its rows start at the right edge, and `contentHorizontalBias` is measured from the start. For a layout that mirrors fully, pick bias and guideline values from the text direction, for example `horizontalBias: isRtl ? 0.8 : 0.2`.
+Two things do not mirror: a barrier's `margin` always moves it right or down, and `ConstraintGrid` fills its cells from the left.
 
 ## Centering & bias
 
-Give a widget **both** opposing anchors on an axis (start and end, or top and bottom) and it centers between them. Add `horizontalBias` or `verticalBias` to slide it along that axis: 0 hugs the left or top, 1 hugs the right or bottom, and the default 0.5 is dead center. `horizontalBias` is measured from the left in both text directions (see **Anchors & links**).
+Give a widget **both** opposing anchors on an axis (start and end, or top and bottom) and it centers between them. Add `horizontalBias` or `verticalBias` to slide it along that axis: 0 hugs the left or top, 1 hugs the right or bottom, and the default 0.5 is dead center. In right-to-left text the horizontal bias of a child linked with `start` or `end` mirrors, as on Android, so 0 hugs the right (see **Anchors & links**).
 
 ```dart
 ConstraintLayout(
@@ -471,7 +470,7 @@ ConstraintLayout(
 - **`.chain`**: wraps into as many runs as it needs, filling each run before starting the next and laying each one out as its own chain, the closest match to `Wrap`.
 - **`.aligned`**: wraps and also lines the runs up column-for-column, so the result reads as a grid.
 
-Set `horizontalGap` and `verticalGap` for the spacing between items and runs, and `horizontalChainStyle` / `contentHorizontalBias` to control how each run distributes its slack, as a chain's style and bias do. Unlike a chain's bias, `contentHorizontalBias` is measured from the start, so it mirrors in right-to-left text.
+Set `horizontalGap` and `verticalGap` for the spacing between items and runs, and `horizontalChainStyle` / `contentHorizontalBias` to control how each run distributes its slack, as a chain's style and bias do. `contentHorizontalBias` is always measured from the start, so it mirrors in right-to-left text.
 
 ## Grid
 
@@ -581,12 +580,12 @@ The engine model is built once and kept alive across frames, then invalidated in
 
 - **fast**: nothing layout-affecting changed, the incoming constraints are the same, and no child's size or position depends on its content: no `.wrapContent` or `.constrainedWrap` size, no `.matchConstraint`, `.spread`, or `.percent` size missing one of its two links, and no baseline alignment. The engine is skipped and the previous geometry reused.
 - **in-place**: a link, margin, bias, size, ratio, chain style, weight, or visibility changed, so the model is updated in place and re-resolved without a rebuild. New incoming constraints, and any pass the fast tier does not cover, also re-resolve the existing model.
-- **rebuild**: the child set or a helper changed structurally, so the model is rebuilt from scratch.
+- **rebuild**: the child set or a helper changed structurally, or the text direction changed, so the model is rebuilt from scratch.
 
 The graph path resolves a 1200-widget screen in well under a millisecond; the solver is heavier and reserved for the layouts that genuinely need it.
 
 ## Relation to Android
 
-The engine is a line-faithful port of `constraintlayout-core`, pinned to a specific upstream revision. Its solver and widget classes are verified at parity with the released core 1.1.1 (only the Grid helper still follows the pinned revision), and nearly all of upstream's core test suite is ported and green, so a given layout resolves to the same result Android produces. The exception is right-to-left text: Android mirrors the horizontal bias of views constrained with start and end, and by default the position of vertical guidelines, while this port mirrors neither (see **Anchors & links**).
+The engine is a line-faithful port of `constraintlayout-core`, pinned to a specific upstream revision. Its solver and widget classes are verified at parity with the released core 1.1.1 (only the Grid helper still follows the pinned revision), and nearly all of upstream's core test suite is ported and green, so a given layout resolves to the same result Android produces. Right-to-left text follows Android's rules too: the horizontal bias of a child linked with start or end mirrors, and so does the position of a vertical guideline (see **Anchors & links**).
 
 The one structural departure is the entry path: Android runs the Cassowary solver by default with an optional graph optimization, whereas this port tries the dependency graph first and falls back to the solver (see **How the engine works**).

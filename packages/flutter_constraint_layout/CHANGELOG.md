@@ -6,7 +6,9 @@ Initial release.
   `Constrained` widgets identified by `Symbol` ids.
 - Links from any edge (`left`, `right`, `start`, `end`, `top`, `bottom`,
   `baseline`) to the parent or a sibling, with `margin` and `goneMargin`.
-  `start` and `end` follow the ambient text direction.
+  `start` and `end` follow the ambient text direction, and in right-to-left
+  layouts the horizontal bias of a child linked with them and the position of
+  vertical guidelines mirror, as on Android.
 - Dimensions: `.fixed`, `.wrapContent`, `.matchParent`, `.matchConstraint`,
   `.percent`, `.spread` (bounded), and `.constrainedWrap`, plus `aspectRatio`.
 - Centering and bias, chains (`spread`, `spreadInside`, `packed`) with

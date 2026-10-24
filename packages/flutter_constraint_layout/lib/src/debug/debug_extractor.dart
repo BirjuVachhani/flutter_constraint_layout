@@ -205,9 +205,12 @@ class _SceneExtractor {
     }
 
     final bothConnected = startAnchor.isConnected() && endAnchor.isConnected();
+    // The engine's bias, not the parent data's: a right-to-left layout
+    // mirrors the horizontal bias of a start/end-linked child, and a flow
+    // sets the bias of the chain heads it creates.
     final bias = horizontal
-        ? parentData[i].horizontalBias
-        : parentData[i].verticalBias;
+        ? w.getHorizontalBiasPercent()
+        : w.getVerticalBiasPercent();
     final biased = bothConnected && (bias - 0.5).abs() > 0.01;
 
     for (final (anchor, isChain, isStartSide) in [

@@ -42,7 +42,9 @@ class ConstraintParentData extends ContainerBoxParentData<RenderBox> {
   /// Centers this widget on a circle around a target's center.
   CircularLink? circle;
 
-  /// Horizontal position between opposing links: 0.0 = start, 1.0 = end.
+  /// Horizontal position between opposing links as given: 0.0 = left,
+  /// 1.0 = right. A right-to-left layout applies `1 - horizontalBias` to a
+  /// child with a [start] or [end] link.
   double horizontalBias = 0.5;
 
   /// Vertical position between opposing links: 0.0 = top, 1.0 = bottom.
@@ -79,13 +81,17 @@ class ConstraintParentData extends ContainerBoxParentData<RenderBox> {
   /// widgets horizontally).
   Axis guidelineAxis = Axis.vertical;
 
-  /// Guideline: distance from the left/top edge, or null.
+  /// Guideline: distance from the left/top edge, or null. A vertical
+  /// guideline in a right-to-left layout measures it from the right.
   double? guidelineBegin;
 
-  /// Guideline: distance from the right/bottom edge, or null.
+  /// Guideline: distance from the right/bottom edge, or null. A vertical
+  /// guideline in a right-to-left layout measures it from the left.
   double? guidelineEnd;
 
   /// Guideline: fraction of the parent size from the left/top edge, or null.
+  /// A vertical guideline in a right-to-left layout measures it from the
+  /// right.
   double? guidelinePercent;
 
   /// Barrier: which edge of the referenced widgets to track.
@@ -94,7 +100,8 @@ class ConstraintParentData extends ContainerBoxParentData<RenderBox> {
   /// Barrier: ids of the widgets whose edges the barrier tracks.
   List<Symbol> barrierReferenced = const <Symbol>[];
 
-  /// Barrier: offset in logical pixels added past the tracked edge.
+  /// Barrier: offset in logical pixels added to the barrier's position (a
+  /// positive value moves it right or down).
   double barrierMargin = 0;
 
   /// Barrier: whether gone widgets still contribute their (collapsed)

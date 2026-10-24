@@ -92,7 +92,9 @@ class ConstraintGrid extends ParentDataWidget<ConstraintParentData> {
   /// Positions this grid's bottom edge.
   final VerticalLink? bottom;
 
-  /// Horizontal position of the grid itself between opposing links.
+  /// Horizontal position of the grid itself between opposing links. Mirrored
+  /// in a right-to-left layout when the grid has a [start] or [end] link, as
+  /// `Constrained.horizontalBias` is.
   final double horizontalBias;
 
   /// Vertical position of the grid itself between opposing links.

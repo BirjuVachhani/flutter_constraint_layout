@@ -158,7 +158,9 @@ class RenderConstraintLayout extends RenderBox
   set textDirection(TextDirection value) {
     if (_textDirection == value) return;
     _textDirection = value;
-    // start/end resolution is baked into the engine connections.
+    // start/end resolution is baked into the engine connections, and the
+    // mirrored horizontal bias and vertical guideline positions of a
+    // right-to-left layout into the engine widgets.
     _needsModelRebuild = true;
     markNeedsLayout();
   }
@@ -584,7 +586,14 @@ class RenderConstraintLayout extends RenderBox
         height.percent ?? 1,
       );
     }
-    w.setHorizontalBiasPercent(pd.horizontalBias);
+    // Resolved as Android's LayoutParams.resolveLayoutDirection does: in a
+    // right-to-left layout, a child with any start/end link uses
+    // 1 - horizontalBias, so its bias counts from its start (right) edge. A
+    // child linked only with absolute left/right keeps the bias as given.
+    final mirrorBias = !_ltr && (pd.start != null || pd.end != null);
+    w.setHorizontalBiasPercent(
+      mirrorBias ? 1 - pd.horizontalBias : pd.horizontalBias,
+    );
     w.setVerticalBiasPercent(pd.verticalBias);
     final ratio = pd.aspectRatio;
     if (ratio != null && ratio > 0) {
@@ -740,15 +749,29 @@ class RenderConstraintLayout extends RenderBox
             ? Guideline.horizontal
             : Guideline.vertical,
       );
+      // Resolved as Android's LayoutParams.resolveLayoutDirection does with
+      // guidelineUseRtl at its default (true): in a right-to-left layout a
+      // vertical guideline counts from the right, so percent becomes
+      // 1 - percent and begin and end trade edges. Horizontal guidelines are
+      // unaffected.
+      final mirror = !_ltr && pd.guidelineAxis == Axis.vertical;
       final percent = pd.guidelinePercent;
       final begin = pd.guidelineBegin;
       final end = pd.guidelineEnd;
       if (percent != null) {
-        w.setGuidePercent(percent);
+        w.setGuidePercent(mirror ? 1 - percent : percent);
       } else if (begin != null) {
-        w.setGuideBegin(begin.round());
+        if (mirror) {
+          w.setGuideEnd(begin.round());
+        } else {
+          w.setGuideBegin(begin.round());
+        }
       } else if (end != null) {
-        w.setGuideEnd(end.round());
+        if (mirror) {
+          w.setGuideBegin(end.round());
+        } else {
+          w.setGuideEnd(end.round());
+        }
       }
     } else if (w is Barrier) {
       w.setBarrierType(switch (pd.barrierEdge) {

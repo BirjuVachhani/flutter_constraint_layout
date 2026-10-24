@@ -1,6 +1,7 @@
 // Feature tests for the adapter surface that exposes engine capabilities:
 // percent / bounded / constrained-wrap dimensions, chain styles and weights,
-// visibility modes, circular positioning, guidelines, and barriers.
+// visibility modes, circular positioning, guidelines, barriers, and
+// right-to-left mirroring.
 //
 // The default flutter_test surface is 800x600; hosts pin that size explicitly
 // so golden positions are stable.
@@ -582,6 +583,251 @@ void main() {
       // longer arranged by the flow.
       await tester.pumpWidget(build(const [#a, #b]));
       expect(rectOf(tester, #b).top, rectOf(tester, #a).top);
+    });
+  });
+
+  // Android's ConstraintLayout.LayoutParams.resolveLayoutDirection mirrors two
+  // values in a right-to-left layout: the horizontal bias of a child with any
+  // start/end link, and the position of a vertical guideline.
+  group('right-to-left', () {
+    const rtl = TextDirection.rtl;
+
+    // 700 of free width around each child, and 500 of free height around
+    // #startEnd.
+    List<Widget> biased() => [
+          Constrained(
+            id: #startEnd,
+            start: .startOf(parent),
+            end: .endOf(parent),
+            top: .topOf(parent),
+            bottom: .bottomOf(parent),
+            width: .fixed(100),
+            height: .fixed(100),
+            horizontalBias: 0.25,
+            verticalBias: 0.25,
+            child: box(#startEnd),
+          ),
+          Constrained(
+            id: #leftRight,
+            left: .leftOf(parent),
+            right: .rightOf(parent),
+            top: .topOf(parent),
+            width: .fixed(100),
+            height: .fixed(50),
+            horizontalBias: 0.25,
+            child: box(#leftRight),
+          ),
+        ];
+
+    testWidgets('a start/end-linked child measures its bias from the start',
+        (tester) async {
+      await tester.pumpWidget(host(biased(), direction: rtl));
+      // A quarter of the free width sits on the right, the start side.
+      expect(rectOf(tester, #startEnd).left, 525);
+      // Vertical bias never mirrors.
+      expect(rectOf(tester, #startEnd).top, 125);
+    });
+
+    testWidgets('a child linked only with left/right keeps its bias',
+        (tester) async {
+      await tester.pumpWidget(host(biased(), direction: rtl));
+      expect(rectOf(tester, #leftRight).left, 175);
+    });
+
+    testWidgets('a left-to-right layout applies every bias as given',
+        (tester) async {
+      await tester.pumpWidget(host(biased()));
+      expect(rectOf(tester, #startEnd).left, 175);
+      expect(rectOf(tester, #startEnd).top, 125);
+      expect(rectOf(tester, #leftRight).left, 175);
+    });
+
+    testWidgets('a packed start/end chain measures its bias from the start',
+        (tester) async {
+      await tester.pumpWidget(host([
+        Constrained(
+          id: #a,
+          start: .startOf(parent),
+          end: .startOf(#b),
+          top: .topOf(parent),
+          width: .fixed(100),
+          height: .fixed(50),
+          horizontalChainStyle: ChainStyle.packed,
+          horizontalBias: 0,
+          child: box(#a),
+        ),
+        Constrained(
+          id: #b,
+          start: .endOf(#a),
+          end: .endOf(parent),
+          top: .topOf(parent),
+          width: .fixed(100),
+          height: .fixed(50),
+          child: box(#b),
+        ),
+      ], direction: rtl));
+      // The head, #a, is the start-most member: against the right edge.
+      expect(rectOf(tester, #a).left, 700);
+      expect(rectOf(tester, #b).left, 600);
+    });
+
+    // Each marker's absolute left link puts its left edge on a vertical
+    // guideline, and its top link its top edge on a horizontal one.
+    Widget marker(Symbol id, Symbol vertical, Symbol horizontal) =>
+        Constrained(
+          id: id,
+          left: .leftOf(vertical),
+          top: .topOf(horizontal),
+          width: .fixed(10),
+          height: .fixed(10),
+          child: box(id),
+        );
+
+    List<Widget> guided() => [
+          const Guideline.vertical(id: #vPercent, percent: 0.25),
+          const Guideline.vertical(id: #vBegin, begin: 100),
+          const Guideline.vertical(id: #vEnd, end: 150),
+          const Guideline.horizontal(id: #hPercent, percent: 0.25),
+          const Guideline.horizontal(id: #hBegin, begin: 100),
+          const Guideline.horizontal(id: #hEnd, end: 150),
+          marker(#atPercent, #vPercent, #hPercent),
+          marker(#atBegin, #vBegin, #hBegin),
+          marker(#atEnd, #vEnd, #hEnd),
+        ];
+
+    testWidgets('a vertical guideline mirrors percent, begin, and end',
+        (tester) async {
+      await tester.pumpWidget(host(guided(), direction: rtl));
+      // percent 0.25 lands at 1 - 0.25 of the width from the left, begin 100
+      // at 100 from the right, and end 150 at 150 from the left.
+      expect(rectOf(tester, #atPercent).left, 600);
+      expect(rectOf(tester, #atBegin).left, 700);
+      expect(rectOf(tester, #atEnd).left, 150);
+    });
+
+    testWidgets('a horizontal guideline is the same in both directions',
+        (tester) async {
+      await tester.pumpWidget(host(guided(), direction: rtl));
+      expect(rectOf(tester, #atPercent).top, 150);
+      expect(rectOf(tester, #atBegin).top, 100);
+      expect(rectOf(tester, #atEnd).top, 450);
+    });
+
+    testWidgets('a left-to-right layout places guidelines as given',
+        (tester) async {
+      await tester.pumpWidget(host(guided()));
+      expect(rectOf(tester, #atPercent).topLeft, const Offset(200, 150));
+      expect(rectOf(tester, #atBegin).topLeft, const Offset(100, 100));
+      expect(rectOf(tester, #atEnd).topLeft, const Offset(650, 450));
+    });
+
+    testWidgets('a flow linked with start/end mirrors its own bias',
+        (tester) async {
+      await tester.pumpWidget(host([
+        Constrained(
+          id: #a,
+          width: .fixed(100),
+          height: .fixed(40),
+          child: box(#a),
+        ),
+        ConstraintFlow(
+          id: #flow,
+          referenced: const [#a],
+          start: .startOf(parent),
+          end: .endOf(parent),
+          top: .topOf(parent),
+          width: .fixed(300),
+          horizontalBias: 0.25,
+        ),
+      ], direction: rtl));
+      final ro = tester.renderObject<RenderConstraintLayout>(
+          find.byType(ConstraintLayout));
+      final flow = tester.renderObject<RenderBox>(find.descendant(
+          of: find.byType(ConstraintFlow), matching: find.byType(SizedBox)));
+      // Like any start/end-linked child: a quarter of the 500 of free width
+      // on the start side.
+      expect(flow.localToGlobal(Offset.zero, ancestor: ro).dx, 375);
+    });
+
+    // What the docs say does not change with the direction: a flow mirrors its
+    // own arrangement, a grid does not, and a barrier margin moves it right.
+    testWidgets('a flow starts its rows at the right edge', (tester) async {
+      await tester.pumpWidget(host([
+        for (final id in const [#a, #b, #c])
+          Constrained(
+            id: id,
+            width: .fixed(100),
+            height: .fixed(40),
+            child: box(id),
+          ),
+        ConstraintFlow(
+          id: #flow,
+          referenced: const [#a, #b, #c],
+          start: .startOf(parent),
+          end: .endOf(parent),
+          top: .topOf(parent),
+          width: .matchConstraint,
+          horizontalChainStyle: ChainStyle.packed,
+          contentHorizontalBias: 0,
+        ),
+      ], direction: rtl));
+      // contentHorizontalBias 0 is the start: the row packs against the right.
+      expect(rectOf(tester, #a).left, 700);
+      expect(rectOf(tester, #b).left, 600);
+      expect(rectOf(tester, #c).left, 500);
+    });
+
+    testWidgets('a grid fills its cells from the left', (tester) async {
+      await tester.pumpWidget(host([
+        for (final id in const [#a, #b])
+          Constrained(
+            id: id,
+            width: .matchConstraint,
+            height: .matchConstraint,
+            child: box(id),
+          ),
+        ConstraintGrid(
+          id: #grid,
+          referenced: const [#a, #b],
+          rows: 1,
+          columns: 2,
+          start: .startOf(parent),
+          end: .endOf(parent),
+          top: .topOf(parent),
+          bottom: .bottomOf(parent),
+        ),
+      ], direction: rtl));
+      expect(rectOf(tester, #a), const Rect.fromLTWH(0, 0, 400, 600));
+      expect(rectOf(tester, #b), const Rect.fromLTWH(400, 0, 400, 600));
+    });
+
+    testWidgets('a barrier margin moves it right', (tester) async {
+      await tester.pumpWidget(host([
+        Constrained(
+          id: #label,
+          start: .startOf(parent, margin: 100),
+          top: .topOf(parent),
+          width: .fixed(100),
+          height: .fixed(30),
+          child: box(#label),
+        ),
+        // .end tracks left edges in right-to-left text: #label's is at 600.
+        const Barrier(
+          id: #labelEnd,
+          edge: .end,
+          referenced: [#label],
+          margin: 10,
+        ),
+        Constrained(
+          id: #marker,
+          left: .leftOf(#labelEnd),
+          top: .bottomOf(#label),
+          width: .fixed(10),
+          height: .fixed(10),
+          child: box(#marker),
+        ),
+      ], direction: rtl));
+      expect(rectOf(tester, #marker).left, 610);
     });
   });
 }

@@ -388,7 +388,7 @@ ConstraintLayout(
       end: .endOf(parent),
       top: .topOf(parent),
       bottom: .bottomOf(parent),
-      horizontalBias: 0.25, // a quarter of the free width on its left
+      horizontalBias: 0.25, // a quarter of the free width on its start side
       verticalBias: 0.9, // near the bottom
       child: const Chip(label: Text('Biased')),
     ),
@@ -396,8 +396,10 @@ ConstraintLayout(
 )
 ```
 
-`horizontalBias` is measured from the left in both text directions; see
-[right-to-left](#right-to-left).
+In a right-to-left layout, the horizontal bias of a child linked with `start`
+or `end` is mirrored, as on Android: 0 then puts it against the right link,
+which is its start. A child linked only with `left` and `right` keeps its bias
+measured from the left. See [right-to-left](#right-to-left).
 
 ### Dimensions
 
@@ -538,7 +540,9 @@ is ignored.
 - **`.packed`**: the members sit together, and the head's bias moves the group
   along the axis. The default 0.5 centers it, like `MainAxisAlignment.center`;
   0 or 1 puts it against the left or right link (the top or bottom link in a
-  vertical chain).
+  vertical chain). In right-to-left text, a head linked with `start` or `end`
+  has its bias mirrored like any other child's, so 0 puts the group against
+  the right link, the chain's start.
 
 Members sized `.matchConstraint` along the chain share the leftover space in
 proportion to their `horizontalWeight` or `verticalWeight`, like `flex` on
@@ -605,7 +609,11 @@ ConstraintLayout(
 )
 ```
 
-Guideline positions are absolute: they do not mirror in right-to-left layouts.
+A vertical guideline mirrors in right-to-left layouts, as on Android: `begin`
+and `percent` are then measured from the right and `end` from the left. The
+layout above therefore mirrors as a whole: in right-to-left text the sidebar
+takes the right 30% of the width. Horizontal guidelines are the same in both
+directions.
 
 ### Barriers
 
@@ -902,22 +910,27 @@ ConstraintLayout(
 )
 ```
 
+Following Android's rules, two more values mirror in right-to-left text:
+
+- **Horizontal bias** of a child with a `start` or `end` link: the layout uses
+  `1 - horizontalBias`, so the bias is measured from the start and 0 puts the
+  child against its right link. That includes the bias of a packed chain whose
+  head is linked with `start` or `end`. A child linked only with `left` and
+  `right` keeps its bias measured from the left.
+- **Vertical guidelines**: `begin` is measured from the right edge, `end` from
+  the left edge, and `percent` from the right (the line sits at `1 - percent`
+  of the width from the left). Horizontal guidelines do not change.
+
+`ConstraintFlow` mirrors too: in right-to-left text its rows start at the
+right edge, and `contentHorizontalBias` is measured from the start. A chain's
+head is its start-most member in either direction.
+
 Some things do not mirror:
 
-- `horizontalBias` is always measured from the left (0 is the left end, 1 the
-  right end), including the bias of a packed chain.
-- Guidelines are always placed from the left (`begin`, `percent`) or the right
-  (`end`).
 - A barrier's `margin` always moves it right or down (see
   [barriers](#barriers)).
 - `ConstraintGrid` fills its cells from the left in both directions (upstream's
   grid does not handle right-to-left either).
-
-For a mirrored layout, choose bias and guideline values from the text
-direction, for example `horizontalBias: isRtl ? 0.8 : 0.2`. `ConstraintFlow`
-does mirror: in right-to-left text its rows start at the right edge, and
-`contentHorizontalBias` is measured from the start. A chain's head is its
-start-most member in either direction.
 
 ## A complete example
 
@@ -1271,9 +1284,10 @@ Changing `zIndex` or a debug flag only repaints.
   a logical pixel away from where fractional arithmetic would put it.
 - **A `goneMargin` of 0 means "not set".** When the target is gone, the
   regular `margin` stays in effect; you cannot replace it with exactly 0.
-- **Right-to-left.** Android mirrors the horizontal bias of views constrained
-  with start and end, and (by default) the position of vertical guidelines. Here
-  neither mirrors; see [right-to-left](#right-to-left).
+- **No `guidelineUseRtl`.** A vertical guideline always mirrors in a
+  right-to-left layout, which is Android's default; there is no equivalent of
+  Android's `guidelineUseRtl="false"` to keep one in place. See
+  [right-to-left](#right-to-left).
 - **Id mistakes.** Unknown ids throw in debug builds and are skipped in release
   builds; duplicate ids are not reported. See
   [unknown and duplicate ids](#unknown-and-duplicate-ids).

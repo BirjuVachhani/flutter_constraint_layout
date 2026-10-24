@@ -768,6 +768,76 @@ void main() {
       expect(geometryOf(tester)[1][0], 800.0 - 24.0 - 60.0);
       await expectMatchesFresh(tester, children, dir: TextDirection.rtl);
     });
+
+    testWidgets('text direction flip re-applies mirrored bias and guidelines',
+        (tester) async {
+      List<Widget> children() => [
+            const Guideline.vertical(id: #g, percent: 0.25),
+            Constrained(
+              id: #a,
+              start: .startOf(parent),
+              end: .endOf(parent),
+              top: .topOf(parent),
+              width: .fixed(100),
+              height: .fixed(20),
+              horizontalBias: 0.25,
+              child: const SizedBox(),
+            ),
+            Constrained(
+              id: #b,
+              left: .leftOf(#g),
+              top: .bottomOf(#a),
+              width: .fixed(60),
+              height: .fixed(20),
+              child: const SizedBox(),
+            ),
+          ];
+      // Both direction sources: the ambient Directionality, and the layout's
+      // own textDirection, which overrides it.
+      Widget build(TextDirection ambient, {TextDirection? own}) =>
+          Directionality(
+            textDirection: ambient,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 800,
+                height: 600,
+                child: ConstraintLayout(
+                  textDirection: own,
+                  children: children(),
+                ),
+              ),
+            ),
+          );
+      // #a's x (bias 0.25 of 700 free) and #b's x (on the guideline).
+      List<double> xs() {
+        final geometry = geometryOf(tester);
+        return [geometry[2][0], geometry[3][0]];
+      }
+      const ltrXs = [175.0, 200.0];
+      const rtlXs = [525.0, 600.0];
+
+      await tester.pumpWidget(build(TextDirection.ltr));
+      final ro = layoutOf(tester);
+      expect(xs(), ltrXs);
+
+      await tester.pumpWidget(build(TextDirection.rtl));
+      expect(ro.debugModelBuilds, 2,
+          reason: 'an ambient direction change rebuilds the model');
+      expect(xs(), rtlXs);
+
+      await tester.pumpWidget(
+          build(TextDirection.rtl, own: TextDirection.ltr));
+      expect(ro.debugModelBuilds, 3,
+          reason: 'the layout\'s own direction overrides the ambient one');
+      expect(xs(), ltrXs);
+
+      await tester.pumpWidget(
+          build(TextDirection.ltr, own: TextDirection.rtl));
+      expect(ro.debugModelBuilds, 4);
+      expect(xs(), rtlXs);
+      await expectMatchesFresh(tester, children, dir: TextDirection.rtl);
+    });
   });
 
   group('content changes', () {

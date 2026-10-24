@@ -78,9 +78,10 @@ class Constrained extends ParentDataWidget<ConstraintParentData> {
 
   /// Horizontal position between opposing links: 0.0 = left, 1.0 = right.
   ///
-  /// Measured from the left in both text directions: a right-to-left layout
-  /// does not mirror it (Android mirrors the bias of start/end-constrained
-  /// views).
+  /// As on Android, a right-to-left layout mirrors the bias of a child with a
+  /// [start] or [end] link: it uses `1 - horizontalBias`, so the bias is
+  /// measured from the start and 0.0 is the right. A child linked only with
+  /// [left] and [right] keeps the bias as given in both text directions.
   final double horizontalBias;
 
   /// Vertical position between opposing links: 0.0 = top, 1.0 = bottom.

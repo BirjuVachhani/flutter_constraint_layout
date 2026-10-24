@@ -10,9 +10,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Widget host(List<Widget> children,
-        {double width = 800, double height = 600}) =>
+        {double width = 800,
+        double height = 600,
+        TextDirection direction = TextDirection.ltr}) =>
     Directionality(
-      textDirection: TextDirection.ltr,
+      textDirection: direction,
       child: Align(
         alignment: Alignment.topLeft,
         child: SizedBox(
@@ -181,6 +183,39 @@ void main() {
       expect(dashed, hasLength(1));
       expect(dashed.single.sourceEdge, DebugEdge.right,
           reason: 'bias 0.2 leaves the free space on the right side');
+    });
+
+    testWidgets('in right-to-left text the dashed leg follows the mirrored '
+        'bias', (tester) async {
+      await tester.pumpWidget(host([
+        Constrained(
+          id: #a,
+          start: .startOf(parent),
+          end: .startOf(#b),
+          top: .topOf(parent),
+          width: .fixed(100),
+          height: .fixed(50),
+          horizontalBias: 0.2,
+          child: box(#a),
+        ),
+        Constrained(
+          id: #b,
+          end: .endOf(parent),
+          top: .topOf(parent),
+          width: .fixed(100),
+          height: .fixed(50),
+          child: box(#b),
+        ),
+      ], direction: TextDirection.rtl));
+      final dashed = sceneOf(tester)
+          .connections
+          .where((c) => c.type == DebugConnectionType.spring && c.dashed)
+          .toList();
+      expect(dashed, hasLength(1));
+      // Mirrored, bias 0.2 counts from the start (right) edge, so the free
+      // space is on the left.
+      expect(dashed.single.sourceEdge, DebugEdge.left,
+          reason: 'bias 0.2 from the start leaves the free space on the left');
     });
 
     testWidgets('centering on one target collapses to a single center pair',

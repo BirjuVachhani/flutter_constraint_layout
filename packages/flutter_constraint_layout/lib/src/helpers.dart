@@ -11,9 +11,10 @@ import 'types.dart';
 ///
 /// A *vertical* guideline is a vertical line: siblings anchor their
 /// horizontal edges to it. Exactly one of `begin`, `end`, or `percent` must
-/// be given. `begin`/`end` are absolute: measured from the left/right or
-/// top/bottom edge, and not mirrored in a right-to-left layout (Android mirrors
-/// vertical guidelines by default).
+/// be given. As on Android, a vertical guideline mirrors in a right-to-left
+/// layout: `begin` and `percent` are then measured from the right edge and
+/// `end` from the left. A horizontal guideline is placed the same way in both
+/// text directions.
 ///
 /// ```dart
 /// Guideline.vertical(id: #middle, percent: 0.5),
@@ -21,7 +22,9 @@ import 'types.dart';
 /// ```
 class Guideline extends ParentDataWidget<ConstraintParentData> {
   /// A vertical line at [begin] from the left, [end] from the right, or
-  /// [percent] of the layout's width.
+  /// [percent] of the layout's width from the left. In a right-to-left layout
+  /// the edges swap: [begin] and [percent] measure from the right and [end]
+  /// from the left.
   const Guideline.vertical({
     required this.id,
     super.key,
@@ -63,14 +66,18 @@ class Guideline extends ParentDataWidget<ConstraintParentData> {
   final Axis axis;
 
   /// Distance in logical pixels from the left (vertical) or top (horizontal)
-  /// edge.
+  /// edge. A vertical guideline in a right-to-left layout measures it from
+  /// the right.
   final double? begin;
 
   /// Distance in logical pixels from the right (vertical) or bottom
-  /// (horizontal) edge.
+  /// (horizontal) edge. A vertical guideline in a right-to-left layout
+  /// measures it from the left.
   final double? end;
 
-  /// Position as a fraction (0..1) of the layout's size on the cross axis.
+  /// Position as a fraction (0..1) of the layout's size on the cross axis,
+  /// from the left (vertical) or top (horizontal) edge. A vertical guideline
+  /// in a right-to-left layout measures it from the right.
   final double? percent;
 
   @override
@@ -147,7 +154,11 @@ class Barrier extends ParentDataWidget<ConstraintParentData> {
   /// Ids of the widgets whose edges the barrier tracks.
   final List<Symbol> referenced;
 
-  /// Offset in logical pixels added past the tracked edge.
+  /// Offset in logical pixels added to the barrier's position, so a positive
+  /// value moves it right or down in both text directions: past the tracked
+  /// edge of a right or bottom barrier, back over the referenced widgets for
+  /// a left or top one (`.start` in left-to-right text and `.end` in
+  /// right-to-left text track left edges).
   final double margin;
 
   /// Whether gone widgets still contribute their (collapsed) position.

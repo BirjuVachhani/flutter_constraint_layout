@@ -702,8 +702,11 @@ Algorithm:
        left/top anchor), with `centerDashedLine` = the two anchor points.
      - Spring test: opposite anchor connected to a DIFFERENT target: emit
        `spring` for this side. Set `dashed: true` on the side with more free
-       space when the axis bias differs from 0.5 by > 0.01 (bias from
-       `parentData[i].horizontalBias/verticalBias`).
+       space when the axis bias differs from 0.5 by > 0.01 (bias from the
+       engine widget, `getHorizontalBiasPercent()/getVerticalBiasPercent()`,
+       never from parent data: the adapter mirrors a start/end-linked child's
+       horizontal bias in right-to-left layouts, and a flow sets its chain
+       heads' bias).
      - Baseline anchors: type `baseline`.
      - Else `normal`; if the endpoints end up within 4 px, downgrade to
        `adjacent`.
@@ -1032,8 +1035,8 @@ class DebugOptions extends InheritedWidget {
   in Phase 5 proves it.
 - Never read `mHorizontalChainsArray`/`ChainHead` (empty on the graph path);
   chain detection is topology-derived only.
-- Read engine anchors, never parent-data `start`/`end` links (RTL already
-  resolved).
+- Read engine anchors and engine bias, never parent-data `start`/`end` links
+  or bias (RTL already resolved).
 - `context.canvas` must be read after the `paintChild` loop (getter re-acquires
   the canvas after compositing).
 - Dispose every `TextPainter` created during painting or `flutter test` leak
