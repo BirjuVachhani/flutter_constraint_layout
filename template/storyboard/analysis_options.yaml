@@ -1,5 +1,13 @@
 include: package:flutter_lints/flutter.yaml
 
+# The Flutter tool inserts this block into an app's options file the first time
+# it runs there if it is missing, so it is checked in to keep working trees
+# clean. Generated output and the web shell are not Dart sources to analyze.
+analyzer:
+  exclude:
+    - build/**
+    - web/**
+
 linter:
   rules:
     - prefer_single_quotes
