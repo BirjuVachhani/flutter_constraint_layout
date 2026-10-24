@@ -74,6 +74,13 @@ jobs:
         working-directory: website
         run: flutter test
 
+      - name: Build website (WASM)
+        # The compile the deploy runs, so a change that breaks the dart2wasm or
+        # dart2js build (the web-only conditional imports never compile under
+        # flutter test) fails here, before it reaches main.
+        working-directory: website
+        run: flutter build web --wasm --base-href "/"
+
   lints:
     name: Lints plugin
     runs-on: ubuntu-latest
@@ -96,7 +103,8 @@ jobs:
         run: dart pub get
 
       - name: Analyze
-        run: dart analyze
+        # --fatal-infos, as everywhere else in this workflow.
+        run: dart analyze --fatal-infos
 
       - name: Test
         run: dart test

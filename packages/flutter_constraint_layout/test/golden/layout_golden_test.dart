@@ -9,8 +9,10 @@
 // Every child is a solid swatch, so the image is the layout. Bootstrap or
 // refresh with: flutter test --update-goldens test/golden/
 //
-// Goldens are generated on macOS with the Flutter version CI pins (see
-// .github/workflows/test.yml); raster output differs across platforms.
+// Goldens are generated on macOS, where CI runs them (see
+// .github/workflows/test.yml); raster output differs across platforms. CI
+// tracks the latest Flutter stable, so a Flutter upgrade that changes text or
+// raster output means regenerating them.
 
 import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
 import 'package:flutter/material.dart';

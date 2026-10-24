@@ -84,7 +84,7 @@ them has been resolved separately, every import in them is reported as missing.
 Analyze them from their own directories instead:
 
 ```sh
-(cd packages/flutter_constraint_layout_lints && dart analyze)
+(cd packages/flutter_constraint_layout_lints && dart analyze --fatal-infos)
 (cd template && flutter analyze)
 (cd template/storyboard && flutter analyze)
 ```
@@ -176,8 +176,8 @@ resolved unit:
 
 | Job | Runner | Steps |
 | --- | --- | --- |
-| `workspace` | `macos-latest`, for the goldens | `flutter pub get` at the root; `dart analyze --fatal-infos packages/constraint_engine packages/flutter_constraint_layout website`, which also enforces the lint plugin; `dart test` in the engine; `flutter test` in `flutter_constraint_layout` (with the goldens) and in `website` |
-| `lints` | `ubuntu-latest` | `dart pub get`, `dart analyze`, and `dart test` in `packages/flutter_constraint_layout_lints` |
+| `workspace` | `macos-latest`, for the goldens | `flutter pub get` at the root; `dart analyze --fatal-infos packages/constraint_engine packages/flutter_constraint_layout website`, which also enforces the lint plugin; `dart test` in the engine; `flutter test` in `flutter_constraint_layout` (with the goldens) and in `website`; `flutter build web --wasm` of the website, so a broken web compile fails before it reaches `main` |
+| `lints` | `ubuntu-latest` | `dart pub get`, `dart analyze --fatal-infos`, and `dart test` in `packages/flutter_constraint_layout_lints` |
 | `site_kit` | `ubuntu-latest` | `flutter pub get`, `flutter analyze`, and `flutter test` in `template`, then the same in `template/storyboard` |
 
 Every job installs the latest Flutter stable release with no version pin, so a
@@ -227,7 +227,17 @@ at 1.0.0. `website`, `site_kit`, and the storyboard are `publish_to: none`.
 2. Run `dart pub publish --dry-run` in each package being released, fix what it
    reports, and check the file list it prints. Each published package has a
    `.pubignore`, which replaces the directory's `.gitignore` for publishing.
-3. Publish with `dart pub publish` in this order: `constraint_engine` first,
+3. For a first release, check that the name is accepted. pub.dev rejects a new
+   package whose name, with underscores removed and lowercased, matches an
+   existing package's, and the dry run cannot detect this. Compare against
+   `https://pub.dev/api/package-names` (send `Accept-Encoding: gzip`).
+4. Merge the release into `main` and push it. The packages' `repository`,
+   `documentation`, and README links point at `main` and at the live site, and
+   pub.dev checks them when it scores a package.
+5. Wait for the Deploy website workflow to finish, then check that
+   `https://constraints.birju.dev/docs` loads (it is the `documentation:` URL of
+   `flutter_constraint_layout`).
+6. Publish with `dart pub publish` in this order: `constraint_engine` first,
    because `flutter_constraint_layout` depends on it, then
    `flutter_constraint_layout`, then `flutter_constraint_layout_lints`.
 
