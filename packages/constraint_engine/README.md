@@ -440,7 +440,8 @@ The graph declines, and hands the whole layout to the solver, for chains with
 `GONE` or ratio-sized members, chains along a `wrapContent` axis of the
 container, `MATCH_CONSTRAINT_WRAP` widgets, circular constraints, nested
 containers, widgets centered between two anchors along a `wrapContent` axis,
-wrap results whose children overflow the computed bounds, and virtual layouts.
+wrap results whose children overflow the computed bounds, wrap results larger
+than the container's `setMaxWidth` or `setMaxHeight`, and virtual layouts.
 It also hands over any layout it leaves partly unresolved, which currently
 includes every layout that contains a `Barrier`: the graph tracks only the
 barrier's position.

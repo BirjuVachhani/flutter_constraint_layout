@@ -250,7 +250,13 @@ class ConstraintWidgetContainer extends WidgetContainer {
           getHorizontalDimensionBehaviour() == DimensionBehaviour.wrapContent;
       final wrapH =
           getVerticalDimensionBehaviour() == DimensionBehaviour.wrapContent;
-      if (wrapW || wrapH) {
+      // A wrap size above the container's max (setMaxWidth/setMaxHeight)
+      // needs the solver too: upstream caps a wrap-content container at its
+      // max in addToSolver, and the graph's wrap computation ignores the max.
+      if ((wrapW && getWidth() > getMaxWidth()) ||
+          (wrapH && getHeight() > getMaxHeight())) {
+        allResolved = false;
+      } else if (wrapW || wrapH) {
         for (final widget in mChildren) {
           if (widget.getVisibility() == ConstraintWidget.GONE) {
             continue;

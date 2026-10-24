@@ -144,6 +144,110 @@ void main() {
     });
   });
 
+  // The dependency graph resolves these layouts, but its wrap computation
+  // ignores the max. Upstream solves every wrap-content axis, so a wrap size
+  // above the max routes the layout to the solver, which applies the cap.
+  group('graph', () {
+    test('caps a wrap-content root at its max width', () {
+      // (max, expected root width) for content 200 wide.
+      for (final (max, width) in [
+        (150, 150),
+        (199, 199),
+        (200, 200),
+        (500, 200),
+      ]) {
+        final root = ConstraintWidgetContainer.rect(0, 0, 0, 100);
+        final a = ConstraintWidget.size(200, 20);
+        root.setDebugName('root');
+        a.setDebugName('A');
+        root.add(a);
+        a.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
+        a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+        root.setHorizontalDimensionBehaviour(DimensionBehaviour.wrapContent);
+        root.setMaxWidth(max);
+
+        root.layout();
+        expect(root.getWidth(), width, reason: 'max $max');
+        expect(a.getLeft(), 0, reason: 'max $max');
+        expect(a.getWidth(), 200, reason: 'max $max');
+      }
+    });
+
+    test('caps each axis of a wrap-content root on its own', () {
+      // (max width, max height, expected root width, expected root height)
+      // for content 200 x 150; 0 sets no max.
+      for (final (maxW, maxH, width, height) in [
+        (150, 0, 150, 150),
+        (0, 100, 200, 100),
+        (150, 100, 150, 100),
+      ]) {
+        final root = ConstraintWidgetContainer();
+        final a = ConstraintWidget.size(200, 150);
+        root.setDebugName('root');
+        a.setDebugName('A');
+        root.add(a);
+        a.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
+        a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+        root.setHorizontalDimensionBehaviour(DimensionBehaviour.wrapContent);
+        root.setVerticalDimensionBehaviour(DimensionBehaviour.wrapContent);
+        if (maxW > 0) root.setMaxWidth(maxW);
+        if (maxH > 0) root.setMaxHeight(maxH);
+
+        root.layout();
+        expect(root.getWidth(), width, reason: 'max $maxW x $maxH');
+        expect(root.getHeight(), height, reason: 'max $maxW x $maxH');
+      }
+    });
+
+    test('caps a nested wrap-content container at its max width', () {
+      // (max, expected container left, expected container width): B follows
+      // A from the container's left edge, so the content is 150 wide.
+      for (final (max, left, width) in [(0, 425, 150), (120, 440, 120)]) {
+        final root = ConstraintWidgetContainer.rect(0, 0, 1000, 1000);
+        final inner = ConstraintWidgetContainer.rect(0, 0, 0, 100);
+        final a = ConstraintWidget.rect(0, 0, 100, 20);
+        final b = ConstraintWidget.rect(0, 0, 50, 20);
+        root.add(inner);
+        inner.add(a);
+        inner.add(b);
+        inner.connect(
+          ConstraintAnchorType.left,
+          root,
+          ConstraintAnchorType.left,
+        );
+        inner.connect(
+          ConstraintAnchorType.right,
+          root,
+          ConstraintAnchorType.right,
+        );
+        a.connect(ConstraintAnchorType.left, inner, ConstraintAnchorType.left);
+        b.connect(ConstraintAnchorType.left, a, ConstraintAnchorType.right);
+        inner.setHorizontalDimensionBehaviour(DimensionBehaviour.wrapContent);
+        if (max > 0) inner.setMaxWidth(max);
+
+        root.layout();
+        expect(inner.getLeft(), left, reason: 'max $max');
+        expect(inner.getWidth(), width, reason: 'max $max');
+        expect(a.getLeft(), 0, reason: 'max $max');
+        expect(b.getLeft(), 100, reason: 'max $max');
+      }
+    });
+
+    // As upstream, the max bounds only a wrap-content axis.
+    test('leaves a fixed axis alone', () {
+      final root = ConstraintWidgetContainer.rect(0, 0, 400, 100);
+      final a = ConstraintWidget.size(200, 20);
+      root.add(a);
+      a.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
+      a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+      root.setMaxWidth(150);
+
+      root.layout();
+      expect(root.getWidth(), 400);
+      expect(a.getWidth(), 200);
+    });
+  });
+
   group('measure', () {
     // With the graph optimizer on, solverMeasure clamps an exact size to the
     // max before resolving; A stays centered in the clamped width.

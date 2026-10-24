@@ -77,8 +77,11 @@ relevant code, and include:
   resolve. The graph declines (routes to the solver) for: chains with GONE or
   ratio-sized members, chains along a wrap-content axis, MATCH_CONSTRAINT_WRAP
   widgets, circular (center) constraints, nested containers, widgets centered
-  along a wrap axis, and wrap results whose children overflow the computed
-  bounds. It also falls back whenever a run is left unresolved. As in
+  along a wrap axis, wrap results whose children overflow the computed
+  bounds, and wrap results larger than the container's max size
+  (`setMaxWidth`/`setMaxHeight`, which upstream's solver applies to a
+  wrap-content container in `addToSolver` and the graph's wrap computation
+  ignores). It also falls back whenever a run is left unresolved. As in
   upstream, that is always the case for a layout that contains a barrier: the
   barrier's `HelperReferences` run only ever resolves its start, never its end
   or dimension. Pre-graph widget state is snapshotted and restored before the
