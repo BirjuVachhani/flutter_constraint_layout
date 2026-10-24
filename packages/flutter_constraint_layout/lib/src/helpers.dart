@@ -11,8 +11,9 @@ import 'types.dart';
 ///
 /// A *vertical* guideline is a vertical line: siblings anchor their
 /// horizontal edges to it. Exactly one of `begin`, `end`, or `percent` must
-/// be given. `begin`/`end` are absolute (measured from the left/right or
-/// top/bottom edge, not RTL-aware), matching Android.
+/// be given. `begin`/`end` are absolute: measured from the left/right or
+/// top/bottom edge, and not mirrored in a right-to-left layout (Android mirrors
+/// vertical guidelines by default).
 ///
 /// ```dart
 /// Guideline.vertical(id: #middle, percent: 0.5),

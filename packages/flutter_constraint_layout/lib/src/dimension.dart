@@ -62,8 +62,10 @@ sealed class Dimension {
   /// A fraction of the parent `ConstraintLayout`'s size on this axis,
   /// optionally bounded by [min] and [max].
   ///
-  /// [fraction] is between 0 and 1. Requires both opposing anchors on the
-  /// axis. Android `0dp` with `layout_constraintWidth_percent`.
+  /// [fraction] is between 0 and 1. The size comes from the parent, not from
+  /// the links, so a single link is enough to place the child; two opposing
+  /// links place it by the axis bias. Android `0dp` with
+  /// `layout_constraintWidth_percent`.
   const factory Dimension.percent(double fraction,
       {double? min, double? max}) = MatchConstraintDimension.percent;
 }

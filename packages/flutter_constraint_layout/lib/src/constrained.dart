@@ -76,7 +76,11 @@ class Constrained extends ParentDataWidget<ConstraintParentData> {
   /// Centers this widget on a circle around a target's center.
   final CircularLink? circle;
 
-  /// Horizontal position between opposing links: 0.0 = start, 1.0 = end.
+  /// Horizontal position between opposing links: 0.0 = left, 1.0 = right.
+  ///
+  /// Measured from the left in both text directions: a right-to-left layout
+  /// does not mirror it (Android mirrors the bias of start/end-constrained
+  /// views).
   final double horizontalBias;
 
   /// Vertical position between opposing links: 0.0 = top, 1.0 = bottom.
