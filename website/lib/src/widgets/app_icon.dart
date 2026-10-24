@@ -59,7 +59,12 @@ enum DiffIcon {
   refresh,
 
   /// Stacked folders.
-  folders;
+  folders,
+
+  /// A horizontal chain link, for the anchor beside a docs section heading.
+  /// Drawn with strokes rather than a filled path, which renders identically
+  /// to the traced glyphs and keeps the geometry legible.
+  link;
 
   /// Path to this icon's SVG asset. Enum names are camelCase; asset files are
   /// kebab-case (e.g. `fileCode` → `assets/icons/file-code.svg`).

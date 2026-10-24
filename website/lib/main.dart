@@ -6,11 +6,16 @@ import 'package:shiki_flutter/shiki_flutter.dart';
 import 'src/router/app_router.dart';
 import 'src/theme/app_theme.dart';
 import 'src/theme/theme_controller.dart';
+import 'src/util/initial_fragment.dart';
 import 'src/widgets/nav_sheet.dart';
 
 void main() {
   // Clean URLs for the web (/, /docs) instead of hash fragments.
   usePathUrlStrategy();
+  // Grab the `#section` the visitor arrived with before the router can rewrite
+  // the address bar and drop it. The docs page consumes this on mount to jump
+  // to the linked section. See src/util/initial_fragment.dart.
+  captureInitialUrlFragment();
   // The site ships as a release web build, where ConstraintLayout's debug
   // overlays are off by default. Opt in so the per-preview "chains" and
   // "blueprint" toggles on the home page actually render.

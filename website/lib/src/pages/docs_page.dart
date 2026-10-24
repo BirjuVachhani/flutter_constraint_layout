@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,8 @@ import '../data/docs_sections.dart';
 import '../data/examples.dart';
 import '../data/snippets.dart';
 import '../theme/tokens.dart';
+import '../util/initial_fragment.dart';
+import '../util/url_fragment.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/code_block.dart';
 import '../widgets/docs_md_actions.dart';
@@ -22,11 +25,18 @@ const double _kCompactBarHeight = 52;
 
 /// The documentation page: a sticky section sidebar beside a scrolling reading
 /// column. On compact widths the sidebar becomes a contents card at the top.
+///
+/// Every section is deep-linkable. Its URL fragment is derived from the
+/// heading itself (see [slugify]), so `/docs#anchors-links` opens the page
+/// already at "Anchors & links", and the address bar keeps pointing at
+/// whatever the reader is currently on.
 class DocsPage extends StatefulWidget {
   const DocsPage({super.key, this.initialSection});
 
-  /// A section id (e.g. `themes`) to scroll to on first load - set from the
-  /// `?section=` query param so other pages can deep-link into the docs.
+  /// A section to scroll to on first load, from the legacy `?section=` query
+  /// param. The URL fragment is the canonical form and takes precedence; this
+  /// is read straight off the router because a query param, unlike a fragment,
+  /// is part of the location go_router parses.
   final String? initialSection;
 
   @override
@@ -45,21 +55,61 @@ class _DocsPageState extends State<DocsPage> implements DocsSectionNavigator {
   /// scroll target come from this page whenever the popup is opened on docs.
   NavSheetController? _navSheet;
 
+  /// Removes the `hashchange` subscription. Set on web only.
+  void Function()? _stopListeningToFragment;
+
+  /// The last fragment this page wrote, so an echoed change is recognised as
+  /// ours and does not bounce the reader back to where they already are.
+  String? _writtenFragment;
+
+  /// Non-zero while an animated scroll-to is running. The scroll-spy stands
+  /// down for the duration: otherwise it would fire for every section the
+  /// animation sweeps past, flickering the rail and dragging the URL through
+  /// each one on the way.
+  int _programmaticScrolls = 0;
+
+  /// Pending second pass of a deep-link jump. Cancelled on dispose.
+  Timer? _settleTimer;
+
   static const double _anchorGap = AppLayout.navHeight + 24;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onScroll);
-    final target = widget.initialSection;
-    if (target != null) {
-      final index = docsSections.indexWhere((s) => s.id == target);
-      if (index != -1) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _scrollTo(index);
-        });
-      }
+    _stopListeningToFragment = onUrlFragmentChanged(_onFragmentChanged);
+
+    // A deep link arrives either as the canonical `/docs#anchors-links` or as
+    // the older `/docs?section=anchors`. The fragment wins when both are set.
+    //
+    // The live fragment is read first, then the one captured at boot: the
+    // router can wipe the hash out of the address bar on startup before this
+    // page ever mounts (see captureInitialUrlFragment). Jumping restores it.
+    final target =
+        readUrlFragment() ?? takeInitialUrlFragment() ?? widget.initialSection;
+    final index = target == null ? null : docsSectionIndexForSlug(target);
+    if (index != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _jumpToDeepLink(index);
+      });
     }
+  }
+
+  @override
+  void didUpdateWidget(DocsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Arriving at `/docs?section=chains` while already on the docs page
+    // rebuilds this widget rather than remounting it, so initState never runs
+    // again. Honour the new target the same way a fresh load would.
+    final target = widget.initialSection;
+    if (target == null || target == oldWidget.initialSection) return;
+    final index = docsSectionIndexForSlug(target);
+    if (index == null) return;
+    // didUpdateWidget runs during a build; the jump calls setState, so it has
+    // to wait for the frame to finish.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _jumpToDeepLink(index);
+    });
   }
 
   @override
@@ -71,6 +121,8 @@ class _DocsPageState extends State<DocsPage> implements DocsSectionNavigator {
   @override
   void dispose() {
     if (_navSheet?.docs == this) _navSheet?.docs = null;
+    _settleTimer?.cancel();
+    _stopListeningToFragment?.call();
     _controller.removeListener(_onScroll);
     _controller.dispose();
     super.dispose();
@@ -85,6 +137,10 @@ class _DocsPageState extends State<DocsPage> implements DocsSectionNavigator {
   void scrollToSection(int index) => _scrollTo(index);
 
   void _onScroll() {
+    // A scroll we started already knows its destination; let it finish without
+    // the spy narrating every section it passes.
+    if (_programmaticScrolls > 0) return;
+
     // On compact layouts the section headings scroll behind the pinned nav and
     // breadcrumb bar, so a heading counts as active once it passes below both.
     final threshold = context.isCompact
@@ -103,12 +159,44 @@ class _DocsPageState extends State<DocsPage> implements DocsSectionNavigator {
         break;
       }
     }
-    if (active != _active) setState(() => _active = active);
+    if (active != _active) {
+      setState(() => _active = active);
+      _writeFragmentFor(active);
+    }
   }
 
-  void _scrollTo(int index) {
+  /// Points the URL fragment at [slug], or clears it when null, remembering
+  /// what was written so the change is recognised as ours if it echoes back.
+  void _writeFragment(String? slug) {
+    _writtenFragment = slug;
+    writeUrlFragment(slug);
+  }
+
+  /// Follows the reader: the address bar is always a link to what is on
+  /// screen, so copying it shares that spot.
+  ///
+  /// The first section is the page itself, so it clears the fragment instead of
+  /// writing `#introduction` the moment the docs open.
+  void _writeFragmentFor(int index) =>
+      _writeFragment(index == 0 ? null : docsSections[index].slug);
+
+  /// Handles a click on a heading's link icon: re-anchor the page on that
+  /// section, and put its deep link in the address bar.
+  ///
+  /// Unlike the scroll-spy, this always writes a slug, the first section
+  /// included. The reader explicitly asked for that section's link, so
+  /// `/docs#introduction` is what they should be able to copy.
+  void _anchorTo(int index, {bool autoScroll = false}) {
+    if (autoScroll) _scrollTo(index);
+    _writeFragment(docsSections[index].slug);
+  }
+
+  /// Scrolls section [index] to just below the fixed chrome and points the URL
+  /// at it. Returns the offset it settled on, or null when the section has not
+  /// been laid out yet.
+  double? _scrollTo(int index, {bool animate = true}) {
     final ctx = _keys[index].currentContext;
-    if (ctx == null) return;
+    if (ctx == null) return null;
     final box = ctx.findRenderObject() as RenderBox;
     final dy = box.localToGlobal(Offset.zero).dy;
     // Compact stacks the nav over the pinned breadcrumb bar; land the heading
@@ -116,16 +204,61 @@ class _DocsPageState extends State<DocsPage> implements DocsSectionNavigator {
     final gap = context.isCompact
         ? AppLayout.navHeight + _kCompactBarHeight + 16
         : _anchorGap;
-    final target = (_controller.offset + dy - gap).clamp(
-      0.0,
-      _controller.position.maxScrollExtent,
-    );
+    // The first section has nothing above it but page chrome, so its anchor is
+    // the top of the page. Scrolling the Markdown-actions row out of view to
+    // tuck "Introduction" under the nav would read as a glitch.
+    final target = index == 0
+        ? 0.0
+        : (_controller.offset + dy - gap).clamp(
+            0.0,
+            _controller.position.maxScrollExtent,
+          );
     setState(() => _active = index);
-    _controller.animateTo(
-      target,
-      duration: const Duration(milliseconds: 420),
-      curve: Curves.easeInOutCubic,
-    );
+    _writeFragmentFor(index);
+
+    if (!animate) {
+      _controller.jumpTo(target);
+      return target;
+    }
+    _programmaticScrolls++;
+    _controller
+        .animateTo(
+          target,
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeInOutCubic,
+        )
+        // Counted rather than flagged, so a second tap mid-flight does not let
+        // the first one's completion re-arm the spy early.
+        .whenComplete(() => _programmaticScrolls--);
+    return target;
+  }
+
+  /// Lands on a deep-linked section without animating. The reader asked for
+  /// this section, not for a tour of everything above it.
+  ///
+  /// The jump runs twice. Web fonts and the asynchronous code highlighter can
+  /// settle after the first frame and shift every heading below them, so the
+  /// target is re-measured a moment later and corrected. The correction is
+  /// skipped if the reader has scrolled in the meantime, which shows up as an
+  /// offset that is no longer the one we set.
+  void _jumpToDeepLink(int index) {
+    final landed = _scrollTo(index, animate: false);
+    if (landed == null) return;
+    _settleTimer?.cancel();
+    _settleTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted || !_controller.hasClients) return;
+      if ((_controller.offset - landed).abs() > 1) return;
+      _scrollTo(index, animate: false);
+    });
+  }
+
+  /// The fragment changed underneath us: someone edited the hash in the
+  /// address bar, or followed a same-document link. Our own writes use
+  /// `replaceState` and never land here, but they are filtered anyway.
+  void _onFragmentChanged(String? fragment) {
+    if (!mounted || fragment == null || fragment == _writtenFragment) return;
+    final index = docsSectionIndexForSlug(fragment);
+    if (index != null) _jumpToDeepLink(index);
   }
 
   /// Opens the app-wide navigation popup (site links + this page's section
@@ -235,7 +368,10 @@ class _DocsPageState extends State<DocsPage> implements DocsSectionNavigator {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _SectionTitle(docsSections[i].title),
+                  _SectionTitle(
+                    section: docsSections[i],
+                    onAnchorTap: () => _anchorTo(i),
+                  ),
                   const SizedBox(height: 16),
                   ..._content(context, docsSections[i].id),
                 ],
@@ -247,23 +383,109 @@ class _DocsPageState extends State<DocsPage> implements DocsSectionNavigator {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+/// A section heading followed by its own deep link.
+///
+/// The heading text stays plain selectable text: making the whole line a tap
+/// target would fight text selection. The link lives in the icon beside it.
+class _SectionTitle extends StatefulWidget {
+  const _SectionTitle({required this.section, required this.onAnchorTap});
 
-  final String text;
+  final DocsSection section;
+
+  /// Re-anchors the page on this section and points the URL at it.
+  final VoidCallback onAnchorTap;
+
+  @override
+  State<_SectionTitle> createState() => _SectionTitleState();
+}
+
+class _SectionTitleState extends State<_SectionTitle> {
+  bool hovering = false;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: TextStyle(
-        color: context.colors.foreground,
-        fontSize: 30,
-        fontWeight: FontWeight.w600,
-        // Headings use `tracking-tight` (-0.025em ≈ -0.75px @30px).
-        letterSpacing: -0.75,
-        height: 1.2,
+    return MouseRegion(
+      onEnter: (_) => setState(() => hovering = true),
+      onExit: (_) => setState(() => hovering = false),
+      hitTestBehavior: .opaque,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 6,
+        children: [
+          Flexible(
+            child: Text(
+              widget.section.title,
+              style: TextStyle(
+                color: context.colors.foreground,
+                fontSize: 30,
+                fontWeight: FontWeight.w600,
+                // Headings use `tracking-tight` (-0.025em ≈ -0.75px @30px).
+                letterSpacing: -0.75,
+                height: 1.2,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const .only(top: 6),
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 250),
+              opacity: hovering ? 1 : 0,
+              child: _SectionAnchorLink(onTap: widget.onAnchorTap),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+/// The faded chain-link icon after a section heading.
+///
+/// It sits at roughly a third opacity, present enough to read as an
+/// affordance without competing with the heading, and comes up to full on
+/// hover. Clicking it points the URL at the section's deep link.
+class _SectionAnchorLink extends StatefulWidget {
+  const _SectionAnchorLink({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_SectionAnchorLink> createState() => _SectionAnchorLinkState();
+}
+
+class _SectionAnchorLinkState extends State<_SectionAnchorLink> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final link = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Padding(
+          // Padding rather than a bare glyph, so the tap target covers most of
+          // the heading's line box instead of just the 18px icon.
+          padding: const .all(4),
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 120),
+            opacity: _hovered ? 1 : 0.32,
+            child: Transform.rotate(
+              angle: math.pi / 180 * -45,
+              child: AppIcon(
+                DiffIcon.link,
+                size: 20,
+                color: context.colors.foreground,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    return SelectionContainer.disabled(
+      child: Tooltip(message: 'Link to this section', child: link),
     );
   }
 }
@@ -469,7 +691,6 @@ class _CompactDocsBar extends StatelessWidget {
 
 // ---- Section content ------------------------------------------------------
 
-
 List<Widget> _content(BuildContext context, String id) {
   switch (id) {
     case 'introduction':
@@ -625,8 +846,16 @@ List<Widget> _content(BuildContext context, String id) {
         const DocTable(
           headers: ['Your edge', 'Links to', 'Constructors'],
           rows: [
-            ['`left` / `right`', 'Absolute horizontal edges', '`.leftOf` `.rightOf`'],
-            ['`start` / `end`', 'RTL-aware horizontal edges', '`.startOf` `.endOf`'],
+            [
+              '`left` / `right`',
+              'Absolute horizontal edges',
+              '`.leftOf` `.rightOf`',
+            ],
+            [
+              '`start` / `end`',
+              'RTL-aware horizontal edges',
+              '`.startOf` `.endOf`',
+            ],
             ['`top` / `bottom`', 'Vertical edges', '`.topOf` `.bottomOf`'],
             ['`baseline`', 'Text baseline', '`.baselineOf`'],
           ],
@@ -666,7 +895,10 @@ List<Widget> _content(BuildContext context, String id) {
           rows: [
             ['`.wrapContent`', 'The child\'s own content (the default).'],
             ['`.matchParent`', 'The full parent, ignoring anchors.'],
-            ['`.matchConstraint`', 'The space between the two opposing anchors.'],
+            [
+              '`.matchConstraint`',
+              'The space between the two opposing anchors.',
+            ],
             ['`.fixed(n)`', 'Exactly n logical pixels.'],
             ['`.percent(f)`', 'A fraction f of the parent on this axis.'],
             ['`.spread(min, max)`', 'Like matchConstraint, but bounded.'],
