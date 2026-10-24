@@ -317,21 +317,24 @@ class _PreviewHeader extends StatelessWidget {
                 decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
               ),
               const SizedBox(width: 8),
-              Text(
-                'preview',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: AppFonts.mono,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: -0.1,
-                  height: 1.0,
-                  color: onBg.withValues(alpha: 0.85),
+              // Expanded so the label, not the row, gives way on a narrow
+              // pane: it ellipsizes before the toggles overflow.
+              Expanded(
+                child: Text(
+                  'preview',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: AppFonts.mono,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.1,
+                    height: 1.0,
+                    color: onBg.withValues(alpha: 0.85),
+                  ),
                 ),
               ),
               if (showToggles) ...[
-                const Spacer(),
                 _DebugToggle(
                   label: 'chains',
                   icon: Icons.polyline,

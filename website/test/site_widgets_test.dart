@@ -10,6 +10,7 @@ import 'package:flutter_constraint_layout_website/src/widgets/nav_bar.dart';
 import 'package:flutter_constraint_layout_website/src/widgets/pill.dart';
 import 'package:flutter_constraint_layout_website/src/widgets/section.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Mounts [child] under the scopes the app provides, on a viewport [width]
@@ -258,6 +259,35 @@ void main() {
   });
 
   group('LiveExample debug toggles', () {
+    for (final width in [320.0, 390.0]) {
+      testWidgets('the preview header fits at ${width.toInt()}px', (
+        tester,
+      ) async {
+        // Use the shipped fonts: the fallback test font makes even the two
+        // toggle labels alone wider than a 320px preview's header.
+        final mono = FontLoader('Geist Mono')
+          ..addFont(rootBundle.load('assets/fonts/GeistMono-500.ttf'));
+        final sans = FontLoader('Geist')
+          ..addFont(rootBundle.load('assets/fonts/Geist-400.ttf'));
+        await mono.load();
+        await sans.load();
+        await pumpAt(
+          tester,
+          width,
+          SingleChildScrollView(
+            child: ContentContainer(
+              child: docExamples['quick-start']!.capped(440),
+            ),
+          ),
+        );
+        expect(tester.takeException(), isNull);
+        final chains = tester.getRect(find.text('chains'));
+        final blueprint = tester.getRect(find.text('blueprint'));
+        expect(chains.right, lessThanOrEqualTo(blueprint.left));
+        expect(blueprint.right, lessThanOrEqualTo(width - 20));
+      });
+    }
+
     testWidgets('announce their label once and toggle from a screen reader', (
       tester,
     ) async {
