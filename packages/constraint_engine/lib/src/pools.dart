@@ -1,3 +1,7 @@
+// Copyright (C) 2015 The Android Open Source Project
+// Modifications copyright (C) 2026 Birju Vachhani
+// SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+//
 // Ported from androidx.constraintlayout.core.Pools (upstream pinned in
 // UPSTREAM.md). Debug-only pool-membership checks omitted.
 

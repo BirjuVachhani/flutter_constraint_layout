@@ -1,3 +1,10 @@
+// Portions copyright (C) The Android Open Source Project
+// Copyright (C) 2026 Birju Vachhani
+// SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+//
+// Adapts the rendering of Android Studio's layout editor; see the third-party
+// notice in LICENSE.
+
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
