@@ -1,8 +1,14 @@
 # Live-editable examples: research and plan
 
 Research date: 2026-07-25. Status: research only, nothing implemented in the
-package or website. A proof-of-concept interpreter lives in the git-ignored
-`playground/` app (see "Artifacts" at the end).
+package or website. Versions, measurements, and the state of third-party
+projects below are as of that date.
+
+> **The proof of concept no longer exists.** The interpreter and its tests
+> (see "Artifacts" at the end) lived in `playground/`, a local, git-ignored
+> scratch app that has since been deleted. The findings below stand as
+> recorded, but the interpreter has to be rebuilt from this description if the
+> plan goes ahead.
 
 ## Goal
 
@@ -61,7 +67,7 @@ feature.
 | --- | --- | --- |
 | **dart_eval + flutter_eval** | Blocked | Dot shorthands fail with `CompileError: Unknown expression type DotShorthandPropertyAccessImpl` (tested on 0.8.5; zero DotShorthand handling in compiler source). The samples contain 100+ shorthand sites. Also: flutter_eval 0.8.2 does not build on Flutter >= 3.41 (`Container.isAntiAlias`, issue #140, unfixed), `Theme.of(context).colorScheme` throws at runtime (ColorScheme unbound), no execution limits for user loops (issue #291), effectively single-maintainer. |
 | **tom_d4rt** (maintained d4rt fork) | Blocked | Tested on 1.12.1: all three dot-shorthand forms fail ("Undefined variable"), `#hub` literals silently evaluate to null, and destructuring bridged `.indexed` records throws `PatternMatchException`. Supply chain is also marginal (unverified uploader, ~900 downloads, 1 star). |
-| **DartPad embed** | Blocked | Public DartPad supports only a curated package allowlist; arbitrary packages are explicitly off the roadmap, and the lightweight-embedding initiative (#2702) was closed as not planned on 2026-07-13. flutter_constraint_layout is unpublished besides. Self-hosting `dart_services` works in principle but abandons static hosting and adds a forked-deployment ops burden per Flutter release. |
+| **DartPad embed** | Blocked | Public DartPad supports only a curated package allowlist; arbitrary packages are explicitly off the roadmap, and the lightweight-embedding initiative (#2702) was closed as not planned on 2026-07-13. flutter_constraint_layout was also not on pub.dev on the research date, and publishing it would not put it on the allowlist. Self-hosting `dart_services` works in principle but abandons static hosting and adds a forked-deployment ops burden per Flutter release. |
 | **Zapp.run** | Dead | Domain unresolvable since ~March 2026 (Cloudflare zone refused); repo last pushed 2023. |
 | **JSON UI runtimes** (stac, json_dynamic_widget) | Rejected | Same format mismatch as rfw but with JSON; json_dynamic_widget is marked discontinued on pub.dev. |
 | **Server-side compile** (dart-services style, DDC hot reload) | Viable but costly | Real compiler fidelity, but abandons static hosting, seconds-scale latency, always-on instance, sandboxed-iframe and abuse controls needed. Keep as fallback only. |
@@ -93,7 +99,8 @@ APIs compiled into the site. Visitors edit the exact Dart the docs display.
    collection-for with `(i, icon)` record destructuring over `.indexed`,
    interpolated `Symbol('a$i')` ids, and arithmetic (`i * 72.0`).
    Widget tests assert every rendered rect equals the hand-written builder's.
-   4/4 tests pass (re-verified on this machine).
+   4/4 tests pass (re-verified on this machine). The code was lost with
+   `playground/`; see the note at the top.
 3. **Latency is a non-issue.** Warm parse of radial-menu under dart2js on V8:
    0.22-0.34 ms. Full parse+eval: ~0.85 ms. Editing can re-evaluate every
    keystroke inside one frame; debouncing is optional.
@@ -125,12 +132,13 @@ APIs compiled into the site. Visitors edit the exact Dart the docs display.
 ### Known constraints to design around
 
 - **Analyzer version pinning.** In this workspace the resolvable analyzer is
-  capped by Flutter's `meta` pin (12.1.0 here today; 13.0.0 in a fresh app;
-  14.x needs a meta override). 12.x and 13.x both parse the full modern
-  surface (dot shorthands, records, interpolated symbols) with zero errors,
-  but 13.0 renamed AST APIs (`NamedExpression` to sealed `Argument` types,
-  formal-parameter reshuffle). Mitigation: pin the version and wrap the AST
-  touchpoints in a small facade so major bumps are one-file fixes.
+  capped by Flutter's `meta` pin (12.1.0 here on the research date; 13.0.0 in
+  a fresh app; 14.x needs a meta override; recheck before implementing). 12.x
+  and 13.x both parse the full modern surface (dot shorthands, records,
+  interpolated symbols) with zero errors, but 13.0 renamed AST APIs
+  (`NamedExpression` to sealed `Argument` types, formal-parameter reshuffle).
+  Mitigation: pin the version and wrap the AST touchpoints in a small facade
+  so major bumps are one-file fixes.
 - **Web is not an officially supported analyzer target.** The parse-only path
   demonstrably compiles and runs, but a future analyzer release could regress
   it. The pin protects against surprise; parity tests catch regressions.
@@ -173,8 +181,10 @@ one example, and a decision.
 
 ### Phase 2: productionize the interpreter (~2-3 days)
 
-- Promote `playground/lib/mini_eval.dart` into the website (e.g.
-  `website/lib/src/eval/`), split evaluator / registry / diagnostics.
+- Rebuild the interpreter in the website (e.g. `website/lib/src/eval/`), split
+  evaluator / registry / diagnostics. The proof of concept,
+  `playground/lib/mini_eval.dart`, was deleted with `playground/`, so this
+  starts from the design above rather than promoting existing code.
 - Extend the registry to the full corpus vocabulary: remaining constraint
   widgets (`Guideline`, `ConstraintFlow`, `ConstraintGrid`), the ~20 Flutter
   types the samples use, constant tables (the used `Icons.*` subset,
@@ -194,8 +204,9 @@ one example, and a decision.
   interpreted root is a real `ConstraintLayout`.
 - Error banner with line/column markers in the editor gutter.
 - Parity suite: for all 17 examples, assert `interpret(code)` renders
-  rect-identical to `builder(context)` (extend the PoC tests; reuse the
-  `host()`/`rectOf()` pattern from `test/features_test.dart`). This suite
+  rect-identical to `builder(context)` (rewrite the lost PoC tests; reuse the
+  `host()`/`rectOf()` pattern from
+  `packages/flutter_constraint_layout/test/features_test.dart`). This suite
   doubles as the guard that future samples stay inside the vocabulary.
 
 ### Phase 4: hardening and rollout (~1 day)
@@ -210,15 +221,17 @@ one example, and a decision.
   selected examples.
 
 Total: roughly 5-8 focused days, front-loaded with the only remaining unknown
-(the editor widget UX), since the engine risk is already retired.
+(the editor widget UX), since the engine risk is already retired. These
+estimates assumed the proof of concept could be promoted as is; it now has to
+be rewritten first, which Phase 2 has to absorb.
 
 ## Artifacts
 
-- Proof of concept: `playground/lib/mini_eval.dart` (evaluator + registry),
-  `playground/test/mini_eval_test.dart` (parity + fuel + latency tests).
-  `playground/` is git-ignored and standalone; nothing in the package or
-  website was changed by this research. Note: `website/build/web` contains a
-  stale spike build artifact that the next `flutter build web` will replace.
+- Proof of concept (deleted): `playground/lib/mini_eval.dart` (evaluator +
+  registry) and `playground/test/mini_eval_test.dart` (parity + fuel + latency
+  tests). `playground/` was a local, git-ignored, standalone app and has since
+  been deleted, so neither file exists any more. Nothing in the package or
+  website was changed by this research.
 - Ephemeral experiments (in `/tmp`, gone on reboot): analyzer dart2js/wasm
   probes, a throwaway `flutter build web --wasm` spike app with browser
   verification logs, dart_eval and tom_d4rt language-feature probes.

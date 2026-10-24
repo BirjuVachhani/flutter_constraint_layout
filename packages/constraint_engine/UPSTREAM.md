@@ -10,7 +10,9 @@ Pinned upstream revision the port represents:
 - Library versions at that commit (`constraintlayout/gradle.properties`):
   - `constraintlayout.core` **1.1.0-alpha04**
   - `constraintlayout` 2.2.0-alpha04
-- Local mirror used for porting: `inspo/constraintlayout` at the repo root.
+- Local mirror used for porting: a clone at `inspo/constraintlayout` in the
+  repository root. It is git-ignored and local only, not part of the
+  repository.
 
 That commit is the final commit of the GitHub repository; ConstraintLayout
 development moved to the AOSP androidx monorepo
@@ -18,17 +20,29 @@ development moved to the AOSP androidx monorepo
 `constraintlayout/`), which is where the 2.2.x / core 1.1.x releases ship
 from.
 
-Parity with released versions (verified 2026-07-24 against the AOSP
+Parity with released versions (first verified 2026-07-24 against the AOSP
 `androidx-constraintlayout-release` branch, versioned core 1.1.2-dev, which
-includes everything in core 1.1.1 / constraintlayout 2.2.1): within the
-ported scope (the solver classes, `widgets/`, `widgets/analyzer/`), the only
-source change since the pinned commit is `LinearSystem.sPoolSize` becoming an
-instance field (change I8952e, b/376718273, shipped in 2.2.1). That fix is
-applied in this port (`_poolSize` in `linear_system.dart`), so the ported
-scope is at parity with core 1.1.1. All other post-pin core changes are in
-unported modules (`motion/`, `parser/`, `state/`, `utils/`), including the
-core 1.1.1 visibility-toggle placement fix (b/299134793), which lives in the
-`state/` layer used by Compose.
+includes everything in core 1.1.1 / constraintlayout 2.2.1; rechecked
+2026-10-24 against the source jars of the released `constraintlayout-core`
+1.1.0 and 1.1.1 on Google Maven, which constraintlayout 2.2.0 and 2.2.1
+depend on):
+
+- Within the solver classes, `widgets/`, and `widgets/analyzer/`, the only
+  source change since the pinned commit is `LinearSystem.sPoolSize` becoming
+  an instance field (change I8952e, b/376718273), present from core 1.1.0
+  onward. That fix is applied in this port (`_poolSize` in
+  `linear_system.dart`), so this scope is at parity with core 1.1.1.
+- `utils/GridCore`, the one other ported file, is not at parity yet: core
+  1.1.0 changed it after the pin, and this port still follows the pinned
+  commit. Released `GridCore` stores its flags as an int bitmask
+  (`SUB_GRID_BY_COL_ROW = 1`, `SPANS_RESPECT_WIDGET_ORDER = 2`) instead of an
+  `int[]`; pads (with 1) or trims a row or column weight list whose length
+  does not match the track count, where the pinned code ignores the whole
+  list; reads an unparsable weight as 1; and sorts spans by position before
+  placing them.
+- Every other post-pin core change is in code this port does not include
+  (`motion/`, `parser/`, `state/`). Between 1.1.0 and 1.1.1 the only core
+  change is in `state/Dimension`.
 
 Scope ported from `core/src/main/java/androidx/constraintlayout/core/`:
 
@@ -41,8 +55,9 @@ Scope ported from `core/src/main/java/androidx/constraintlayout/core/`:
   FlowTest suite), and `utils/GridCore`.
 
 Not ported: `motion/`, `parser/`, `dsl/`, `state/` (the Flutter adapter plays
-that role), `Placeholder`, the `Direct`/`Grouping` optimizers (the dependency
-graph plays that role), and `Metrics` instrumentation.
+that role), `utils/GridEngine` (a standalone cell-placement class that
+`GridCore` does not use), `Placeholder`, the `Direct`/`Grouping` optimizers
+(the dependency graph plays that role), and `Metrics` instrumentation.
 
 Known intentional divergences from upstream are documented inline at the
 relevant code, and include:
@@ -63,7 +78,10 @@ relevant code, and include:
   ratio-sized members, chains along a wrap-content axis, MATCH_CONSTRAINT_WRAP
   widgets, circular (center) constraints, nested containers, widgets centered
   along a wrap axis, and wrap results whose children overflow the computed
-  bounds. Pre-graph widget state is snapshotted and restored before the
+  bounds. It also falls back whenever a run is left unresolved. As in
+  upstream, that is always the case for a layout that contains a barrier: the
+  barrier's `HelperReferences` run only ever resolves its start, never its end
+  or dimension. Pre-graph widget state is snapshotted and restored before the
   fallback, and wrap-sized children are re-measured, so the solver sees the
   same input upstream's would.
 - Upstream's "width/height measured too small" clamp in the solver loop is
@@ -96,3 +114,95 @@ relevant code, and include:
 
 When updating the port, bump the commit above and re-run the full golden test
 suite (`dart test`).
+
+## Ported upstream tests
+
+The upstream core unit tests
+(`constraintlayout/core/src/test/java/androidx/constraintlayout/core/` at the
+pinned commit) are ported under `test/`. Each Dart file keeps the upstream
+class name as its `group` and every test method's name, so a failure maps
+straight back to its Java original. `test/PORTING_GUIDE.md` describes the
+conversion.
+
+| Upstream test class | Dart file | Tests |
+| --- | --- | --- |
+| `AdvancedChainTest` | `advanced_chain_test.dart` | 11 |
+| `AmountTest` | `amount_test.dart` | 6 |
+| `BarrierTest` | `barrier_test.dart` | 17 |
+| `BasicTest` | `basic_test.dart` | 21 |
+| `CenterWrapTest` | `center_wrap_test.dart` | 7 |
+| `ChainTest` | `chain_test.dart` | 38 |
+| `ChainWrapContentTest` | `chain_wrap_content_test.dart` | 7 |
+| `CircleTest` | `circle_test.dart` | 1 |
+| `EquationVariableTest` | `equation_variable_test.dart` | 6 |
+| `FlowTest` | `flow_test.dart` | 3 |
+| `GuidelineTest` | `guideline_test.dart` | 2 |
+| `LinearEquationTest` | `linear_equation_test.dart` | 15 |
+| `LinearSystemTest` | `linear_system_test.dart` | 9 |
+| `MatchConstraintTest` | `match_constraint_test.dart` | 4 |
+| `NestedLayout` | `nested_layout_test.dart` | 1, skipped (see above) |
+| `OptimizationsTest` | `optimizations_test.dart` | 37 |
+| `PriorityTest` | `priority_test.dart` | 2 |
+| `RatioTest` | `ratio_test.dart` | 34 |
+| `SolverVariableValuesTest` | `solver_variable_values_test.dart` | 7 |
+| `VisibilityTest` | `visibility_test.dart` | 2 |
+| `WidgetsPositioningTest` | `widgets_positioning_test.dart` | 15 |
+| `WrapTest` | `wrap_test.dart` | 16 |
+| `widgets/ChainHeadTest` | `chain_head_test.dart` | 4 |
+
+That is 265 tests: every active upstream test in those files, plus
+`NestedLayout.testNestedLayout`, which is disabled upstream and skipped here.
+
+Four of those tests are ported only in part, without the solver runs upstream
+makes. `BasicTest.testSimpleCircleConstraint` is an empty placeholder;
+upstream lays out a circular constraint and prints the result without
+asserting. In `WidgetsPositioningTest`, `testBaselinePositioning` keeps its
+`layout()` assertion but drops the repeat of it after solving the widgets in
+every order (`runTestOnWidgets`), `testWidgetPositionMove` asserts its widths
+without solving at all, and `testWidgetInfeasiblePosition`, whose assertions
+are commented out upstream, connects its widgets without solving. The full
+upstream bodies pass against this engine (checked 2026-10-24).
+
+`WidgetsPositioningTest` also has two methods whose `@Test` is commented out
+upstream (`testAddingWidgets` and `testWidgetStrengthPositioning`); they are
+not ported. The test support classes `Amount`, `EquationVariable`, and
+`LinearEquation` are ported under `test/support/`. The remaining upstream
+helpers (`ArrayBackedVariables`, `HistogramCounter`, `OptimizedGoal`,
+`OriginalGoal`, and `widgets/BasicSolverVariableValues`) are used by no test
+and are not ported.
+
+The other test files are the engine's own, not derived from upstream:
+`anchor_api_test.dart`, `barrier_modes_test.dart`, `flow_modes_test.dart`,
+`grid_modes_test.dart`, `measure_ordering_test.dart`,
+`persistent_layout_test.dart`, and `smoke_test.dart`.
+
+Not ported, although in scope:
+
+| Upstream test class | Tests | Why |
+| --- | --- | --- |
+| `utils/GridEngineTest` | 10 | It tests `utils/GridEngine`, a standalone cell-placement class that upstream's `GridCore` does not use and that is not ported. The ported `GridCore`'s placement rules (derived rows and columns, spans, skips, and weights) are covered instead by the engine's own `grid_modes_test.dart`. |
+| `LayoutTest` | 1 | `testPositions` asserts nothing: it times one layout of a screen of buttons and prints the solver's state. |
+| `ArrayLinkedVariablesTest` | 1 | Its one test adds and removes variables in a row and prints it, and its only assertion is `assertTrue(true)`. `ArrayLinkedVariables` is the default row storage of `ArrayRow`, so every test that reaches the solver exercises it. |
+| `ComposeLayoutsTest` | 1 | It builds its layout through the Compose-facing `state/` API (`State`, `ConstraintReference`, `Dimension`), which is not ported. Porting it means re-expressing that layout with direct widget calls. |
+
+Out of scope:
+
+| Upstream test | Why |
+| --- | --- |
+| `RandomLayoutTest` | It needs the Scout auto-constrainer (`scout/`, `Scout.inferConstraints`) and `java.awt.Rectangle`. |
+| `PerformanceTest` | A performance probe: one layout of three widgets, printed, with no assertions. |
+| `XmlBasedTest` | It runs over Android XML layout fixtures in upstream's `src/test/resources/`, parsed with SAX. |
+| `motion/` (14 files) | MotionLayout, which is not ported. |
+| `parser/` (`CLParserTest`, `CLParserBenchmarkTest`) and `cl/ConstraintSetParserTest` | The JSON5 parser and the ConstraintSet parser built on it (`parser/` and `state/`), which are not ported. |
+| `dsl/DslTest` | The `dsl/` package, which is not ported. |
+| `scout/` | Not tests: the Scout auto-constrainer that `RandomLayoutTest` uses. |
+
+## Licensing
+
+Every ported file, under `lib/src/` and among the tests ported from
+upstream's core test suite (including their `test/support/` classes), keeps
+its upstream copyright line
+(`Copyright (C) <year> The Android Open Source Project`), adds
+`Modifications copyright (C) 2026 Birju Vachhani`, and carries
+`SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause`. See `LICENSE` for both
+license texts.

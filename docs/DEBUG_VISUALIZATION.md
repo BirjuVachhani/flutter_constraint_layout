@@ -2,24 +2,42 @@
 
 ## Status: implemented (2026-07-25)
 
-> Paths below such as `lib/` and `test/` are relative to
-> `packages/flutter_constraint_layout/`, which was the repo root when this was written.
-> Paths that start with `packages/` are relative to the repo root.
+> This is the feature's original spec and build log, kept as a design
+> reference. It was written when the Flutter package was the repository root
+> and was still named `constraint_layout`, so:
+>
+> - Paths such as `lib/`, `test/`, `example/`, and `README.md` are relative to
+>   `packages/flutter_constraint_layout/`. Paths that start with `packages/`,
+>   `website/`, or `docs/` are relative to the repository root.
+> - The package's entry library, `lib/constraint_layout.dart` in the text, is
+>   now `lib/flutter_constraint_layout.dart`.
+> - Test counts are as of 2026-07-25. At the 1.0.0 release the package suite
+>   has 173 tests and the engine suite 350 passing plus 1 skipped.
+> - `playground/` was a local, git-ignored scratch app. It no longer exists;
+>   the Playground entry below says where its role lives now.
 
 All phases below are complete. Final layout of the feature:
 
 - `lib/src/debug/`: `debug_scene.dart`, `debug_extractor.dart`,
   `debug_palette.dart`, `debug_painter.dart` (not exported from the package
-  entry; the public API is the four `ConstraintLayout` params plus
-  `DebugLabelStyle` in `types.dart`).
+  entry; the public API is the four `ConstraintLayout` params, the static
+  `ConstraintLayout.allowDebugFlags` added afterwards, and `DebugLabelStyle`
+  in `types.dart`).
 - `RenderConstraintLayout` gained four paint-only setters, the
-  `debugDescribeScene()` bridge, and the two-assert `paint()` restructure.
+  `debugDescribeScene()` bridge, and the `paint()` restructure (built
+  assert-gated; now gated by `allowDebugFlags`, see the last divergence below).
 - Tests: `test/debug/` holds 37 tests (palette 3, extractor 16, painter
   geometry 6, painter goldens 8, repaint/e2e 4) with goldens under
   `test/debug/goldens/`. Full adapter suite: 98 tests green; engine suite
   untouched (276 pass, 1 skip).
-- Playground: `playground/lib/debug_options.dart` + app-bar toggles wired
-  into every scenario.
+- Playground: the toggles were wired into every scenario of `playground/`, the
+  scratch app, through `playground/lib/debug_options.dart` and app-bar
+  buttons. That app has since been deleted. The website's live examples fill
+  its role now: the live examples on the home page (the real-world examples
+  and the feature previews) have "chains" and "blueprint" toggles in their
+  preview headers (`website/lib/src/widgets/live_example.dart`), and the docs
+  page has a live example for every layout feature. The package's runnable
+  example is `example/main.dart`.
 
 Minor divergences from the spec text, chosen during implementation:
 
@@ -39,15 +57,23 @@ Minor divergences from the spec text, chosen during implementation:
   the child's own position already convey the relationship.
 - The golden harness paints scenes through a `CustomPaint.foregroundPainter`
   so the opaque base does not cover the overlay.
+- Changed after implementation (2026-07-26): the overlay is no longer
+  assert-gated. `paint()` honors the flags when the static
+  `ConstraintLayout.allowDebugFlags` is true. It defaults to `kDebugMode`, so
+  the overlays work in debug builds and are inert in profile and release unless
+  an app opts in, as the website does to show them in its release build.
+  Opting in keeps the overlay code in the release binary. Locked decision 4,
+  the `paint()` code in section 5.3, and the README note in Phase 7 describe
+  the original assert-gated design.
 
 The rest of this document is the original implementation spec, kept as the
 feature's design reference.
 
 This document is a complete, self-contained implementation spec. An agent with no
 prior context should be able to implement the whole feature, including tests, from
-this document alone. Repo root: `/Users/birjuvachhani/Documents/Projects/constraint_layout`
-(a pub workspace, NOT a git repo). Style rule for all prose and docs written for
-this feature: never use em-dashes.
+this document alone. Paths are relative to the Flutter package, which is
+`packages/flutter_constraint_layout/` today (see the note at the top). Style
+rule for all prose and docs written for this feature: never use em-dashes.
 
 ## 1. Context
 
@@ -928,8 +954,19 @@ is untouched by this feature; adapter `flutter test` currently passes 61 tests.
   - Hit test still works in blueprint: `GestureDetector` child still receives
     `tester.tapAt` with blueprint on.
 - Verify: `flutter test` FULL suite green; `dart analyze lib test benchmark playground/lib` clean.
+  (`playground/lib` no longer exists; see Phase 6.)
 
 ### Phase 6: Playground integration
+
+> Historical. `playground/` was a local, git-ignored scratch app with one
+> scenario per feature, and it has since been deleted, so the files this phase
+> creates and edits no longer exist. The website's live examples fill its role
+> now: the live examples on the home page have "chains" and "blueprint"
+> toggles in their preview headers
+> (`website/lib/src/widgets/live_example.dart`, enabled in the site's release
+> build by `ConstraintLayout.allowDebugFlags` in `website/lib/main.dart`), and
+> the docs page has a live example for every layout feature. The package's
+> runnable example is `example/main.dart`.
 
 - Create `playground/lib/debug_options.dart`:
 
@@ -981,6 +1018,7 @@ class DebugOptions extends InheritedWidget {
 - Reconcile `docs/DEBUG_VISUALIZATION.md` with any implementation drift.
 - Final verification (all must pass):
   - `dart analyze lib test benchmark playground/lib` clean from repo root.
+    (`playground/lib` no longer exists; see Phase 6.)
   - `flutter test` full adapter suite green.
   - `cd packages/constraint_engine && dart analyze && dart test` still green
     (engine untouched: 276 pass, 1 skip expected).
