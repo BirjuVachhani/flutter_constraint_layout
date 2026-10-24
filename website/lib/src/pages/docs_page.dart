@@ -748,7 +748,7 @@ List<Widget> _content(BuildContext context, String id) {
         DocBullets([
           '**Dimensions beyond wrap and fill.** `.matchConstraint` fills the span '
               'between two anchors, `.percent` takes a fraction of the parent, '
-              'and `.spread` / `.constrainedWrap` bound a wrap.',
+              'and `.spread` / `.constrainedWrap` bound a fill or a wrap.',
           '**Aspect ratio.** Fix one axis and derive the other to hold a '
               '`width / height` ratio, ideal for 16 : 9 or square media.',
         ]),
@@ -784,6 +784,11 @@ List<Widget> _content(BuildContext context, String id) {
       ];
     case 'installation':
       return const [
+        DocNote(
+          'Requires Dart 3.12 or newer and Flutter 3.44 or newer. The API is '
+          'designed around Dart dot shorthands such as `.startOf(parent)`, '
+          'which every example in these docs uses.',
+        ),
         DocProse('Add the package with the Flutter CLI:'),
         CodeBlock(
           code: Snippets.install,
@@ -901,13 +906,17 @@ List<Widget> _content(BuildContext context, String id) {
             ],
             ['`.fixed(n)`', 'Exactly n logical pixels.'],
             ['`.percent(f)`', 'A fraction f of the parent on this axis.'],
-            ['`.spread(min, max)`', 'Like matchConstraint, but bounded.'],
+            [
+              '`.spread(min: a, max: b)`',
+              'Like matchConstraint, but bounded.',
+            ],
             ['`.constrainedWrap(...)`', 'Content, capped by the constraints.'],
           ],
         ),
         const DocNote(
-          '`.matchConstraint`, `.percent`, and `.spread` need **both** edges on '
-          'the axis anchored, because they size to the space those edges define.',
+          '`.matchConstraint` and `.spread` need **both** edges on the axis '
+          'anchored, because they size to the space those edges define. '
+          '`.percent` sizes to the parent instead, so one link is enough.',
         ),
       ];
     case 'aspect-ratio':
@@ -975,7 +984,10 @@ List<Widget> _content(BuildContext context, String id) {
         const DocProse(
           'Pick the `edge` to track (`start`, `end`, `top`, `bottom`, and the '
           'absolute `left` / `right`) and list the widgets in `referenced`. A '
-          'barrier costs nothing to lay out; it only reports a position.',
+          'barrier has no size and draws nothing; it only reports a position. '
+          'A layout that contains one is resolved by the Cassowary solver '
+          'rather than the faster dependency graph (see **How the engine '
+          'works**).',
         ),
       ];
     case 'circular':
@@ -1004,7 +1016,8 @@ List<Widget> _content(BuildContext context, String id) {
         const DocProse(
           '`gone` removes a widget and reflows around it in one step, and '
           '`goneMargin` lets neighbors keep a sensible gap when they do. Because '
-          'it is only a property, toggling it animates cleanly.',
+          'it is only a property, toggling it keeps the child mounted, so its '
+          'state survives the round trip.',
         ),
         const DocH3('Try it'),
         const DocProse(
@@ -1046,9 +1059,11 @@ List<Widget> _content(BuildContext context, String id) {
         docExamples['flow']!,
         const DocH3('Wrap modes'),
         const DocBullets([
-          '**`.none`**: a single run that does not wrap (a plain chain).',
-          '**`.chain`**: wraps into balanced chains, each run laid out '
-              'independently, the closest match to `Wrap`.',
+          '**`.none`** (default): a single run that does not wrap (a plain '
+              'chain).',
+          '**`.chain`**: wraps into as many runs as it needs, filling each run '
+              'before starting the next and laying each one out as its own '
+              'chain, the closest match to `Wrap`.',
           '**`.aligned`**: wraps and also lines the runs up column-for-column, '
               'so the result reads as a grid.',
         ]),
@@ -1123,12 +1138,14 @@ List<Widget> _content(BuildContext context, String id) {
         ),
         DocH3('Cassowary solver (the fallback)'),
         DocProse(
-          'Some arrangements are a genuine system of simultaneous equations: a '
-          'weighted chain sharing leftover space, a widget centered between two '
-          'moving anchors, an aspect-ratio member inside a chain. For those the '
+          'Some layouts are outside what the graph resolves, and for those the '
           'engine falls back to a linear constraint solver, a port of Android\'s '
           '`LinearSystem`, which implements the **Cassowary** algorithm (the same '
-          'family behind Apple\'s Auto Layout).',
+          'family behind Apple\'s Auto Layout). A layout takes this path when it '
+          'contains a barrier, a `circle` link, a `.constrainedWrap` size, a '
+          '`ConstraintFlow` or `ConstraintGrid`, or a chain with a `gone` or '
+          'aspect-ratio member, and when a chain or a child anchored on both '
+          'sides runs along an axis where the layout sizes to its content.',
         ),
         DocH3('Persistent, incremental model'),
         DocProse(
@@ -1155,9 +1172,11 @@ List<Widget> _content(BuildContext context, String id) {
       return const [
         DocProse(
           'The engine is a line-faithful port of `constraintlayout-core`, pinned '
-          'to a specific upstream revision and verified at parity with the '
-          'released core 1.1.1. The upstream core test suite is ported and green, '
-          'so a given layout resolves to the same result Android produces.',
+          'to a specific upstream revision. Its solver and widget classes are '
+          'verified at parity with the released core 1.1.1 (only the Grid '
+          'helper still follows the pinned revision), and nearly all of '
+          'upstream\'s core test suite is ported and green, so a given layout '
+          'resolves to the same result Android produces.',
         ),
         DocProse(
           'The one structural departure is the entry path: Android runs the '

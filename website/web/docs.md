@@ -33,7 +33,7 @@ The whole of Android's ConstraintLayout is here, behind a single import and a Fl
 
 ### Sizing
 
-- **Dimensions beyond wrap and fill.** `.matchConstraint` fills the span between two anchors, `.percent` takes a fraction of the parent, and `.spread` / `.constrainedWrap` bound a wrap.
+- **Dimensions beyond wrap and fill.** `.matchConstraint` fills the span between two anchors, `.percent` takes a fraction of the parent, and `.spread` / `.constrainedWrap` bound a fill or a wrap.
 - **Aspect ratio.** Fix one axis and derive the other to hold a `width / height` ratio, ideal for 16 : 9 or square media.
 
 ### Chains and helpers
@@ -56,6 +56,8 @@ Each of these has its own section below, with a live example you can read beside
 
 ## Installation
 
+> Requires Dart 3.12 or newer and Flutter 3.44 or newer. The API is designed around Dart dot shorthands such as `.startOf(parent)`, which every example in these docs uses.
+
 Add the package with the Flutter CLI:
 
 ```shellscript
@@ -68,7 +70,7 @@ Or add it to your `pubspec.yaml` directly:
 
 ```yaml
 dependencies:
-  flutter_constraint_layout: ^0.1.0
+  flutter_constraint_layout: ^1.0.0
 ```
 
 Then import it. That one import brings in every widget, dimension, link, and helper you will see in these docs:
@@ -201,10 +203,10 @@ ConstraintLayout(
 | `.matchConstraint` | The space between the two opposing anchors. |
 | `.fixed(n)` | Exactly n logical pixels. |
 | `.percent(f)` | A fraction f of the parent on this axis. |
-| `.spread(min, max)` | Like matchConstraint, but bounded. |
+| `.spread(min: a, max: b)` | Like matchConstraint, but bounded. |
 | `.constrainedWrap(...)` | Content, capped by the constraints. |
 
-> `.matchConstraint`, `.percent`, and `.spread` need **both** edges on the axis anchored, because they size to the space those edges define.
+> `.matchConstraint` and `.spread` need **both** edges on the axis anchored, because they size to the space those edges define. `.percent` sizes to the parent instead, so one link is enough.
 
 ## Aspect ratio
 
@@ -334,7 +336,7 @@ ConstraintLayout(
 )
 ```
 
-Pick the `edge` to track (`start`, `end`, `top`, `bottom`, and the absolute `left` / `right`) and list the widgets in `referenced`. A barrier costs nothing to lay out; it only reports a position.
+Pick the `edge` to track (`start`, `end`, `top`, `bottom`, and the absolute `left` / `right`) and list the widgets in `referenced`. A barrier has no size and draws nothing; it only reports a position. A layout that contains one is resolved by the Cassowary solver rather than the faster dependency graph (see **How the engine works**).
 
 ## Circular positioning
 
@@ -405,7 +407,7 @@ ConstraintLayout(
 )
 ```
 
-`gone` removes a widget and reflows around it in one step, and `goneMargin` lets neighbors keep a sensible gap when they do. Because it is only a property, toggling it animates cleanly.
+`gone` removes a widget and reflows around it in one step, and `goneMargin` lets neighbors keep a sensible gap when they do. Because it is only a property, toggling it keeps the child mounted, so its state survives the round trip.
 
 ### Try it
 
@@ -450,8 +452,8 @@ ConstraintLayout(
 
 ### Wrap modes
 
-- **`.none`**: a single run that does not wrap (a plain chain).
-- **`.chain`**: wraps into balanced chains, each run laid out independently, the closest match to `Wrap`.
+- **`.none`** (default): a single run that does not wrap (a plain chain).
+- **`.chain`**: wraps into as many runs as it needs, filling each run before starting the next and laying each one out as its own chain, the closest match to `Wrap`.
 - **`.aligned`**: wraps and also lines the runs up column-for-column, so the result reads as a grid.
 
 Set `horizontalGap` and `verticalGap` for the spacing between items and runs, and `horizontalChainStyle` / `contentHorizontalBias` to control how each run distributes its slack, exactly as a chain does.
@@ -556,7 +558,7 @@ Most layouts are deterministic: once the parent size and a widget's anchors and 
 
 ### Cassowary solver (the fallback)
 
-Some arrangements are a genuine system of simultaneous equations: a weighted chain sharing leftover space, a widget centered between two moving anchors, an aspect-ratio member inside a chain. For those the engine falls back to a linear constraint solver, a port of Android's `LinearSystem`, which implements the **Cassowary** algorithm (the same family behind Apple's Auto Layout).
+Some layouts are outside what the graph resolves, and for those the engine falls back to a linear constraint solver, a port of Android's `LinearSystem`, which implements the **Cassowary** algorithm (the same family behind Apple's Auto Layout). A layout takes this path when it contains a barrier, a `circle` link, a `.constrainedWrap` size, a `ConstraintFlow` or `ConstraintGrid`, or a chain with a `gone` or aspect-ratio member, and when a chain or a child anchored on both sides runs along an axis where the layout sizes to its content.
 
 ### Persistent, incremental model
 
@@ -570,6 +572,6 @@ The graph path resolves a 1200-widget screen in well under a millisecond; the so
 
 ## Relation to Android
 
-The engine is a line-faithful port of `constraintlayout-core`, pinned to a specific upstream revision and verified at parity with the released core 1.1.1. The upstream core test suite is ported and green, so a given layout resolves to the same result Android produces.
+The engine is a line-faithful port of `constraintlayout-core`, pinned to a specific upstream revision. Its solver and widget classes are verified at parity with the released core 1.1.1 (only the Grid helper still follows the pinned revision), and nearly all of upstream's core test suite is ported and green, so a given layout resolves to the same result Android produces.
 
 The one structural departure is the entry path: Android runs the Cassowary solver by default with an optional graph optimization, whereas this port tries the dependency graph first and falls back to the solver (see **How the engine works**).

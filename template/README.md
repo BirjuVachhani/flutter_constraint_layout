@@ -80,7 +80,7 @@ without a second dependency.
 | Content | `CodeBlock`, `Prose`, `ProseHeading`, `ProseList`, `ProseTable`, `Callout`, `InlineLinkText` |
 | Blocks | `HeroSection`, `FeatureGrid`, `CtaBand`, `SiteSection`, `SectionHeading`, `DocsShell` |
 | Controls | `SiteButton`, `SiteIconButton`, `SiteBadge`, `SelectPill`, `PillGroup`, `CommandPill`, `CopyButton`, `SiteDropdown`, `ThemeModeMenu` |
-| Assets | Geist and Geist Mono, plus a 17-glyph SVG icon set, bundled in the package |
+| Assets | Geist and Geist Mono, plus an 18-glyph SVG icon set, bundled in the package |
 
 Every component reads its colors and type from the theme, so one palette swap
 re-skins the whole site.
@@ -97,7 +97,8 @@ re-skins the whole site.
 
 ## Install
 
-Add the package. It is not published, so depend on it by path or by git:
+Add the package. It is not published to pub.dev, so depend on it by path or by
+git:
 
 ```yaml
 dependencies:
@@ -109,9 +110,12 @@ dependencies:
 dependencies:
   site_kit:
     git:
-      url: https://github.com/you/your-repo.git
+      url: https://github.com/BirjuVachhani/constraint_layout.git
       path: template
 ```
+
+The git form tracks the repository's default branch; add a `ref:` (a commit or
+a tag) under `git:` to pin the version you build against.
 
 Then:
 
@@ -138,17 +142,21 @@ Future<void> main() async {
 }
 ```
 
-It does four things:
+It does five things:
 
 1. **Ensures the Flutter binding**, so it is safe to touch platform channels.
-2. **Switches the web URL strategy to real paths**: `/docs`, not `/#/docs`.
-3. **Configures the shared syntax highlighter**: regex engine, async mode, and
+2. **Captures the `#fragment` the page booted with**, before the router can
+   rewrite the address bar and drop it, so `/docs#theming` lands on that
+   heading (see [Deep links](#deep-links)).
+3. **Switches the web URL strategy to real paths**: `/docs`, not `/#/docs`.
+4. **Configures the shared syntax highlighter**: regex engine, async mode, and
    the light/dark code theme every `CodeBlock` defaults to.
-4. **Warms the highlighter** by compiling its grammars up front, so the first
+5. **Warms the highlighter** by compiling its grammars up front, so the first
    code block on screen paints already highlighted rather than as plain text
    that swaps a frame later.
 
-Every step is opt-out:
+Every step except the fragment capture (a no-op off web) can be switched off or
+tuned:
 
 ```dart
 await SiteKit.init(
@@ -297,9 +305,10 @@ under a theme built by `buildSiteTheme`. `SiteApp` does that for you.
 | `SiteLayout` | `contentMaxWidth` 1240, `readingMaxWidth` 768, `proseMaxWidth` 672, `gutter` 20, `navHeight` 60, `railWidth` 220 |
 | `SiteMotion` | `fast` 120ms, `medium` 220ms, `slow` 420ms, `enter`, `standard` |
 
-`SiteColors.named`, `BrandPalette.named`, `SiteTextStyles.named`,
-`SiteSpacing.named`, and `SiteRadii.named` return name-to-value maps, which is
-how the storyboard renders its style guides.
+`named` returns a name-to-value map: as a getter on any `SiteColors`,
+`BrandPalette`, or `SiteTextStyles` instance (`context.colors.named`), and as
+the static `SiteSpacing.named` and `SiteRadii.named`. That is how the
+storyboard renders its style guides.
 
 ## Configure the site
 
@@ -609,7 +618,7 @@ SiteIconButton(
 ### Badges and pills
 
 ```dart
-SiteBadge('v0.1.0', icon: SiteIcons.folders)
+SiteBadge('v1.0.0', icon: SiteIcons.folders)
 SiteBadge('Passing', tone: BadgeTone.accent, filled: true)   // neutral accent link danger
 
 SelectPill(label: 'Dart', selected: true, onTap: () {})
@@ -748,9 +757,9 @@ SiteIcon(SiteIcons.github, size: 18, color: context.colors.foreground)
 
 The bundled set is `copy`, `check`, `fileCode`, `chevronDown`, `colorAuto`,
 `colorDark`, `colorLight`, `sun`, `moon`, `github`, `discord`, `arrowUpRight`,
-`arrowRight`, `x`, `menu`, `refresh`, `folders`. Anything else is a Material
-glyph: every component that takes a `SiteIcons` also takes an `IconData`, and
-`AnyIcon` renders whichever is set.
+`arrowRight`, `x`, `menu`, `refresh`, `folders`, `link`. Anything else is a
+Material glyph: every component that takes a `SiteIcons` also takes an
+`IconData`, and `AnyIcon` renders whichever is set.
 
 Glyphs are tinted with `BlendMode.srcIn`, which preserves per-path alpha, so
 multi-opacity icons keep their depth.
@@ -815,8 +824,9 @@ Behavior worth knowing:
 
 Every heading is linkable, with no per-section wiring. The fragment is derived
 from the heading text by `slugify`: lowercase, punctuation dropped, words
-joined with hyphens. `Routing & deep links` becomes
-`/docs#routing-and-deep-links`.
+joined with hyphens. `Routing and deep links` becomes
+`/docs#routing-and-deep-links`, and `Routing & deep links` becomes
+`/docs#routing-deep-links`.
 
 Deriving the slug from the title rather than hand-writing it beside the title
 is what stops the two from drifting apart when a heading is reworded.
@@ -883,10 +893,12 @@ pageMeta: const {
 },
 ```
 
-With `origin` set, canonical and `og:url` are derived per route
-(`config.metaFor('/docs').canonical`). Without it, those tags are left
-untouched. Routes with no entry fall back to `config.name` and
-`config.description`.
+Routes with no entry fall back to `config.name` and `config.description`, and
+with `origin` set they also get a canonical URL derived from it, which updates
+the canonical link and `og:url` (`config.metaFor('/').canonical` is
+`https://acme.dev/`). An entry in `pageMeta` or a `SitePage.meta` is
+used as written, so give it a `canonical:` of its own if that route needs one.
+Without a canonical URL, those two tags are left untouched.
 
 Off web, `applyPageMeta` is a no-op stub.
 
@@ -939,7 +951,8 @@ const palette = SitePalette(
 ```
 
 `BrandPalette` is the vivid, illustrative half: chart series, icon tints, and
-diagram canvases. `brand.swatch(i)` cycles ten hues for multi-series visuals.
+diagram canvases. `brand.swatch(i)` cycles eight of its hues (`swatches`) for
+multi-series visuals.
 
 Keep the code theme in step with the brand hues if you change either; the
 defaults are deliberately sampled from the same source, which is what makes
@@ -1337,11 +1350,11 @@ Future<void> loadSiteFonts() async {
 
 ## Bundle size and performance
 
-- **Fonts**: roughly 230 KB for seven Geist faces. Font assets declared by a
+- **Fonts**: roughly 200 KB for seven Geist faces. Font assets declared by a
   package are always bundled, and pointing `SiteTypography` at other families
   does not remove them. To drop weights, edit the `fonts:` section of the
   package's own `pubspec.yaml`.
-- **Icons**: about 68 KB of SVG, bundled and decoded on first use.
+- **Icons**: about 10 KB of SVG, bundled and decoded on first use.
 - **Grammars**: the four default languages are referenced from
   `SiteHighlighter.defaultLanguages`, so they stay in the bundle even when
   `SiteKit.init(codeLanguages: ...)` names a different set. They are small, and
@@ -1361,7 +1374,7 @@ Future<void> loadSiteFonts() async {
 
 | Export | What it is |
 | --- | --- |
-| `SiteKit.init` | One-call setup: binding, URL strategy, highlighter |
+| `SiteKit.init` | One-call setup: binding, boot fragment, URL strategy, highlighter |
 | `SiteApp` | Root widget: scopes, theme, router |
 | `SitePage`, `buildSiteRouter` | Route definitions and the router factory |
 | `SiteConfig`, `NavItem`, `FooterColumn`, `SiteAuthor` | Site description |
@@ -1441,13 +1454,14 @@ lib/
     navigation/              PageSection model, rail list, nav-sheet bridge
     seo/                     per-route document metadata (web + stub)
     highlight/               the shared shiki highlighter
-    util/                    link launching
+    util/                    link launching, URL fragment helpers
     widgets/                 the component library
 assets/
   fonts/                     Geist, Geist Mono
   icons/                     the SVG glyph set
 test/
   site_kit_test.dart         theme, breakpoints, config, prose, widgets
+  deep_link_test.dart        slugs and DocsShell heading deep links
 storyboard/                  the component canvas app
 ```
 

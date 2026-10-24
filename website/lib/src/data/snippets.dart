@@ -34,7 +34,7 @@ ConstraintLayout(
   /// The dependency line for a manual pubspec edit.
   static const String pubspec = r'''
 dependencies:
-  flutter_constraint_layout: ^0.1.0
+  flutter_constraint_layout: ^1.0.0
 ''';
 
   /// The single import that brings in every widget, dimension, link, and helper.

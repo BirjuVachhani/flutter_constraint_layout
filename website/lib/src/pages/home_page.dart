@@ -221,10 +221,9 @@ class _FeaturesOverview extends StatelessWidget {
   static const _items = <(IconData, String, String)>[
     (
       Icons.done_all_rounded,
-      'Full feature parity',
+      'The full layout toolkit',
       'Anchors, chains, barriers, guidelines, circular placement, flow, grid, '
-          'and visibility: the complete ConstraintLayout surface, ported '
-          'faithfully.',
+          'and visibility, ported faithfully from Android ConstraintLayout.',
     ),
     (
       Icons.code_rounded,
@@ -730,9 +729,9 @@ class _EngineFeature extends StatelessWidget {
       tag: 'Fallback',
       title: 'Cassowary solver',
       body:
-          'Some arrangements are a genuine system of simultaneous equations: a '
-          'weighted chain sharing leftover space, a widget centered between two '
-          'moving anchors, an aspect-ratio member inside a chain. For those the '
+          'Some layouts go beyond what the graph resolves: barriers, circular '
+          'links, Flow and Grid, a chain with a gone or aspect-ratio member, or '
+          'a chain along an axis that sizes to its content. For those the '
           'engine falls back to a linear constraint solver, the same Cassowary '
           'algorithm behind Apple\'s Auto Layout.',
     );
