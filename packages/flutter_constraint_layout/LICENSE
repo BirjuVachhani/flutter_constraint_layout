@@ -27,18 +27,9 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
---------------------------------------------------------------------------------
-
-Third-party notice
-
-The debug visualization in lib/src/debug/ reproduces the rendering of Android
-Studio's layout editor (https://android.googlesource.com/platform/tools/adt/idea),
-whose constants, palettes, and drawing algorithms it adapts. Copyright (C) The
-Android Open Source Project, licensed under the Apache License, Version 2.0,
-reproduced below. The files that carry
-"SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause" are covered by both
-licenses: the Apache License for the adapted portions and the BSD 3-Clause
-License above for everything else.
+Portions of lib/src/debug/ are adapted from Android Studio's layout editor,
+Copyright (C) The Android Open Source Project, under the Apache License,
+Version 2.0, reproduced below.
 
                                  Apache License
                            Version 2.0, January 2004

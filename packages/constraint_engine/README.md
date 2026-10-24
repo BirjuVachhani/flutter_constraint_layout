@@ -522,9 +522,10 @@ graph-first entry point.
 
 BSD 3-Clause License, Copyright (c) 2026, Birju Vachhani.
 
-The files under `lib/src/` are a Dart port of androidx.constraintlayout core,
-Copyright (C) The Android Open Source Project, and carry
-`SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause`: the upstream portions
+The files under `lib/src/`, and the tests ported from upstream's core test
+suite (with their `test/support/` classes), are a Dart port of
+androidx.constraintlayout core, Copyright (C) The Android Open Source Project,
+and carry `SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause`: the upstream portions
 remain under the Apache License, Version 2.0, and the modifications are under
 the BSD 3-Clause License. The
 [LICENSE](https://github.com/BirjuVachhani/constraint_layout/blob/main/packages/constraint_engine/LICENSE)

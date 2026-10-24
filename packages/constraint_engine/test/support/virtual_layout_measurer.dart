@@ -1,3 +1,10 @@
+// Copyright (C) 2021 The Android Open Source Project
+// Modifications copyright (C) 2026 Birju Vachhani
+// SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+//
+// Adapted from the measurer in androidx.constraintlayout.core.FlowTest
+// (upstream pinned in UPSTREAM.md).
+//
 // The measurer virtual-layout tests need: a Flow or Grid measures itself
 // through its own measure() pass, while a plain widget just echoes back the
 // dimensions it was handed.

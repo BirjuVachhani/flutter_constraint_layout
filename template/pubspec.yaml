@@ -54,6 +54,10 @@ flutter:
 
   assets:
     - assets/icons/
+    # The SIL Open Font License requires its text to accompany the fonts
+    # declared below, so it ships in every app built with site_kit.
+    - assets/fonts/Geist-OFL.txt
+    - assets/fonts/GeistMono-OFL.txt
 
   # Declared here so consuming apps get the fonts for free. Because they come
   # from a package, the family names are prefixed: `packages/site_kit/Geist`.
