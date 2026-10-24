@@ -66,6 +66,17 @@ jobs:
         working-directory: website
         run: flutter build web --wasm --base-href "/"
 
+      - name: Add fallbacks for path URLs
+        # The site uses path URLs (/docs) and GitHub Pages has no rewrite rules.
+        # Pages resolves an extensionless path to the matching .html file, so
+        # docs.html serves a direct load or refresh of /docs; 404.html boots the
+        # app for any other unknown path, so a deep link never dead-ends on
+        # GitHub's own 404 page. Add a copy here for every new top-level route.
+        working-directory: website/build/web
+        run: |
+          cp index.html docs.html
+          cp index.html 404.html
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
