@@ -31,8 +31,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Third-party notice
 
-Files under lib/src/ that begin with "SPDX-License-Identifier: Apache-2.0 AND
-BSD-3-Clause" are a Dart port of androidx.constraintlayout core
+Files in this package that begin with "SPDX-License-Identifier: Apache-2.0
+AND BSD-3-Clause" (the engine sources under lib/src/ and the tests ported from
+upstream's core test suite) are a Dart port of androidx.constraintlayout core
 (https://github.com/androidx/constraintlayout), Copyright (C) The Android Open
 Source Project, licensed under the Apache License, Version 2.0, reproduced
 below. The upstream portions of those files remain under the Apache License;

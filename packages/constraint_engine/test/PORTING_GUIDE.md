@@ -1,11 +1,20 @@
 # Test porting guide (Java JUnit -> Dart test)
 
 Convert Android ConstraintLayout `core` tests to Dart tests for `constraint_engine`.
-The engine resolves via the dependency graph only (no Cassowary yet), but the asserted
-coordinates are engine-agnostic golden values, so they must match.
+The engine resolves a layout with the dependency graph first and falls back to the
+ported `LinearSystem` (Cassowary) solver when the graph declines; UPSTREAM.md lists
+the decline rules. The asserted coordinates are engine-agnostic golden values, so a
+ported test must reproduce them whichever path resolves it. Tests that drive the
+solver directly (`LinearSystem`, `ArrayRow`, `SolverVariable`) are ported too.
 
-Source tests live at:
-`/Users/birjuvachhani/Documents/Projects/constraint_layout/inspo/constraintlayout/constraintlayout/core/src/test/java/androidx/constraintlayout/core/`
+Source tests live upstream at
+https://github.com/androidx/constraintlayout/tree/main/constraintlayout/core/src/test/java/androidx/constraintlayout/core
+(the port is pinned to that repository's final commit; see `../UPSTREAM.md`). A local
+clone is handy for grepping. It is optional and git-ignored: from the repository root,
+`git clone https://github.com/androidx/constraintlayout inspo/constraintlayout`.
+
+`../UPSTREAM.md` maps every upstream test file to its Dart port and lists the ones
+that are not ported, with the reason.
 
 Engine package under test: import `package:constraint_engine/constraint_engine.dart`.
 Test framework: `package:test/test.dart`.
@@ -36,6 +45,7 @@ Test framework: `package:test/test.dart`.
 - `BasicMeasure.EXACTLY|AT_MOST|UNSPECIFIED|WRAP_CONTENT|MATCH_PARENT|FIXED` -> unchanged
 - `Measure.SELF_DIMENSIONS|TRY_GIVEN_DIMENSIONS|USE_GIVEN_DIMENSIONS` -> unchanged
 - float literals: `0.5f` -> `0.5`, `1f` -> `1.0`, `0.2f` -> `0.2`
+- Java integer division `a / b` -> `a ~/ b`; casts `(int) expr` -> `expr.toInt()`
 
 ## Methods
 - `widget.connect(Type.X, target, Type.Y, margin)` -> unchanged: `widget.connect(ConstraintAnchorType.x, target, ConstraintAnchorType.y, margin)`
@@ -50,6 +60,26 @@ Test framework: `package:test/test.dart`.
 - `root.updateHierarchy()` -> unchanged
 - getters `getWidth/getHeight/getLeft/getTop/getRight/getBottom/getX/getY/getDebugName/getBaselineDistance` -> unchanged
 - `getGuidelineAnchor()`/no-arg guideline `getAnchor()` -> `guideline.getGuidelineAnchor()`
+- `widget.setDebugSolverName(system, "name")` -> `widget.setDebugName('name')` (upstream's
+  version also names the widget's solver variables, which only matters for debug output)
+
+## Solver classes
+- `SolverVariable.Type.UNRESTRICTED|CONSTANT|SLACK|ERROR|UNKNOWN`
+  -> `SolverVariableType.unrestricted|constant|slack|error|unknown`
+- `SolverVariable.STRENGTH_*` -> unchanged
+- Java overloads are split into named methods; each ported file's header lists its own:
+  - `row.createRowEquals(variable, value)` -> `row.createRowEqualsConstant(variable, value)`
+    (`createRowEquals(a, b, margin)` keeps its name)
+  - `row.createRowGreaterThan(a, intValue, slack)` -> `row.createRowGreaterThanConstant(a, intValue, slack)`
+    (`createRowGreaterThan(a, b, slack, margin)` keeps its name)
+  - `row.addError(system, strength)` -> `row.addErrorToRow(system, strength)`
+  - `system.addEquality(a, value)` -> `system.addEqualityConstant(a, value)`
+    (`addEquality(a, b, margin, strength)` keeps its name)
+- Upstream's test support classes `Amount`, `EquationVariable`, and `LinearEquation` are
+  ported under `test/support/`. `var` is reserved in Dart, so the `LinearEquation`
+  `var(...)` DSL calls become `v(...)`.
+- For virtual-layout (Flow, Grid) tests, `test/support/virtual_layout_measurer.dart` provides
+  the measurer that upstream's FlowTest defines inline.
 
 ## Measurer (anonymous class -> Dart class)
 ```java
@@ -85,21 +115,35 @@ final _Measurer sMeasurer = _Measurer();
 ## Structure
 - Each `@Test public void fooBar()` -> `test('fooBar', () { ... });`
 - File -> `void main() { group('<FileName>', () { <tests> }); }`
+- Keep upstream's class name as the group and each method name as the test name, so a
+  failure maps straight back to its Java original. Start the file with a
+  `// Ported from androidx.constraintlayout.core.<Class> (upstream pinned in UPSTREAM.md).`
+  comment, plus a note on any conversion that is not mechanical.
 - Delete all `System.out.println(...)`, `import` lines, `@Test`, class wrapper.
 
-## Skip rules (solver-only / unsupported by the graph engine)
-Mark a test `skip: '<reason>'` (do NOT delete) when it:
-- Calls `getSystem()`, `addToSolver(...)`, `addToSolverWithPermutation`, `updateFromSolver`,
-  `resetSolverVariables`, `getCache`, `minimize`, `setDebugSolverName`, `fillMetrics`,
-  `new Metrics()` — these exercise the Cassowary solver directly.
-- Uses circular/`connectCircularConstraint` positioning (needs Cassowary).
-Example: `test('name', () { ... }, skip: 'requires Cassowary solver (phase 2)');`
+## What to port, skip, or drop
+The solver is ported, so tests that call solver APIs (`getSystem()`, `addToSolver(...)`,
+`updateFromSolver(...)`, `resetSolverVariables(...)`, `getCache()`, `minimize()`) or use
+circular positioning (`connectCircularConstraint`) are ported and run like any other.
+`../UPSTREAM.md` lists four ported tests that still leave those solver runs out.
 
-If a test only differs by re-running with `OPTIMIZATION_NONE` vs `OPTIMIZATION_STANDARD`
-and asserting the same coordinates, keep ONE run (through `layout()`/`measure()`), drop the
-solver-only duplicate assertions if they reference solver APIs.
+- Keep every run when a test repeats a layout under several optimization levels
+  (`OPTIMIZATION_NONE`, `OPTIMIZATION_STANDARD`, `OPTIMIZATION_GRAPH`, ...): port each
+  `setOptimizationLevel(...)` or `measure(...)` call together with its assertions.
+- Drop diagnostic-only scaffolding instead of skipping the test: `System.out.println`,
+  `System.nanoTime()` timing, and `Metrics metrics = new Metrics(); root.fillMetrics(metrics);`.
+  `Metrics` instrumentation is not ported, and upstream never asserts on it.
+- A method whose `@Test` is commented out upstream does not run there either. Port it
+  with `skip:` and the reason, as `nested_layout_test.dart` does for
+  `NestedLayout.testNestedLayout`, or leave it out, as with `WidgetsPositioningTest`'s
+  `testAddingWidgets` and `testWidgetStrengthPositioning`.
+  Example: `test('name', () { ... }, skip: 'disabled upstream too (@Test is commented out)');`
+- A test that needs an unported module (`state/`, `parser/`, `motion/`, `dsl/`, `scout/`,
+  `utils/GridEngine`) is not ported at all; list it in UPSTREAM.md with the reason.
+- Never skip a test to hide a failure. A wrong coordinate is either an engine bug or a
+  conversion error, and either one needs fixing.
 
 ## Running
-`dart test test/<file>_test.dart`
+`dart test test/<file>_test.dart`, then the whole suite with `dart test`.
 Report: total tests, passing, skipped, and any FAILING with the expected-vs-actual so the
 engine owner can decide if it is an engine bug or a conversion error.

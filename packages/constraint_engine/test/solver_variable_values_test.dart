@@ -1,3 +1,7 @@
+// Copyright (C) 2020 The Android Open Source Project
+// Modifications copyright (C) 2026 Birju Vachhani
+// SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+//
 // Ported from androidx.constraintlayout.core.SolverVariableValuesTest
 // (upstream pinned in UPSTREAM.md). The seeded java.util.Random sequence in
 // testBasic6 differs from Dart's Random, but the assertions are
