@@ -11,8 +11,8 @@
 >   `website/`, or `docs/` are relative to the repository root.
 > - The package's entry library, `lib/constraint_layout.dart` in the text, is
 >   now `lib/flutter_constraint_layout.dart`.
-> - Test counts are as of 2026-07-25. At the 1.0.0 release the package suite
->   has 173 tests and the engine suite 350 passing plus 1 skipped.
+> - Test counts are as of 2026-07-25. Both suites have grown since; run them
+>   for the current numbers.
 > - `playground/` was a local, git-ignored scratch app. It no longer exists;
 >   the Playground entry below says where its role lives now.
 

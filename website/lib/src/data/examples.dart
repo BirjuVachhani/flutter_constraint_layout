@@ -119,8 +119,8 @@ ConstraintLayout(
   'dimensions': LiveExample(
     previewHeight: 220,
     caption:
-        'matchConstraint fills the gap between two anchors; percent takes a '
-        'fraction of the parent. Both need both edges on the axis anchored.',
+        'matchConstraint fills the gap between two anchors, so it needs both; '
+        'percent takes a fraction of the parent, so one link is enough.',
     code: r'''
 ConstraintLayout(
   children: [

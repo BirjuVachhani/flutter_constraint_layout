@@ -1203,7 +1203,8 @@ List<Widget> _content(BuildContext context, String id) {
           'contains a barrier, a `circle` link, a `.constrainedWrap` size, a '
           '`ConstraintFlow` or `ConstraintGrid`, an `aspectRatio` child whose '
           'width and height are both `.matchConstraint`, or a chain with a '
-          '`gone` or aspect-ratio member. It also takes this path when the '
+          '`gone` or aspect-ratio member (or, in right-to-left text, with a '
+          'margin). It also takes this path when the '
           'layout sizes to its content along an axis that has a chain, a child '
           'anchored on both sides, or a child extending outside the layout, '
           'and for anything else the graph cannot resolve directly.',

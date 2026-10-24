@@ -82,7 +82,7 @@ import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
 
 ## Quick start
 
-Here is a complete `ConstraintLayout` with one child, pinned 16 logical pixels from the parent's top-start corner.
+Here is a complete `ConstraintLayout` with one child, pinned 16 logical pixels from the parent's top-start corner. The source is on one side and the layout it renders on the other.
 
 > Every example uses `DemoBox`, a plain colored box with a label, in place of real content, so the focus stays on the constraints. Swap it for any widget of your own.
 
@@ -176,6 +176,8 @@ ConstraintLayout(
 )
 ```
 
+*Opposing anchors on an axis center the child; bias slides it along (0 = start/top, 1 = end/bottom).*
+
 Bias is how you place something "a third of the way down" or "near the end" without hardcoding pixels: it stays proportional as the parent resizes.
 
 ## Dimensions
@@ -207,6 +209,8 @@ ConstraintLayout(
   ],
 )
 ```
+
+*matchConstraint fills the gap between two anchors, so it needs both; percent takes a fraction of the parent, so one link is enough.*
 
 ### The dimensions
 
@@ -244,6 +248,8 @@ ConstraintLayout(
 )
 ```
 
+*One axis is fixed; the matchConstraint axis is derived to hold the ratio. Here height follows a 200px width at 16 : 9.*
+
 ## Chains
 
 When two or more widgets link to **each other** in a line (first to second, second back to first, and so on) they form a **chain**: a group that shares its space as a unit, much like flexbox's justify-content. The two outer edges anchor to something outside the chain.
@@ -277,6 +283,8 @@ ConstraintLayout(
   ],
 )
 ```
+
+*Three boxes linked start-to-end form a chain. The style set on the head (A) governs the whole group; try spreadInside or packed.*
 
 ### Chain styles
 
@@ -312,6 +320,8 @@ ConstraintLayout(
   ],
 )
 ```
+
+*A guideline is an invisible line at a fixed offset or a percent of the parent. Everything anchored to it moves together when it moves.*
 
 Use `Guideline.vertical` for a vertical line (siblings link their horizontal edges to it) and `Guideline.horizontal` for a horizontal one. Position it with exactly one of `begin`, `end`, or `percent`.
 
@@ -350,6 +360,8 @@ ConstraintLayout(
 )
 ```
 
+*A barrier tracks the furthest edge of the widgets it references, so C clears whichever of A or B is wider, even as their content changes.*
+
 Pick the `edge` to track (`start`, `end`, `top`, `bottom`, and the absolute `left` / `right`) and list the widgets in `referenced`. A barrier has no size and draws nothing; it only reports a position. A layout that contains one is resolved by the Cassowary solver rather than the faster dependency graph (see **How the engine works**).
 
 ## Circular positioning
@@ -386,6 +398,8 @@ ConstraintLayout(
 )
 ```
 
+*Place a widget at an angle and radius around another. 0° points straight up and angles run clockwise.*
+
 ## Visibility
 
 Every child has a `visibility`, mirroring Android's three states:
@@ -421,11 +435,13 @@ ConstraintLayout(
 )
 ```
 
+*A gone widget collapses to a point and links targeting it switch to their goneMargin, so C closes the gap B left behind.*
+
 `gone` removes a widget and reflows around it in one step, and `goneMargin` lets neighbors keep a sensible gap when they do. Because it is only a property, toggling it keeps the child mounted, so its state survives the round trip.
 
 ### Try it
 
-The live docs include an interactive version of this example: flip B between the three states and watch C. `invisible` keeps B's space (C does not move), while `gone` collapses it and C slides in on its `goneMargin`.
+Flip B between the three states and watch C: `invisible` keeps B's space (C does not move), while `gone` collapses it and C slides in on its `goneMargin`.
 
 ## Flow
 
@@ -463,6 +479,8 @@ ConstraintLayout(
   ],
 )
 ```
+
+*ConstraintFlow lays its referenced siblings out in a chain and wraps to new rows when it runs out of width, the constraint-based answer to Wrap.*
 
 ### Wrap modes
 
@@ -504,6 +522,8 @@ ConstraintLayout(
   ],
 )
 ```
+
+*ConstraintGrid places its referenced siblings into rows and columns. Spans use Android's index:RxC syntax, so cell 0 spans two columns.*
 
 ### Spans, skips, and weights
 
@@ -560,6 +580,8 @@ ConstraintLayout(
 )
 ```
 
+*Avatar, name, and handle across the top; a barrier below the taller of them; the bio spans the full width beneath. One flat layer, no nesting.*
+
 Each piece states its own relationships: the name fills the width up to the parent's end (`matchConstraint`), the handle sits under the name, and the bio starts below `#headerEnd` (the barrier), so it always clears both the avatar and the text no matter which is taller.
 
 ## How the engine works
@@ -572,7 +594,7 @@ Most layouts are deterministic: once the parent size and a widget's anchors and 
 
 ### Cassowary solver (the fallback)
 
-Some layouts are outside what the graph resolves, and for those the engine falls back to a linear constraint solver, a port of Android's `LinearSystem`, which implements the **Cassowary** algorithm (the same family behind Apple's Auto Layout). A layout takes this path when it contains a barrier, a `circle` link, a `.constrainedWrap` size, a `ConstraintFlow` or `ConstraintGrid`, an `aspectRatio` child whose width and height are both `.matchConstraint`, or a chain with a `gone` or aspect-ratio member. It also takes this path when the layout sizes to its content along an axis that has a chain, a child anchored on both sides, or a child extending outside the layout, and for anything else the graph cannot resolve directly.
+Some layouts are outside what the graph resolves, and for those the engine falls back to a linear constraint solver, a port of Android's `LinearSystem`, which implements the **Cassowary** algorithm (the same family behind Apple's Auto Layout). A layout takes this path when it contains a barrier, a `circle` link, a `.constrainedWrap` size, a `ConstraintFlow` or `ConstraintGrid`, an `aspectRatio` child whose width and height are both `.matchConstraint`, or a chain with a `gone` or aspect-ratio member (or, in right-to-left text, with a margin). It also takes this path when the layout sizes to its content along an axis that has a chain, a child anchored on both sides, or a child extending outside the layout, and for anything else the graph cannot resolve directly.
 
 ### Persistent, incremental model
 
