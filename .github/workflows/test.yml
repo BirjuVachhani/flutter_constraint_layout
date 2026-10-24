@@ -55,7 +55,12 @@ jobs:
         # Scoped to the workspace members. The standalone packages are resolved
         # and analyzed by their own jobs; an unscoped walk from the root would
         # reach them unresolved and report every import as missing.
-        run: flutter analyze packages/constraint_engine packages/flutter_constraint_layout website
+        #
+        # `dart analyze`, not `flutter analyze`: only `dart analyze` runs the
+        # analyzer plugins enabled in the root analysis_options.yaml, so this is
+        # what enforces this repo's own flutter_constraint_layout_lints rules.
+        # --fatal-infos keeps infos fatal, as `flutter analyze` does by default.
+        run: dart analyze --fatal-infos packages/constraint_engine packages/flutter_constraint_layout website
 
       - name: Engine tests (constraint_engine)
         working-directory: packages/constraint_engine
