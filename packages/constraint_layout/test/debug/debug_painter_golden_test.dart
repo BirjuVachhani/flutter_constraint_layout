@@ -224,6 +224,63 @@ List<Widget> helpersLayout() => [
       ),
     ];
 
+/// The connection types the chain-row and blueprint layouts never produce:
+/// a baseline-to-baseline link, a circular (angle + radius) link, an adjacent
+/// pair whose endpoints coincide, and a horizontal guideline. Each one has its
+/// own branch in the painter.
+List<Widget> connectionTypesLayout() => [
+      const Guideline.horizontal(id: #mid, percent: 0.5),
+      // Baseline: two texts of different sizes sharing a baseline.
+      Constrained(
+        id: #big,
+        start: .startOf(parent, margin: 24),
+        top: .topOf(parent, margin: 40),
+        child: const Text('Ag', key: ValueKey(#big),
+            style: TextStyle(fontSize: 40)),
+      ),
+      Constrained(
+        id: #small,
+        start: .endOf(#big, margin: 16),
+        baseline: .baselineOf(#big),
+        child: const Text('Ag', key: ValueKey(#small),
+            style: TextStyle(fontSize: 18)),
+      ),
+      // Adjacent: a zero-margin link, so the two endpoints coincide.
+      Constrained(
+        id: #left,
+        start: .startOf(parent, margin: 24),
+        top: .bottomOf(#mid, margin: 24),
+        width: .fixed(100),
+        height: .fixed(40),
+        child: box(#left),
+      ),
+      Constrained(
+        id: #touching,
+        start: .endOf(#left),
+        top: .topOf(#left),
+        width: .fixed(100),
+        height: .fixed(40),
+        child: box(#touching),
+      ),
+      // Circular: placed by angle and radius around a hub.
+      Constrained(
+        id: #hub,
+        end: .endOf(parent, margin: 140),
+        top: .bottomOf(#mid, margin: 90),
+        width: .fixed(40),
+        height: .fixed(40),
+        child: box(#hub),
+      ),
+      for (final (i, angle) in const [30.0, 150.0, 270.0].indexed)
+        Constrained(
+          id: Symbol('sat$i'),
+          circle: .around(#hub, angle: angle, radius: 90),
+          width: .fixed(28),
+          height: .fixed(28),
+          child: box(Symbol('sat$i')),
+        ),
+    ];
+
 void main() {
   testWidgets('golden: chain row in design (chains) palette', (tester) async {
     await pumpScenePainting(
@@ -279,6 +336,34 @@ void main() {
     await expectLater(
       find.byType(RepaintBoundary).first,
       matchesGoldenFile('goldens/blueprint_helpers.png'),
+    );
+  });
+
+  testWidgets('golden: baseline, circular, adjacent, horizontal guideline',
+      (tester) async {
+    await pumpScenePainting(
+      tester,
+      connectionTypesLayout(),
+      palette: const DebugPalette.blueprint(),
+      blueprint: true,
+    );
+    await expectLater(
+      find.byType(RepaintBoundary).first,
+      matchesGoldenFile('goldens/blueprint_connection_types.png'),
+    );
+  });
+
+  testWidgets('golden: the same connections in the chains palette',
+      (tester) async {
+    await pumpScenePainting(
+      tester,
+      connectionTypesLayout(),
+      palette: const DebugPalette.design(),
+      blueprint: false,
+    );
+    await expectLater(
+      find.byType(RepaintBoundary).first,
+      matchesGoldenFile('goldens/chains_connection_types.png'),
     );
   });
 
