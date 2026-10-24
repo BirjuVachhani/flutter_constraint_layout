@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 abstract final class Links {
   static const String github =
       'https://github.com/BirjuVachhani/constraint_layout';
-  static const String pubDev = 'https://pub.dev/packages/constraint_layout';
+  static const String pubDev = 'https://pub.dev/packages/flutter_constraint_layout';
   static const String author = 'https://github.com/BirjuVachhani';
 
   /// Android's ConstraintLayout, the layout this package ports to Flutter.

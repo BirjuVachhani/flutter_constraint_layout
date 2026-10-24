@@ -3,7 +3,7 @@
 ## Status: implemented (2026-07-25)
 
 > Paths below such as `lib/` and `test/` are relative to
-> `packages/constraint_layout/`, which was the repo root when this was written.
+> `packages/flutter_constraint_layout/`, which was the repo root when this was written.
 > Paths that start with `packages/` are relative to the repo root.
 
 All phases below are complete. Final layout of the feature:

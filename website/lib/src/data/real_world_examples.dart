@@ -1,4 +1,4 @@
-import 'package:constraint_layout/constraint_layout.dart';
+import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
 import 'package:flutter/material.dart';
 
 import '../widgets/live_example.dart';

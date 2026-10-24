@@ -1,5 +1,5 @@
 # Inherits the workspace root options, including its `plugins` section (see
-# packages/constraint_layout_lints). Analyzer plugins may only be configured in
+# packages/flutter_constraint_layout_lints). Analyzer plugins may only be configured in
 # the root options file of a workspace, so this file must not declare its own.
 analyzer:
   exclude:

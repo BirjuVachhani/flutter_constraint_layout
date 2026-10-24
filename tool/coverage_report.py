@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Merge the two suites' LCOV reports and print a coverage summary.
 
-`constraint_layout` and `constraint_engine` are separate packages with separate
+`flutter_constraint_layout` and `constraint_engine` are separate packages with separate
 test suites, but the Flutter suite also executes engine code (the engine is a
 path dependency compiled from source). A line is covered if *either* suite
 reached it, so the two reports are unioned rather than compared.
@@ -12,7 +12,7 @@ The Flutter side only records those engine lines when it is run with
 Usage:
     python3 tool/coverage_report.py [--scope lib|engine|all] [--missing FILE]
 
-`--scope lib` means the constraint_layout package's own lib/, `--scope engine`
+`--scope lib` means the flutter_constraint_layout package's own lib/, `--scope engine`
 means constraint_engine's.
 """
 
@@ -22,7 +22,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-ADAPTER = "packages/constraint_layout"
+ADAPTER = "packages/flutter_constraint_layout"
 ENGINE = "packages/constraint_engine"
 
 # Package roots whose coverage/lcov.info is merged. Each suite writes its SF:

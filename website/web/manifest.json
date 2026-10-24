@@ -1,6 +1,6 @@
 {
-    "name": "constraint_layout",
-    "short_name": "constraint_layout",
+    "name": "flutter_constraint_layout",
+    "short_name": "flutter_constraint_layout",
     "start_url": ".",
     "lang": "en",
     "categories": ["developer", "productivity"],

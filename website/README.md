@@ -1,6 +1,6 @@
-# constraint_layout website
+# flutter_constraint_layout website
 
-The showcase site for [`constraint_layout`](../): a landing page and docs that
+The showcase site for [`flutter_constraint_layout`](../): a landing page and docs that
 teach Flutter developers what ConstraintLayout is and how it works, styled with
 a monochrome, dark-forward palette and vivid Pierre-derived accents.
 

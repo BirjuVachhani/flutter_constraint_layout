@@ -1,4 +1,4 @@
-import 'package:constraint_layout/constraint_layout.dart';
+import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:shiki_flutter/shiki_flutter.dart';
@@ -79,7 +79,7 @@ class _ConstraintLayoutSiteState extends State<ConstraintLayoutSite> {
           listenable: _theme,
           builder: (context, _) {
             return MaterialApp.router(
-              title: 'constraint_layout: constraint-based layout for Flutter',
+              title: 'flutter_constraint_layout: constraint-based layout for Flutter',
               debugShowCheckedModeBanner: false,
               theme: buildTheme(Brightness.light),
               darkTheme: buildTheme(Brightness.dark),

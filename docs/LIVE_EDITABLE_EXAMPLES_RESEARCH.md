@@ -61,7 +61,7 @@ feature.
 | --- | --- | --- |
 | **dart_eval + flutter_eval** | Blocked | Dot shorthands fail with `CompileError: Unknown expression type DotShorthandPropertyAccessImpl` (tested on 0.8.5; zero DotShorthand handling in compiler source). The samples contain 100+ shorthand sites. Also: flutter_eval 0.8.2 does not build on Flutter >= 3.41 (`Container.isAntiAlias`, issue #140, unfixed), `Theme.of(context).colorScheme` throws at runtime (ColorScheme unbound), no execution limits for user loops (issue #291), effectively single-maintainer. |
 | **tom_d4rt** (maintained d4rt fork) | Blocked | Tested on 1.12.1: all three dot-shorthand forms fail ("Undefined variable"), `#hub` literals silently evaluate to null, and destructuring bridged `.indexed` records throws `PatternMatchException`. Supply chain is also marginal (unverified uploader, ~900 downloads, 1 star). |
-| **DartPad embed** | Blocked | Public DartPad supports only a curated package allowlist; arbitrary packages are explicitly off the roadmap, and the lightweight-embedding initiative (#2702) was closed as not planned on 2026-07-13. constraint_layout is unpublished besides. Self-hosting `dart_services` works in principle but abandons static hosting and adds a forked-deployment ops burden per Flutter release. |
+| **DartPad embed** | Blocked | Public DartPad supports only a curated package allowlist; arbitrary packages are explicitly off the roadmap, and the lightweight-embedding initiative (#2702) was closed as not planned on 2026-07-13. flutter_constraint_layout is unpublished besides. Self-hosting `dart_services` works in principle but abandons static hosting and adds a forked-deployment ops burden per Flutter release. |
 | **Zapp.run** | Dead | Domain unresolvable since ~March 2026 (Cloudflare zone refused); repo last pushed 2023. |
 | **JSON UI runtimes** (stac, json_dynamic_widget) | Rejected | Same format mismatch as rfw but with JSON; json_dynamic_widget is marked discontinued on pub.dev. |
 | **Server-side compile** (dart-services style, DDC hot reload) | Viable but costly | Real compiler fidelity, but abandons static hosting, seconds-scale latency, always-on instance, sandboxed-iframe and abuse controls needed. Keep as fallback only. |
@@ -72,7 +72,7 @@ feature.
 
 Ship `package:analyzer`'s `parseString` inside the website bundle, walk the
 real AST, and evaluate the examples' (closed, declarative) Dart subset against
-a registry of constructors that calls the real `constraint_layout` and Flutter
+a registry of constructors that calls the real `flutter_constraint_layout` and Flutter
 APIs compiled into the site. Visitors edit the exact Dart the docs display.
 
 ### What was actually proven (not estimated)

@@ -29,15 +29,15 @@ ConstraintLayout(
 )''';
 
   /// Install command for the hero pill and the installation section.
-  static const String install = 'flutter pub add constraint_layout';
+  static const String install = 'flutter pub add flutter_constraint_layout';
 
   /// The dependency line for a manual pubspec edit.
   static const String pubspec = r'''
 dependencies:
-  constraint_layout: ^0.1.0
+  flutter_constraint_layout: ^0.1.0
 ''';
 
   /// The single import that brings in every widget, dimension, link, and helper.
   static const String importLine =
-      "import 'package:constraint_layout/constraint_layout.dart';";
+      "import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';";
 }

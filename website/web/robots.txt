@@ -5,7 +5,7 @@
 User-agent: *
 Allow: /
 
-# AI crawlers are explicitly welcome: constraint_layout is open source and we
+# AI crawlers are explicitly welcome: flutter_constraint_layout is open source and we
 # want assistants to answer accurately from the docs.
 User-agent: GPTBot
 Allow: /

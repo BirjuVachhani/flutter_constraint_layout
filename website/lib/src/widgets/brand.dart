@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import '../data/links.dart';
 import '../theme/tokens.dart';
 
-/// The wordmark: a semibold mono `constraint_layout` that links home, followed
+/// The wordmark: a semibold mono `flutter_constraint_layout` that links home, followed
 /// by a muted tagline (`for Flutter by <author>`) whose author name is a link.
 /// The tagline is hidden on compact layouts, like a `hidden md:inline`
 /// treatment.
@@ -40,7 +40,7 @@ class _BrandState extends State<Brand> {
     final colors = context.colors;
     final showTagline = !context.isCompact;
 
-    // The "constraint_layout" wordmark in mono, semibold, dims on hover.
+    // The "flutter_constraint_layout" wordmark in mono, semibold, dims on hover.
     final word = MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _wordHovered = true),
@@ -48,7 +48,7 @@ class _BrandState extends State<Brand> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Text(
-          'constraint_layout',
+          'flutter_constraint_layout',
           style: TextStyle(
             fontFamily: AppFonts.mono,
             fontSize: 15.5,
@@ -140,7 +140,7 @@ class _FooterBrandState extends State<FooterBrand> {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    // The "constraint_layout" wordmark in mono, semibold, dims on hover.
+    // The "flutter_constraint_layout" wordmark in mono, semibold, dims on hover.
     final word = MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _wordHovered = true),
@@ -148,7 +148,7 @@ class _FooterBrandState extends State<FooterBrand> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Text(
-          'constraint_layout',
+          'flutter_constraint_layout',
           style: TextStyle(
             fontFamily: AppFonts.mono,
             fontSize: 15.5,

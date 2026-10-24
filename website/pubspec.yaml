@@ -1,6 +1,6 @@
-name: constraint_layout_website
+name: flutter_constraint_layout_website
 
-description: "Showcase website for the constraint_layout package."
+description: "Showcase website for the flutter_constraint_layout package."
 
 publish_to: none
 
@@ -19,8 +19,8 @@ dependencies:
     sdk: flutter
 
   # The package this site showcases (the local workspace copy).
-  constraint_layout:
-    path: ../packages/constraint_layout
+  flutter_constraint_layout:
+    path: ../packages/flutter_constraint_layout
 
   # Syntax highlighting for the docs code blocks, themed with the Pierre
   # light/dark pair (see lib/src/highlight/highlighter_service.dart). Web

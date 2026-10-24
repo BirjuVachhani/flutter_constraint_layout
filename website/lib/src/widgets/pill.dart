@@ -105,7 +105,7 @@ class _SelectPillState extends State<SelectPill> {
   }
 }
 
-/// The install-command pill: `flutter pub add constraint_layout` with a copy
+/// The install-command pill: `flutter pub add flutter_constraint_layout` with a copy
 /// button.
 class InstallCommand extends StatelessWidget {
   const InstallCommand({super.key, required this.command});

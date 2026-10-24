@@ -50,7 +50,7 @@ jobs:
 
       - name: Resolve workspace dependencies
         # Run at the repo root so the whole pub workspace
-        # (packages/constraint_engine, packages/constraint_layout, website)
+        # (packages/constraint_engine, packages/flutter_constraint_layout, website)
         # resolves together.
         run: flutter pub get
 

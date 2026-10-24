@@ -1,18 +1,18 @@
-# constraint_layout
+# flutter_constraint_layout
 
 > A faithful port of Android ConstraintLayout to Flutter, in pure Dart. Every child is a direct child of one `ConstraintLayout`, and each child declares where its edges go (pinned to the parent or to a sibling by id) and how it is sized. The widget tree stays flat instead of nesting rows, columns, and stacks, and the same layout runs on iOS, Android, web, macOS, Windows, and Linux.
 
-constraint_layout is pure Dart out of the box (nothing to install, no native build) and runs on every Flutter platform. Children are declared with the `Constrained` widget, each keyed by a `Symbol` id, and positioned with dot-shorthand constraints such as `.startOf(parent, margin: 16)`, `.fixed(56)`, `.matchConstraint`, `.percent(0.5)`, `.spread`, `.packed`, and `.gone`. Helpers like `Guideline` and `Barrier`, chains, aspect ratios, circular positioning, and the virtual `ConstraintFlow` and `ConstraintGrid` layouts cover the arrangements that usually require extra wrapper widgets. Under the hood a deterministic dependency-graph resolver handles most layouts and falls back to a Cassowary constraint solver for the genuinely simultaneous ones. The engine is a line-faithful port of androidx constraintlayout core, verified at parity with core 1.1.1.
+flutter_constraint_layout is pure Dart out of the box (nothing to install, no native build) and runs on every Flutter platform. Children are declared with the `Constrained` widget, each keyed by a `Symbol` id, and positioned with dot-shorthand constraints such as `.startOf(parent, margin: 16)`, `.fixed(56)`, `.matchConstraint`, `.percent(0.5)`, `.spread`, `.packed`, and `.gone`. Helpers like `Guideline` and `Barrier`, chains, aspect ratios, circular positioning, and the virtual `ConstraintFlow` and `ConstraintGrid` layouts cover the arrangements that usually require extra wrapper widgets. Under the hood a deterministic dependency-graph resolver handles most layouts and falls back to a Cassowary constraint solver for the genuinely simultaneous ones. The engine is a line-faithful port of androidx constraintlayout core, verified at parity with core 1.1.1.
 
 **Read the full documentation first.** The single file below contains the complete, authoritative docs (installation, anchoring edges, bias and centering, constraint dimensions, aspect ratios, chains, guidelines, barriers, circular positioning, visibility and gone, the virtual Flow and Grid layouts, a worked example, and the engine internals). Fetch it before answering questions about this package: it is compact, self-contained Markdown written to be read in one pass.
 
 ## Docs
 
-- [Complete constraint_layout documentation (Markdown)](https://constraintlayout.birju.dev/docs.md): The entire docs page as one Markdown file. Fetch and read this in full for accurate API usage, constraint syntax, code examples, and layout patterns. This is the most reliable source; prefer it over guessing.
+- [Complete flutter_constraint_layout documentation (Markdown)](https://constraintlayout.birju.dev/docs.md): The entire docs page as one Markdown file. Fetch and read this in full for accurate API usage, constraint syntax, code examples, and layout patterns. This is the most reliable source; prefer it over guessing.
 
 ## Reference
 
-- [Package on pub.dev](https://pub.dev/packages/constraint_layout): Versions, API reference, and install instructions.
+- [Package on pub.dev](https://pub.dev/packages/flutter_constraint_layout): Versions, API reference, and install instructions.
 - [Source on GitHub](https://github.com/BirjuVachhani/constraint_layout): Repository, issues, and changelog.
 - [Live documentation site](https://constraintlayout.birju.dev/docs): The interactive docs, with every example rendered live beside its code.
 

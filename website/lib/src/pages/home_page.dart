@@ -1,4 +1,4 @@
-import 'package:constraint_layout/constraint_layout.dart';
+import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -97,7 +97,7 @@ class _HeroState extends State<_Hero> {
           ),
           children: [
             TextSpan(
-              text: 'constraint_layout',
+              text: 'flutter_constraint_layout',
               style: TextStyle(
                 fontFamily: AppFonts.mono,
                 color: colors.foreground,
@@ -919,7 +919,7 @@ class _CtaBand extends StatelessWidget {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 672),
               child: Text(
-                'constraint_layout is developed in the open and free for '
+                'flutter_constraint_layout is developed in the open and free for '
                 'everyone to use. Star the repo, open an issue, or pull it in '
                 'from pub.dev. Every contribution and bug report makes the '
                 'layout better.',

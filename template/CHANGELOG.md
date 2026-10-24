@@ -16,7 +16,7 @@
 
 ## 0.1.0
 
-Initial extraction from the `constraint_layout` showcase site.
+Initial extraction from the `flutter_constraint_layout` showcase site.
 
 - Design tokens as theme extensions: `SiteColors`, `BrandPalette`,
   `SiteTextStyles`, plus `SiteSpacing`, `SiteRadii`, `SiteLayout`, `SiteMotion`.

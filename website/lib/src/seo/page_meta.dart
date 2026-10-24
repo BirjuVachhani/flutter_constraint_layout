@@ -27,7 +27,7 @@ class SeoMeta {
 }
 
 const SeoMeta _home = SeoMeta(
-  title: 'constraint_layout: constraint-based layout for Flutter',
+  title: 'flutter_constraint_layout: constraint-based layout for Flutter',
   description:
       'A faithful port of Android ConstraintLayout to Flutter, in pure Dart. '
       'Position and size every child by the constraints you declare, and keep '
@@ -36,9 +36,9 @@ const SeoMeta _home = SeoMeta(
 );
 
 const SeoMeta _docs = SeoMeta(
-  title: 'Documentation: constraint_layout',
+  title: 'Documentation: flutter_constraint_layout',
   description:
-      'Guides for constraint_layout: installation, anchoring edges, bias and '
+      'Guides for flutter_constraint_layout: installation, anchoring edges, bias and '
       'centering, constraint dimensions, aspect ratios, chains, guidelines, '
       'barriers, circular positioning, and the virtual Flow and Grid layouts.',
   canonical: '$_origin/docs',

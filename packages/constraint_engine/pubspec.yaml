@@ -1,7 +1,7 @@
 name: constraint_engine
 description: >-
   Pure-Dart constraint resolution engine ported from Android ConstraintLayout's
-  dependency-graph solver. No Flutter dependency. Consumed by the constraint_layout
+  dependency-graph solver. No Flutter dependency. Consumed by the flutter_constraint_layout
   Flutter package. The Cassowary fallback for cyclic graphs lands here in phase 2.
 version: 0.1.0
 publish_to: none

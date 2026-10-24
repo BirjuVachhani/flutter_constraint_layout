@@ -1,10 +1,10 @@
-# constraint_layout
+# flutter_constraint_layout
 
 > A faithful port of Android ConstraintLayout to Flutter, in pure Dart. Every child is a direct child of one `ConstraintLayout`, and each child declares where its own edges go (pinned to the parent or to a sibling by id) and how it is sized. The widget tree stays flat instead of nesting rows, columns, and stacks, and the same layout runs on iOS, Android, web, macOS, Windows, and Linux.
 
-This file is the complete constraint_layout documentation in a single Markdown file, meant to be fed to an LLM or read offline. It mirrors the live docs at https://constraintlayout.birju.dev/docs (the docs page is the source of truth).
+This file is the complete flutter_constraint_layout documentation in a single Markdown file, meant to be fed to an LLM or read offline. It mirrors the live docs at https://constraintlayout.birju.dev/docs (the docs page is the source of truth).
 
-- Package: https://pub.dev/packages/constraint_layout
+- Package: https://pub.dev/packages/flutter_constraint_layout
 - Source: https://github.com/BirjuVachhani/constraint_layout
 
 ## Introduction
@@ -59,7 +59,7 @@ Each of these has its own section below, with a live example you can read beside
 Add the package with the Flutter CLI:
 
 ```shellscript
-flutter pub add constraint_layout
+flutter pub add flutter_constraint_layout
 ```
 
 Or add it to your `pubspec.yaml` directly:
@@ -68,13 +68,13 @@ Or add it to your `pubspec.yaml` directly:
 
 ```yaml
 dependencies:
-  constraint_layout: ^0.1.0
+  flutter_constraint_layout: ^0.1.0
 ```
 
 Then import it. That one import brings in every widget, dimension, link, and helper you will see in these docs:
 
 ```dart
-import 'package:constraint_layout/constraint_layout.dart';
+import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
 ```
 
 ## Quick start

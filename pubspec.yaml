@@ -1,7 +1,7 @@
-name: constraint_layout_workspace
+name: flutter_constraint_layout_workspace
 
 description: >-
-  Workspace shell for the constraint_layout monorepo. Holds no code of its own;
+  Workspace shell for the flutter_constraint_layout monorepo. Holds no code of its own;
   it exists so a single `flutter pub get` here resolves every member against one
   shared lock file.
 
@@ -14,12 +14,12 @@ environment:
 # .gitignore). It must not be listed here, or pub get would fail on a
 # fresh clone where the directory does not exist.
 #
-# packages/constraint_layout_lints is likewise absent on purpose: an analyzer
+# packages/flutter_constraint_layout_lints is likewise absent on purpose: an analyzer
 # plugin is resolved by the analysis server from its own path, and adding it
 # here would pull the analyzer into every member's resolution.
 workspace:
   - packages/constraint_engine
-  - packages/constraint_layout
+  - packages/flutter_constraint_layout
   - website
 
 # Only so `include: package:flutter_lints/flutter.yaml` in this directory's

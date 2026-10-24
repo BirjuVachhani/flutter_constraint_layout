@@ -1,9 +1,9 @@
-import 'package:constraint_layout_website/src/data/docs_sections.dart';
-import 'package:constraint_layout_website/src/pages/docs_page.dart';
-import 'package:constraint_layout_website/src/theme/app_theme.dart';
-import 'package:constraint_layout_website/src/theme/theme_controller.dart';
-import 'package:constraint_layout_website/src/widgets/app_icon.dart';
-import 'package:constraint_layout_website/src/widgets/nav_sheet.dart';
+import 'package:flutter_constraint_layout_website/src/data/docs_sections.dart';
+import 'package:flutter_constraint_layout_website/src/pages/docs_page.dart';
+import 'package:flutter_constraint_layout_website/src/theme/app_theme.dart';
+import 'package:flutter_constraint_layout_website/src/theme/theme_controller.dart';
+import 'package:flutter_constraint_layout_website/src/widgets/app_icon.dart';
+import 'package:flutter_constraint_layout_website/src/widgets/nav_sheet.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
