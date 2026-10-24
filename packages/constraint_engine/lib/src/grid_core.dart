@@ -161,7 +161,9 @@ class GridCore extends VirtualLayout {
   }
 
   void setRows(int rows) {
-    if (rows > _MAX_ROWS) {
+    // 0 means "derive from the column count and the widget count"; anything
+    // negative is nonsense and would size the matrices to a negative length.
+    if (rows < 0 || rows > _MAX_ROWS) {
       return;
     }
     if (_rowsSet == rows) {
@@ -173,7 +175,8 @@ class GridCore extends VirtualLayout {
   }
 
   void setColumns(int columns) {
-    if (columns > _MAX_COLUMNS) {
+    // See setRows: 0 derives, negative is rejected.
+    if (columns < 0 || columns > _MAX_COLUMNS) {
       return;
     }
     if (_columnsSet == columns) {
@@ -707,8 +710,36 @@ class GridCore extends VirtualLayout {
     );
     final parent = getParent()! as ConstraintWidgetContainer;
     mContainer = parent;
+
+    // Re-derive the track counts here rather than trusting the ones computed
+    // when setRows/setColumns ran. Deriving the missing dimension needs the
+    // widget count, and a host naturally configures the grid before adding
+    // the widgets to it, so at that point the count was still zero and the
+    // derived side came out as 0. The matrices are sized from those counts,
+    // so they have to be rebuilt whenever the derivation moves.
+    final previousRows = _rows;
+    final previousColumns = _columns;
+    _updateActualRowsAndColumns();
+    // Only for a usable pair: the matrices are sized from these counts, and a
+    // caller is free to have set something nonsensical. _setupGrid rejects it
+    // just below, so an invalid grid measures to its reported size and places
+    // nothing.
+    if (_rows > 0 &&
+        _columns > 0 &&
+        (_rows != previousRows ||
+            _columns != previousColumns ||
+            _positionMatrix == null)) {
+      _initVariables();
+    }
+
     _setupGrid(false);
-    for (final box in _boxWidgets!) {
+    final boxWidgets = _boxWidgets;
+    if (boxWidgets == null) {
+      // Nothing to place: no widgets, or a track count that stayed invalid.
+      // Leave the measured size as reported instead of failing the layout.
+      return;
+    }
+    for (final box in boxWidgets) {
       parent.add(box);
     }
   }
