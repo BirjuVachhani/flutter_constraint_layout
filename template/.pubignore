@@ -1,0 +1,4 @@
+# The storyboard is a development-only app; it is not part of the published
+# package (and pulling it in would drag its own lockfile and web scaffolding
+# along).
+storyboard/

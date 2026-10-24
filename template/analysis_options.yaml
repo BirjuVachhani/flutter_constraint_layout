@@ -1,0 +1,13 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  # The storyboard app is its own package with its own options file.
+  exclude:
+    - storyboard/**
+    - build/**
+
+linter:
+  rules:
+    - prefer_single_quotes
+    - directives_ordering
+    - always_declare_return_types

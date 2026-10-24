@@ -1,0 +1,76 @@
+name: site_kit
+
+description: >-
+  A batteries-included template package for building Flutter web sites:
+  design tokens, light/dark theming, responsive layout primitives, go_router
+  URL routing, SEO metadata, syntax-highlighted code blocks, and a component
+  library.
+
+version: 0.1.0
+
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Path-based URL strategy for the web (clean `/docs` URLs, no `#`). Safe to
+  # import off web: the package resolves to a non-web stub there.
+  flutter_web_plugins:
+    sdk: flutter
+
+  # URL-based routing, including deep links and browser history.
+  go_router: ^17.3.0
+
+  # Syntax highlighting for CodeBlock. Web tokenization runs in a Web Worker
+  # installed with `dart run shiki_flutter:install --default`.
+  shiki_flutter: ^1.1.0
+
+  # The bundled icon set ships as SVG.
+  flutter_svg: ^2.3.0
+
+  # Opening external links from nav items, footers, and inline links.
+  url_launcher: ^6.3.2
+
+  # Browser interop for the web-only bits: document metadata (SEO) and
+  # persisting the selected theme mode in localStorage. Always behind a
+  # conditional import, so it never enters an IO/desktop build.
+  web: ^1.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/icons/
+
+  # Declared here so consuming apps get the fonts for free. Because they come
+  # from a package, the family names are prefixed: `packages/site_kit/Geist`.
+  # Always reference them through `SiteFonts.sans` / `SiteFonts.mono`.
+  fonts:
+    - family: Geist
+      fonts:
+        - asset: assets/fonts/Geist-400.ttf
+          weight: 400
+        - asset: assets/fonts/Geist-500.ttf
+          weight: 500
+        - asset: assets/fonts/Geist-600.ttf
+          weight: 600
+        - asset: assets/fonts/Geist-700.ttf
+          weight: 700
+    - family: Geist Mono
+      fonts:
+        - asset: assets/fonts/GeistMono-400.ttf
+          weight: 400
+        - asset: assets/fonts/GeistMono-500.ttf
+          weight: 500
+        - asset: assets/fonts/GeistMono-700.ttf
+          weight: 700
