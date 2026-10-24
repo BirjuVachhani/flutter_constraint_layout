@@ -121,13 +121,17 @@ whenever either changes.
   slug derived from its heading (`lib/src/data/docs_sections.dart`), and older
   `/docs?section=<id>` links still resolve.
 - **Routing** uses clean URLs via `usePathUrlStrategy()`, so any route other
-  than `/` relies on the host serving `index.html` for it. GitHub Pages has no
-  rewrite rules, so the deploy workflow copies `build/web/index.html` to
-  `docs.html` (Pages serves it for `/docs`) and to `404.html` (served for any
-  other unknown path), which lets a direct load or a refresh of any route boot
-  the app. A new top-level route needs its own copy in
-  `.github/workflows/deploy-website.yml`. On another static host, configure an
-  SPA fallback instead, and if serving from a sub-path, pass
+  than `/` relies on the host serving the app shell for it. GitHub Pages has no
+  rewrite rules, so after the build the deploy workflow runs
+  `dart run tool/route_pages.dart build/web`. It writes `docs.html` (Pages
+  serves it for `/docs`) with the docs page's own title, description, and
+  canonical URL from `lib/src/seo/page_meta.dart`, so crawlers and link
+  previews that never run the app see the right page, and `404.html` (served
+  for any other unknown path), so a direct load or a refresh of any route boots
+  the app. A new top-level route belongs in `staticRoutes`
+  (`lib/src/seo/route_pages.dart`); `test/route_pages_test.dart` fails if
+  `web/index.html` and `page_meta.dart` drift apart. On another static host,
+  configure an SPA fallback instead, and if serving from a sub-path, pass
   `--base-href /your-path/` to `flutter build web`.
 - **Theme** switches the whole site with the nav toggle; the code blocks follow
   with the Pierre light / Pierre dark pair.

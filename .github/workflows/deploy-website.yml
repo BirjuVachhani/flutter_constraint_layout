@@ -22,16 +22,18 @@ on:
   # Allow manual runs from the Actions tab.
   workflow_dispatch:
 
-# Grant the token the scopes the Pages deploy needs.
+# Read-only by default; each job asks for what it needs.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
   build:
     name: Build (WASM)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Read access to the Pages API, for configure-pages.
+      pages: read
     # A newer commit cancels an in-progress build of an older one.
     concurrency:
       group: pages-build-${{ github.ref }}
@@ -39,6 +41,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check that Pages is enabled
+        # Before the slow steps, so a repository without a Pages site fails in
+        # seconds. It does not check the source: Settings > Pages > Source must
+        # be "GitHub Actions" for the deploy below to publish.
+        uses: actions/configure-pages@v6
 
       - name: Set up Flutter (stable)
         uses: subosito/flutter-action@v2
@@ -48,11 +58,6 @@ jobs:
 
       - name: Show Flutter version
         run: flutter --version
-
-      - name: Check the Pages configuration
-        # Fails fast, with a clear message, if Pages is not enabled with
-        # "GitHub Actions" as its source.
-        uses: actions/configure-pages@v6
 
       - name: Resolve workspace dependencies
         # Run at the repo root so the whole pub workspace
@@ -66,16 +71,17 @@ jobs:
         working-directory: website
         run: flutter build web --wasm --base-href "/"
 
-      - name: Add fallbacks for path URLs
-        # The site uses path URLs (/docs) and GitHub Pages has no rewrite rules.
-        # Pages resolves an extensionless path to the matching .html file, so
-        # docs.html serves a direct load or refresh of /docs; 404.html boots the
-        # app for any other unknown path, so a deep link never dead-ends on
-        # GitHub's own 404 page. Add a copy here for every new top-level route.
-        working-directory: website/build/web
-        run: |
-          cp index.html docs.html
-          cp index.html 404.html
+      - name: Add static pages for path URLs
+        # The site uses path URLs (/docs) and GitHub Pages has no rewrite rules:
+        # it serves <path>.html for an extensionless path and 404.html for any
+        # other unknown one. This writes docs.html with the docs page's own
+        # title, description, and canonical URL (from page_meta.dart), so
+        # crawlers and link previews that never run the app see the right
+        # page, and 404.html so any other deep link still boots the app. It
+        # fails if web/index.html and page_meta.dart have drifted apart. New
+        # top-level routes go in staticRoutes (lib/src/seo/route_pages.dart).
+        working-directory: website
+        run: dart run tool/route_pages.dart build/web
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
@@ -86,8 +92,13 @@ jobs:
     name: Deploy
     needs: build
     runs-on: ubuntu-latest
-    # Deployments queue rather than cancel: one already talking to Pages is
-    # always allowed to finish.
+    # Only the deploy job holds the Pages write scope and the OIDC token.
+    permissions:
+      pages: write
+      id-token: write
+    # A deployment that is already running is never cancelled. GitHub keeps at
+    # most one deployment waiting behind it, so a newer one replaces an older
+    # one that is still waiting, and the site always ends on the latest build.
     concurrency:
       group: pages-deploy
       cancel-in-progress: false
