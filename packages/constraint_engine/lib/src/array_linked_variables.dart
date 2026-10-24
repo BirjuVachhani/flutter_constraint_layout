@@ -43,16 +43,22 @@ class ArrayLinkedVariables implements ArrayRowVariables {
   static const double _epsilon = 0.001;
 
   ArrayLinkedVariables(ArrayRow arrayRow, Cache cache)
-      : _row = arrayRow,
-        mCache = cache;
+    : _row = arrayRow,
+      mCache = cache;
 
   void _grow() {
     _rowSize *= 2;
-    _arrayValues = [..._arrayValues, ...List.filled(_rowSize - _arrayValues.length, 0.0)];
-    _arrayIndices = [..._arrayIndices, ...List.filled(_rowSize - _arrayIndices.length, 0)];
+    _arrayValues = [
+      ..._arrayValues,
+      ...List.filled(_rowSize - _arrayValues.length, 0.0),
+    ];
+    _arrayIndices = [
+      ..._arrayIndices,
+      ...List.filled(_rowSize - _arrayIndices.length, 0),
+    ];
     _arrayNextIndices = [
       ..._arrayNextIndices,
-      ...List.filled(_rowSize - _arrayNextIndices.length, 0)
+      ...List.filled(_rowSize - _arrayNextIndices.length, 0),
     ];
   }
 

@@ -58,13 +58,18 @@ class RunGroup {
           continue;
         }
         position = _max(
-            position, _traverseStart(nextNode, startPosition + nextNode.mMargin));
+          position,
+          _traverseStart(nextNode, startPosition + nextNode.mMargin),
+        );
       }
     }
 
     if (node == run.start) {
       final dimension = run.getWrapDimension();
-      position = _max(position, _traverseStart(run.end, startPosition + dimension));
+      position = _max(
+        position,
+        _traverseStart(run.end, startPosition + dimension),
+      );
       position = _max(position, startPosition + dimension - run.end.mMargin);
     }
 
@@ -87,13 +92,18 @@ class RunGroup {
           continue;
         }
         position = _min(
-            position, _traverseEnd(nextNode, startPosition + nextNode.mMargin));
+          position,
+          _traverseEnd(nextNode, startPosition + nextNode.mMargin),
+        );
       }
     }
 
     if (node == run.end) {
       final dimension = run.getWrapDimension();
-      position = _min(position, _traverseEnd(run.start, startPosition - dimension));
+      position = _min(
+        position,
+        _traverseEnd(run.start, startPosition - dimension),
+      );
       position = _min(position, startPosition - dimension - run.start.mMargin);
     }
 
@@ -161,7 +171,8 @@ class RunGroup {
       final runDimension = -first.end.mMargin + dimension;
       dimension = _max(-minPosition, runDimension);
     } else {
-      dimension = first.start.mMargin + first.getWrapDimension() - first.end.mMargin;
+      dimension =
+          first.start.mMargin + first.getWrapDimension() - first.end.mMargin;
     }
 
     return dimension;

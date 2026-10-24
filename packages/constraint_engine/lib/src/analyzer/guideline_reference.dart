@@ -46,7 +46,8 @@ class GuidelineReference extends WidgetRun {
     }
     final startTarget = start.mTargets[0];
     final guideline = mWidget as Guideline;
-    final startPos = (0.5 + startTarget.value * guideline.getRelativePercent()).toInt();
+    final startPos = (0.5 + startTarget.value * guideline.getRelativePercent())
+        .toInt();
     start.resolve(startPos);
   }
 

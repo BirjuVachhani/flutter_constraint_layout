@@ -141,15 +141,15 @@ class RenderConstraintLayout extends RenderBox
     Color? debugChainColor,
     DebugLabelStyle debugBlueprintLabelStyle = DebugLabelStyle.both,
   })
-      // ignore: prefer_initializing_formals
-      : _textDirection = textDirection,
-        // ignore: prefer_initializing_formals
-        _debugShowChains = debugShowChains,
-        // ignore: prefer_initializing_formals
-        _debugShowBlueprint = debugShowBlueprint,
-        // ignore: prefer_initializing_formals
-        _debugChainColor = debugChainColor,
-        _debugLabelStyle = debugBlueprintLabelStyle;
+    // ignore: prefer_initializing_formals
+    : _textDirection = textDirection,
+       // ignore: prefer_initializing_formals
+       _debugShowChains = debugShowChains,
+       // ignore: prefer_initializing_formals
+       _debugShowBlueprint = debugShowBlueprint,
+       // ignore: prefer_initializing_formals
+       _debugChainColor = debugChainColor,
+       _debugLabelStyle = debugBlueprintLabelStyle;
 
   TextDirection _textDirection;
 
@@ -248,11 +248,11 @@ class RenderConstraintLayout extends RenderBox
   /// valid after a layout pass.
   @visibleForTesting
   DebugScene debugDescribeScene() => buildDebugScene(
-        container: _container!,
-        widgets: _modelWidgets,
-        parentData: _modelChildData,
-        children: _modelChildren,
-      );
+    container: _container!,
+    widgets: _modelWidgets,
+    parentData: _modelChildData,
+    children: _modelChildren,
+  );
 
   @override
   void setupParentData(RenderBox child) {
@@ -353,8 +353,10 @@ class RenderConstraintLayout extends RenderBox
             Size(w.getWidth().toDouble(), w.getHeight().toDouble()),
           ),
         );
-        _modelChildData[i].offset =
-            Offset(w.getX().toDouble(), w.getY().toDouble());
+        _modelChildData[i].offset = Offset(
+          w.getX().toDouble(),
+          w.getY().toDouble(),
+        );
       }
       final container = _container!;
       size = constraints.constrain(
@@ -428,14 +430,17 @@ class RenderConstraintLayout extends RenderBox
       // measure pass uses loose constraints on wrap axes, which leaves the
       // child a non-boundary so a later content change propagates back here
       // and triggers re-resolution.
-      final keepMeasuredLayout = measurer.laidOut.contains(w) &&
+      final keepMeasuredLayout =
+          measurer.laidOut.contains(w) &&
           (rb.size.width - ew).abs() < 1 &&
           (rb.size.height - eh).abs() < 1;
       if (!keepMeasuredLayout) {
         rb.layout(BoxConstraints.tight(Size(ew, eh)));
       }
-      _modelChildData[i].offset =
-          Offset(w.getX().toDouble(), w.getY().toDouble());
+      _modelChildData[i].offset = Offset(
+        w.getX().toDouble(),
+        w.getY().toDouble(),
+      );
     }
 
     _lastConstraints = constraints;
@@ -529,14 +534,21 @@ class RenderConstraintLayout extends RenderBox
     // siblings still targeting this widget keep their connections; the
     // solver's GONE handling gates on hasDependencies(), so the incoming
     // bookkeeping must survive an in-place re-apply.
-    final savedDependents = [for (final anchor in w.mAnchors) anchor.mDependents];
+    final savedDependents = [
+      for (final anchor in w.mAnchors) anchor.mDependents,
+    ];
     w.resetAnchors();
     for (var i = 0; i < w.mAnchors.length; i++) {
       w.mAnchors[i].mDependents = savedDependents[i];
     }
     w.setDimensionRatio(0, ConstraintWidget.UNKNOWN);
     // Match styles carry min/max/percent; reset to pristine spread defaults.
-    w.setHorizontalMatchStyle(ConstraintWidget.MATCH_CONSTRAINT_SPREAD, 0, 0, 1);
+    w.setHorizontalMatchStyle(
+      ConstraintWidget.MATCH_CONSTRAINT_SPREAD,
+      0,
+      0,
+      1,
+    );
     w.setVerticalMatchStyle(ConstraintWidget.MATCH_CONSTRAINT_SPREAD, 0, 0, 1);
     // A circular constraint is an anchor connect plus this angle; the connect
     // is cleared by resetAnchors, the angle must be cleared here.
@@ -581,9 +593,11 @@ class RenderConstraintLayout extends RenderBox
     w.setHorizontalChainStyle(_chainStyleOf(pd.horizontalChainStyle));
     w.setVerticalChainStyle(_chainStyleOf(pd.verticalChainStyle));
     w.setHorizontalWeight(
-        pd.horizontalWeight ?? ConstraintWidget.UNKNOWN.toDouble());
+      pd.horizontalWeight ?? ConstraintWidget.UNKNOWN.toDouble(),
+    );
     w.setVerticalWeight(
-        pd.verticalWeight ?? ConstraintWidget.UNKNOWN.toDouble());
+      pd.verticalWeight ?? ConstraintWidget.UNKNOWN.toDouble(),
+    );
     w.setVisibility(switch (pd.visibility) {
       ConstraintVisibility.visible => ConstraintWidget.VISIBLE,
       ConstraintVisibility.invisible => ConstraintWidget.INVISIBLE,
@@ -609,7 +623,11 @@ class RenderConstraintLayout extends RenderBox
           );
         }());
       } else {
-        w.connectCircularConstraint(target, circle.angle, circle.radius.round());
+        w.connectCircularConstraint(
+          target,
+          circle.angle,
+          circle.radius.round(),
+        );
       }
     }
 
@@ -626,9 +644,11 @@ class RenderConstraintLayout extends RenderBox
   void _applyGridConfig(GridCore w, ConstraintParentData pd) {
     w.setRows(pd.gridRows ?? 0);
     w.setColumns(pd.gridColumns ?? 0);
-    w.setOrientation(pd.gridOrientation == Axis.horizontal
-        ? GridCore.HORIZONTAL
-        : GridCore.VERTICAL);
+    w.setOrientation(
+      pd.gridOrientation == Axis.horizontal
+          ? GridCore.HORIZONTAL
+          : GridCore.VERTICAL,
+    );
     w.setHorizontalGaps(pd.gridHorizontalGap);
     w.setVerticalGaps(pd.gridVerticalGap);
     final rowWeights = pd.gridRowWeights;
@@ -666,9 +686,11 @@ class RenderConstraintLayout extends RenderBox
   /// called from model builds (flow changes are structural), so referenced
   /// widgets never need clearing.
   void _applyFlowConfig(Flow w, ConstraintParentData pd) {
-    w.setOrientation(pd.flowOrientation == Axis.horizontal
-        ? ConstraintWidget.HORIZONTAL
-        : ConstraintWidget.VERTICAL);
+    w.setOrientation(
+      pd.flowOrientation == Axis.horizontal
+          ? ConstraintWidget.HORIZONTAL
+          : ConstraintWidget.VERTICAL,
+    );
     w.setWrapMode(switch (pd.flowWrap) {
       FlowWrap.none => Flow.WRAP_NONE,
       FlowWrap.chain => Flow.WRAP_CHAIN,
@@ -713,9 +735,11 @@ class RenderConstraintLayout extends RenderBox
   /// [w] is always freshly constructed and needs no reset.
   void _applyHelperConfig(ConstraintWidget w, ConstraintParentData pd) {
     if (w is Guideline) {
-      w.setOrientation(pd.guidelineAxis == Axis.horizontal
-          ? Guideline.horizontal
-          : Guideline.vertical);
+      w.setOrientation(
+        pd.guidelineAxis == Axis.horizontal
+            ? Guideline.horizontal
+            : Guideline.vertical,
+      );
       final percent = pd.guidelinePercent;
       final begin = pd.guidelineBegin;
       final end = pd.guidelineEnd;
@@ -760,10 +784,10 @@ class RenderConstraintLayout extends RenderBox
   }
 
   int _chainStyleOf(ChainStyle? style) => switch (style) {
-        null || ChainStyle.spread => ConstraintWidget.CHAIN_SPREAD,
-        ChainStyle.spreadInside => ConstraintWidget.CHAIN_SPREAD_INSIDE,
-        ChainStyle.packed => ConstraintWidget.CHAIN_PACKED,
-      };
+    null || ChainStyle.spread => ConstraintWidget.CHAIN_SPREAD,
+    ChainStyle.spreadInside => ConstraintWidget.CHAIN_SPREAD_INSIDE,
+    ChainStyle.packed => ConstraintWidget.CHAIN_PACKED,
+  };
 
   /// Recomputes state derived from the whole model: which widgets need a real
   /// baseline measured, and whether any child's geometry can depend on its
@@ -817,17 +841,20 @@ class RenderConstraintLayout extends RenderBox
     final hasBottom = pd.bottom != null;
 
     bool depends(Dimension d, bool hasA, bool hasB) => switch (d) {
-          WrapContentDimension() => true,
-          MatchConstraintDimension(:final wrap) => wrap || !(hasA && hasB),
-          _ => false,
-        };
+      WrapContentDimension() => true,
+      MatchConstraintDimension(:final wrap) => wrap || !(hasA && hasB),
+      _ => false,
+    };
 
     return depends(pd.width, hasLeft, hasRight) ||
         depends(pd.height, hasTop, hasBottom);
   }
 
-  void _connectH(ConstraintWidget w, HorizontalEdge sourceEdge,
-      HorizontalLink? link) {
+  void _connectH(
+    ConstraintWidget w,
+    HorizontalEdge sourceEdge,
+    HorizontalLink? link,
+  ) {
     if (link == null) return;
     final target = _resolveTarget(link.target);
     if (target == null) {
@@ -847,8 +874,11 @@ class RenderConstraintLayout extends RenderBox
     }
   }
 
-  void _connectV(ConstraintWidget w, VerticalEdge sourceEdge,
-      VerticalLink? link) {
+  void _connectV(
+    ConstraintWidget w,
+    VerticalEdge sourceEdge,
+    VerticalLink? link,
+  ) {
     if (link == null) return;
     final target = _resolveTarget(link.target);
     if (target == null) {
@@ -874,26 +904,26 @@ class RenderConstraintLayout extends RenderBox
   }
 
   ConstraintAnchorType _hAnchor(HorizontalEdge edge) => switch (edge) {
-        HorizontalEdge.left => ConstraintAnchorType.left,
-        HorizontalEdge.right => ConstraintAnchorType.right,
-        HorizontalEdge.start =>
-          _ltr ? ConstraintAnchorType.left : ConstraintAnchorType.right,
-        HorizontalEdge.end =>
-          _ltr ? ConstraintAnchorType.right : ConstraintAnchorType.left,
-      };
+    HorizontalEdge.left => ConstraintAnchorType.left,
+    HorizontalEdge.right => ConstraintAnchorType.right,
+    HorizontalEdge.start =>
+      _ltr ? ConstraintAnchorType.left : ConstraintAnchorType.right,
+    HorizontalEdge.end =>
+      _ltr ? ConstraintAnchorType.right : ConstraintAnchorType.left,
+  };
 
   ConstraintAnchorType _vAnchor(VerticalEdge edge) => switch (edge) {
-        VerticalEdge.top => ConstraintAnchorType.top,
-        VerticalEdge.bottom => ConstraintAnchorType.bottom,
-        VerticalEdge.baseline => ConstraintAnchorType.baseline,
-      };
+    VerticalEdge.top => ConstraintAnchorType.top,
+    VerticalEdge.bottom => ConstraintAnchorType.bottom,
+    VerticalEdge.baseline => ConstraintAnchorType.baseline,
+  };
 
   DimensionBehaviour _behaviourOf(Dimension d) => switch (d) {
-        WrapContentDimension() => DimensionBehaviour.wrapContent,
-        MatchParentDimension() => DimensionBehaviour.matchParent,
-        MatchConstraintDimension() => DimensionBehaviour.matchConstraint,
-        FixedDimension() => DimensionBehaviour.fixed,
-      };
+    WrapContentDimension() => DimensionBehaviour.wrapContent,
+    MatchParentDimension() => DimensionBehaviour.matchParent,
+    MatchConstraintDimension() => DimensionBehaviour.matchConstraint,
+    FixedDimension() => DimensionBehaviour.fixed,
+  };
 
   /// Children in paint order: ascending [ConstraintParentData.zIndex], with
   /// document order as the default key and as the tiebreaker.
@@ -943,8 +973,8 @@ class RenderConstraintLayout extends RenderBox
       final palette = tint != null
           ? DebugPalette.tinted(tint, blueprint: showBlueprint)
           : showBlueprint
-              ? const DebugPalette.blueprint()
-              : const DebugPalette.design();
+          ? const DebugPalette.blueprint()
+          : const DebugPalette.design();
       paintDebugScene(
         context.canvas,
         offset,
@@ -1017,7 +1047,7 @@ class _FlutterMeasurer implements Measurer {
       // strategies, mirroring Android's view measurer.
       final givenStrategy =
           measure.measureStrategy == Measure.TRY_GIVEN_DIMENSIONS ||
-              measure.measureStrategy == Measure.USE_GIVEN_DIMENSIONS;
+          measure.measureStrategy == Measure.USE_GIVEN_DIMENSIONS;
       if (widget.getHorizontalDimensionBehaviour() ==
           DimensionBehaviour.matchParent) {
         widthSize = widget.getParent()?.getWidth() ?? 0;
@@ -1075,11 +1105,13 @@ class _FlutterMeasurer implements Measurer {
     // A WRAP-styled matchConstraint axis sizes to content capped by the
     // constraints, so its content must be measured like wrapContent; the
     // engine then applies the cap (Android's view measurer does the same).
-    final wrapW = measure.horizontalBehavior == DimensionBehaviour.wrapContent ||
+    final wrapW =
+        measure.horizontalBehavior == DimensionBehaviour.wrapContent ||
         (measure.horizontalBehavior == DimensionBehaviour.matchConstraint &&
             widget.mMatchConstraintDefaultWidth ==
                 ConstraintWidget.MATCH_CONSTRAINT_WRAP);
-    final wrapH = measure.verticalBehavior == DimensionBehaviour.wrapContent ||
+    final wrapH =
+        measure.verticalBehavior == DimensionBehaviour.wrapContent ||
         (measure.verticalBehavior == DimensionBehaviour.matchConstraint &&
             widget.mMatchConstraintDefaultHeight ==
                 ConstraintWidget.MATCH_CONSTRAINT_WRAP);
@@ -1109,16 +1141,20 @@ class _FlutterMeasurer implements Measurer {
     );
     laidOut.add(widget);
 
-    measure.measuredWidth =
-        wrapW ? child.size.width.round() : measure.horizontalDimension;
-    measure.measuredHeight =
-        wrapH ? child.size.height.round() : measure.verticalDimension;
+    measure.measuredWidth = wrapW
+        ? child.size.width.round()
+        : measure.horizontalDimension;
+    measure.measuredHeight = wrapH
+        ? child.size.height.round()
+        : measure.verticalDimension;
 
     measure.measuredHasBaseline = false;
     measure.measuredBaseline = 0;
     if (_needsBaseline.contains(widget)) {
-      final baseline =
-          child.getDistanceToBaseline(TextBaseline.alphabetic, onlyReal: true);
+      final baseline = child.getDistanceToBaseline(
+        TextBaseline.alphabetic,
+        onlyReal: true,
+      );
       if (baseline != null) {
         measure.measuredHasBaseline = true;
         measure.measuredBaseline = baseline.round();

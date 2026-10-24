@@ -200,7 +200,10 @@ abstract class WidgetRun implements Dependency {
         }
         break;
       case ConstraintWidget.MATCH_CONSTRAINT_WRAP:
-        final wrapValue = getLimitedDimension(mDimension.wrapValue, orientation);
+        final wrapValue = getLimitedDimension(
+          mDimension.wrapValue,
+          orientation,
+        );
         mDimension.resolve(wrapValue < distance ? wrapValue : distance);
         break;
       case ConstraintWidget.MATCH_CONSTRAINT_RATIO:

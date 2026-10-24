@@ -206,11 +206,21 @@ class GridCore extends VirtualLayout {
     for (var i = 0; i < spansMatrix.length; i++) {
       final row = _getRowByIndex(spansMatrix[i][0]);
       final col = _getColByIndex(spansMatrix[i][0]);
-      if (!_invalidatePositions(row, col, spansMatrix[i][1], spansMatrix[i][2])) {
+      if (!_invalidatePositions(
+        row,
+        col,
+        spansMatrix[i][1],
+        spansMatrix[i][2],
+      )) {
         return;
       }
       _connectWidget(
-          mWidgets[i]!, row, col, spansMatrix[i][1], spansMatrix[i][2]);
+        mWidgets[i]!,
+        row,
+        col,
+        spansMatrix[i][1],
+        spansMatrix[i][2],
+      );
       _spanIds.add(mWidgets[i]!);
     }
   }
@@ -242,11 +252,20 @@ class GridCore extends VirtualLayout {
           _positionMatrix![row][col] = true;
           // if there is not enough space to constrain the span, don't do it.
           if (!_invalidatePositions(
-              row, col, spanMatrix[_spanIndex][1], spanMatrix[_spanIndex][2])) {
+            row,
+            col,
+            spanMatrix[_spanIndex][1],
+            spanMatrix[_spanIndex][2],
+          )) {
             continue;
           }
-          _connectWidget(mWidgets[i]!, row, col, spanMatrix[_spanIndex][1],
-              spanMatrix[_spanIndex][2]);
+          _connectWidget(
+            mWidgets[i]!,
+            row,
+            col,
+            spanMatrix[_spanIndex][1],
+            spanMatrix[_spanIndex][2],
+          );
           _spanIndex++;
           continue;
         }
@@ -326,7 +345,11 @@ class GridCore extends VirtualLayout {
 
   /// Make the specified positions in the grid unavailable.
   bool _invalidatePositions(
-      int startRow, int startColumn, int rowSpan, int columnSpan) {
+    int startRow,
+    int startColumn,
+    int rowSpan,
+    int columnSpan,
+  ) {
     final positionMatrix = _positionMatrix!;
     for (var i = startRow; i < startRow + rowSpan; i++) {
       for (var j = startColumn; j < startColumn + columnSpan; j++) {
@@ -419,7 +442,12 @@ class GridCore extends VirtualLayout {
 
   /// Connect the widget to the corresponding box widgets.
   void _connectWidget(
-      ConstraintWidget widget, int row, int column, int rowSpan, int columnSpan) {
+    ConstraintWidget widget,
+    int row,
+    int column,
+    int rowSpan,
+    int columnSpan,
+  ) {
     final boxWidgets = _boxWidgets!;
     // Connect the 4 sides
     widget.mLeft.connect(boxWidgets[column].mLeft, 0);
@@ -535,7 +563,9 @@ class GridCore extends VirtualLayout {
     if (boxWidgets == null) {
       // no box widgets, build all
       boxWidgets = List<ConstraintWidget>.generate(
-          boxCount, (_) => _makeNewWidget());
+        boxCount,
+        (_) => _makeNewWidget(),
+      );
       _boxWidgets = boxWidgets;
     } else {
       if (boxCount != boxWidgets.length) {
@@ -568,10 +598,14 @@ class GridCore extends VirtualLayout {
 
   void _initVariables() {
     _positionMatrix = List<List<bool>>.generate(
-        _rows, (_) => List<bool>.filled(_columns, true));
+      _rows,
+      (_) => List<bool>.filled(_columns, true),
+    );
     if (mWidgetsCount > 0) {
       _constraintMatrix = List<List<int>>.generate(
-          mWidgetsCount, (_) => List<int>.filled(4, -1));
+        mWidgetsCount,
+        (_) => List<int>.filled(4, -1),
+      );
     }
   }
 
@@ -582,8 +616,10 @@ class GridCore extends VirtualLayout {
       var extraRows = 0;
       var extraColumns = 0;
       final spans = str.split(',');
-      final spanMatrix =
-          List<List<int>>.generate(spans.length, (_) => List<int>.filled(3, 0));
+      final spanMatrix = List<List<int>>.generate(
+        spans.length,
+        (_) => List<int>.filled(3, 0),
+      );
       List<String> indexAndSpan;
       if (_rows == 1 || _columns == 1) {
         for (var i = 0; i < spans.length; i++) {
@@ -673,7 +709,8 @@ class GridCore extends VirtualLayout {
   }
 
   void _initMatrices() {
-    final isUpdate = _constraintMatrix != null &&
+    final isUpdate =
+        _constraintMatrix != null &&
         _constraintMatrix!.length == mWidgetsCount &&
         _positionMatrix != null &&
         _positionMatrix!.length == _rows &&

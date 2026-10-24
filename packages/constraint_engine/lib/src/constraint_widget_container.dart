@@ -66,11 +66,11 @@ class ConstraintWidgetContainer extends WidgetContainer {
 
   ConstraintWidgetContainer() : super();
   ConstraintWidgetContainer.rect(int x, int y, int width, int height)
-      : super.rect(x, y, width, height);
+    : super.rect(x, y, width, height);
   ConstraintWidgetContainer.size(int width, int height)
-      : super.size(width, height);
+    : super.size(width, height);
   ConstraintWidgetContainer.sizeNamed(String debugName, int width, int height)
-      : super.size(width, height) {
+    : super.size(width, height) {
     setDebugName(debugName);
   }
 
@@ -155,9 +155,18 @@ class ConstraintWidgetContainer extends WidgetContainer {
   ) {
     mPaddingLeft = paddingX;
     mPaddingTop = paddingY;
-    mBasicMeasureSolver.solverMeasure(this, optimizationLevel, paddingX,
-        paddingY, widthMode, widthSize, heightMode, heightSize,
-        lastMeasureWidth, lastMeasureHeight);
+    mBasicMeasureSolver.solverMeasure(
+      this,
+      optimizationLevel,
+      paddingX,
+      paddingY,
+      widthMode,
+      widthSize,
+      heightMode,
+      heightSize,
+      lastMeasureWidth,
+      lastMeasureHeight,
+    );
   }
 
   /// Resolve the layout using the dependency-graph engine.
@@ -212,7 +221,7 @@ class ConstraintWidgetContainer extends WidgetContainer {
 
     final optimizeWrap =
         getHorizontalDimensionBehaviour() == DimensionBehaviour.wrapContent ||
-            getVerticalDimensionBehaviour() == DimensionBehaviour.wrapContent;
+        getVerticalDimensionBehaviour() == DimensionBehaviour.wrapContent;
 
     // Nested containers must be laid out before their frame can participate,
     // which only the solver loop does; the graph treats them as leaves.
@@ -263,11 +272,13 @@ class ConstraintWidgetContainer extends WidgetContainer {
           }
           // Margins on anchors targeting the container must fit inside the
           // wrap size as well.
-          final rightMargin = widget.mRight.mTarget != null &&
+          final rightMargin =
+              widget.mRight.mTarget != null &&
                   identical(widget.mRight.mTarget!.mOwner, this)
               ? widget.mRight.getMargin()
               : 0;
-          final bottomMargin = widget.mBottom.mTarget != null &&
+          final bottomMargin =
+              widget.mBottom.mTarget != null &&
                   identical(widget.mBottom.mTarget!.mOwner, this)
               ? widget.mBottom.getMargin()
               : 0;
@@ -335,7 +346,10 @@ class ConstraintWidgetContainer extends WidgetContainer {
           // than a not-yet-solved (zero) stored size.
           if (widget is VirtualLayout) {
             mBasicMeasureSolver.measure(
-                fallbackMeasurer, widget, Measure.SELF_DIMENSIONS);
+              fallbackMeasurer,
+              widget,
+              Measure.SELF_DIMENSIONS,
+            );
             continue;
           }
           // A matchConstraint axis with a missing opposing anchor behaves as
@@ -343,20 +357,24 @@ class ConstraintWidgetContainer extends WidgetContainer {
           // axes are measured with wrap behaviour so the measurer reports the
           // natural size. WRAP-styled matchConstraint axes are measured with
           // their MC behaviour (partial measurers echo the stored hint).
-          final mcMissingW = widget.getHorizontalDimensionBehaviour() ==
+          final mcMissingW =
+              widget.getHorizontalDimensionBehaviour() ==
                   DimensionBehaviour.matchConstraint &&
               (widget.mLeft.mTarget == null || widget.mRight.mTarget == null);
-          final mcMissingH = widget.getVerticalDimensionBehaviour() ==
+          final mcMissingH =
+              widget.getVerticalDimensionBehaviour() ==
                   DimensionBehaviour.matchConstraint &&
               (widget.mTop.mTarget == null || widget.mBottom.mTarget == null);
-          final wrapW = widget.getHorizontalDimensionBehaviour() ==
+          final wrapW =
+              widget.getHorizontalDimensionBehaviour() ==
                   DimensionBehaviour.wrapContent ||
               mcMissingW ||
               (widget.getHorizontalDimensionBehaviour() ==
                       DimensionBehaviour.matchConstraint &&
                   widget.mMatchConstraintDefaultWidth ==
                       ConstraintWidget.MATCH_CONSTRAINT_WRAP);
-          final wrapH = widget.getVerticalDimensionBehaviour() ==
+          final wrapH =
+              widget.getVerticalDimensionBehaviour() ==
                   DimensionBehaviour.wrapContent ||
               mcMissingH ||
               (widget.getVerticalDimensionBehaviour() ==
@@ -367,13 +385,20 @@ class ConstraintWidgetContainer extends WidgetContainer {
             final savedW = widget.getHorizontalDimensionBehaviour();
             final savedH = widget.getVerticalDimensionBehaviour();
             if (mcMissingW) {
-              widget.setHorizontalDimensionBehaviour(DimensionBehaviour.wrapContent);
+              widget.setHorizontalDimensionBehaviour(
+                DimensionBehaviour.wrapContent,
+              );
             }
             if (mcMissingH) {
-              widget.setVerticalDimensionBehaviour(DimensionBehaviour.wrapContent);
+              widget.setVerticalDimensionBehaviour(
+                DimensionBehaviour.wrapContent,
+              );
             }
             mBasicMeasureSolver.measure(
-                fallbackMeasurer, widget, Measure.SELF_DIMENSIONS);
+              fallbackMeasurer,
+              widget,
+              Measure.SELF_DIMENSIONS,
+            );
             widget.setHorizontalDimensionBehaviour(savedW);
             widget.setVerticalDimensionBehaviour(savedH);
           }
@@ -426,21 +451,25 @@ class ConstraintWidgetContainer extends WidgetContainer {
         // content, and only that combination can be mis-measured: one axis
         // sized by the solver, the other wrapped around content that depends
         // on it.
-        final widthResolved = widget.getHorizontalDimensionBehaviour() ==
+        final widthResolved =
+            widget.getHorizontalDimensionBehaviour() ==
                 DimensionBehaviour.matchConstraint &&
             widget.mMatchConstraintDefaultWidth !=
                 ConstraintWidget.MATCH_CONSTRAINT_WRAP &&
             widget.mLeft.mTarget != null &&
             widget.mRight.mTarget != null;
-        final heightResolved = widget.getVerticalDimensionBehaviour() ==
+        final heightResolved =
+            widget.getVerticalDimensionBehaviour() ==
                 DimensionBehaviour.matchConstraint &&
             widget.mMatchConstraintDefaultHeight !=
                 ConstraintWidget.MATCH_CONSTRAINT_WRAP &&
             widget.mTop.mTarget != null &&
             widget.mBottom.mTarget != null;
-        final widthWrap = widget.getHorizontalDimensionBehaviour() ==
+        final widthWrap =
+            widget.getHorizontalDimensionBehaviour() ==
             DimensionBehaviour.wrapContent;
-        final heightWrap = widget.getVerticalDimensionBehaviour() ==
+        final heightWrap =
+            widget.getVerticalDimensionBehaviour() ==
             DimensionBehaviour.wrapContent;
 
         if (!((widthResolved && heightWrap) || (heightResolved && widthWrap))) {
@@ -452,9 +481,11 @@ class ConstraintWidgetContainer extends WidgetContainer {
         // USE_GIVEN_DIMENSIONS feeds the solver-resolved size back as the fixed
         // dimension so the wrap axis is measured against it.
         mBasicMeasureSolver.measure(
-            measurer, widget, Measure.USE_GIVEN_DIMENSIONS);
-        if (widget.getWidth() != preWidth ||
-            widget.getHeight() != preHeight) {
+          measurer,
+          widget,
+          Measure.USE_GIVEN_DIMENSIONS,
+        );
+        if (widget.getWidth() != preWidth || widget.getHeight() != preHeight) {
           changed = true;
         }
       }
@@ -497,13 +528,19 @@ class ConstraintWidgetContainer extends WidgetContainer {
     }
   }
 
-  void _addMinWrap(ConstraintAnchor constraintAnchor, SolverVariable parentMin) {
+  void _addMinWrap(
+    ConstraintAnchor constraintAnchor,
+    SolverVariable parentMin,
+  ) {
     final variable = mSystem.createObjectVariable(constraintAnchor)!;
     const wrapStrength = SolverVariable.STRENGTH_EQUALITY;
     mSystem.addGreaterThan(variable, parentMin, 0, wrapStrength);
   }
 
-  void _addMaxWrap(ConstraintAnchor constraintAnchor, SolverVariable parentMax) {
+  void _addMaxWrap(
+    ConstraintAnchor constraintAnchor,
+    SolverVariable parentMax,
+  ) {
     final variable = mSystem.createObjectVariable(constraintAnchor)!;
     const wrapStrength = SolverVariable.STRENGTH_EQUALITY;
     mSystem.addGreaterThan(parentMax, variable, 0, wrapStrength);
@@ -600,10 +637,20 @@ class ConstraintWidgetContainer extends WidgetContainer {
     }
 
     if (mHorizontalChainsSize > 0) {
-      Chain.applyChainConstraints(this, system, null, ConstraintWidget.HORIZONTAL);
+      Chain.applyChainConstraints(
+        this,
+        system,
+        null,
+        ConstraintWidget.HORIZONTAL,
+      );
     }
     if (mVerticalChainsSize > 0) {
-      Chain.applyChainConstraints(this, system, null, ConstraintWidget.VERTICAL);
+      Chain.applyChainConstraints(
+        this,
+        system,
+        null,
+        ConstraintWidget.VERTICAL,
+      );
     }
     return true;
   }
@@ -650,8 +697,11 @@ class ConstraintWidgetContainer extends WidgetContainer {
         ...List<ChainHead?>.filled(mHorizontalChainsArray.length, null),
       ];
     }
-    mHorizontalChainsArray[mHorizontalChainsSize] =
-        ChainHead(widget, ConstraintWidget.HORIZONTAL, isRtl());
+    mHorizontalChainsArray[mHorizontalChainsSize] = ChainHead(
+      widget,
+      ConstraintWidget.HORIZONTAL,
+      isRtl(),
+    );
     mHorizontalChainsSize++;
   }
 
@@ -662,8 +712,11 @@ class ConstraintWidgetContainer extends WidgetContainer {
         ...List<ChainHead?>.filled(mVerticalChainsArray.length, null),
       ];
     }
-    mVerticalChainsArray[mVerticalChainsSize] =
-        ChainHead(widget, ConstraintWidget.VERTICAL, isRtl());
+    mVerticalChainsArray[mVerticalChainsSize] = ChainHead(
+      widget,
+      ConstraintWidget.VERTICAL,
+      isRtl(),
+    );
     mVerticalChainsSize++;
   }
 
@@ -684,18 +737,20 @@ class ConstraintWidgetContainer extends WidgetContainer {
 
     var wrapOverride = false;
 
-    final useGraphOptimizer = optimizeFor(Optimizer.OPTIMIZATION_GRAPH) ||
+    final useGraphOptimizer =
+        optimizeFor(Optimizer.OPTIMIZATION_GRAPH) ||
         optimizeFor(Optimizer.OPTIMIZATION_GRAPH_WRAP);
     mSystem.graphOptimizer = false;
     mSystem.newgraphOptimizer = false;
-    if (mOptimizationLevel != Optimizer.OPTIMIZATION_NONE && useGraphOptimizer) {
+    if (mOptimizationLevel != Optimizer.OPTIMIZATION_NONE &&
+        useGraphOptimizer) {
       mSystem.newgraphOptimizer = true;
     }
 
     var countSolve = 0;
     final hasWrapContent =
         getHorizontalDimensionBehaviour() == DimensionBehaviour.wrapContent ||
-            getVerticalDimensionBehaviour() == DimensionBehaviour.wrapContent;
+        getVerticalDimensionBehaviour() == DimensionBehaviour.wrapContent;
 
     _resetChains();
 
@@ -725,15 +780,24 @@ class ConstraintWidgetContainer extends WidgetContainer {
           _verticalWrapMin = null;
         }
         if (_verticalWrapMax != null) {
-          _addMaxWrap(_verticalWrapMax!, mSystem.createObjectVariable(mBottom)!);
+          _addMaxWrap(
+            _verticalWrapMax!,
+            mSystem.createObjectVariable(mBottom)!,
+          );
           _verticalWrapMax = null;
         }
         if (_horizontalWrapMin != null) {
-          _addMinWrap(_horizontalWrapMin!, mSystem.createObjectVariable(mLeft)!);
+          _addMinWrap(
+            _horizontalWrapMin!,
+            mSystem.createObjectVariable(mLeft)!,
+          );
           _horizontalWrapMin = null;
         }
         if (_horizontalWrapMax != null) {
-          _addMaxWrap(_horizontalWrapMax!, mSystem.createObjectVariable(mRight)!);
+          _addMaxWrap(
+            _horizontalWrapMax!,
+            mSystem.createObjectVariable(mRight)!,
+          );
           _horizontalWrapMax = null;
         }
         if (needsSolving) {
@@ -766,7 +830,8 @@ class ConstraintWidgetContainer extends WidgetContainer {
         }
         maxX = math.max(mMinWidth, maxX);
         maxY = math.max(mMinHeight, maxY);
-        if (originalHorizontalDimensionBehaviour == DimensionBehaviour.wrapContent) {
+        if (originalHorizontalDimensionBehaviour ==
+            DimensionBehaviour.wrapContent) {
           if (getWidth() < maxX) {
             setWidth(maxX);
             // force using the solver
@@ -776,7 +841,8 @@ class ConstraintWidgetContainer extends WidgetContainer {
             needsSolving = true;
           }
         }
-        if (originalVerticalDimensionBehaviour == DimensionBehaviour.wrapContent) {
+        if (originalVerticalDimensionBehaviour ==
+            DimensionBehaviour.wrapContent) {
           if (getHeight() < maxY) {
             setHeight(maxY);
             mListDimensionBehaviors[ConstraintWidget.VERTICAL] =
@@ -798,7 +864,8 @@ class ConstraintWidgetContainer extends WidgetContainer {
       final height = math.max(mMinHeight, getHeight());
       if (height > getHeight()) {
         setHeight(height);
-        mListDimensionBehaviors[ConstraintWidget.VERTICAL] = DimensionBehaviour.fixed;
+        mListDimensionBehaviors[ConstraintWidget.VERTICAL] =
+            DimensionBehaviour.fixed;
         wrapOverride = true;
         needsSolving = true;
       }

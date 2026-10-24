@@ -49,9 +49,14 @@ void paintDebugScene(
 }) {
   canvas.save();
   canvas.translate(origin.dx, origin.dy);
-  _ScenePainter(canvas, size, scene, palette,
-          blueprint: blueprint, labelStyle: labelStyle)
-      .paint();
+  _ScenePainter(
+    canvas,
+    size,
+    scene,
+    palette,
+    blueprint: blueprint,
+    labelStyle: labelStyle,
+  ).paint();
   canvas.restore();
 }
 
@@ -131,7 +136,13 @@ Path debugChainEffect(Path source) {
         final c1 = previous.position + normal(previous);
         final c2 = tangent.position + normal(tangent);
         result.cubicTo(
-            c1.dx, c1.dy, c2.dx, c2.dy, tangent.position.dx, tangent.position.dy);
+          c1.dx,
+          c1.dy,
+          c2.dx,
+          c2.dy,
+          tangent.position.dx,
+          tangent.position.dy,
+        );
         previous = tangent;
         distance = next;
       }
@@ -144,8 +155,12 @@ Path debugChainEffect(Path source) {
 
 /// A filled arrowhead triangle: apex at [tip], pointing along [direction].
 @visibleForTesting
-Path debugArrow(Offset tip, Offset direction,
-    {double side = _arrowSide, double halfBase = _arrowHalfBase}) {
+Path debugArrow(
+  Offset tip,
+  Offset direction, {
+  double side = _arrowSide,
+  double halfBase = _arrowHalfBase,
+}) {
   final u = direction / direction.distance;
   final p = Offset(-u.dy, u.dx);
   final base = tip - u * side;
@@ -187,8 +202,7 @@ class _ScenePainter {
 
   void paint() {
     if (blueprint) {
-      canvas.drawRect(
-          Offset.zero & size, Paint()..color = palette.background);
+      canvas.drawRect(Offset.zero & size, Paint()..color = palette.background);
       for (final box in scene.boxes.where((b) => !b.virtual)) {
         _paintBoxSurface(box);
       }
@@ -220,15 +234,23 @@ class _ScenePainter {
       case DebugConnectionType.adjacent:
         final direction = _arrivalDirection(c.sourcePoint, c.targetPoint);
         canvas.drawPath(
-          debugArrow(c.targetPoint, direction,
-              side: _smallArrowSide, halfBase: _smallArrowHalfBase),
+          debugArrow(
+            c.targetPoint,
+            direction,
+            side: _smallArrowSide,
+            halfBase: _smallArrowHalfBase,
+          ),
           _fill,
         );
       case DebugConnectionType.spring:
         _paintSpring(c);
       case DebugConnectionType.chain:
-        final path =
-            _legPath(c.sourcePoint, c.targetPoint, c.sourceEdge, inset: 0);
+        final path = _legPath(
+          c.sourcePoint,
+          c.targetPoint,
+          c.sourceEdge,
+          inset: 0,
+        );
         canvas.drawPath(
           debugChainEffect(path),
           Paint()
@@ -277,8 +299,12 @@ class _ScenePainter {
         );
         final direction = _arrivalDirection(c.targetPoint, c.sourcePoint);
         canvas.drawPath(
-          debugArrow(c.sourcePoint, direction,
-              side: _smallArrowSide, halfBase: _smallArrowHalfBase),
+          debugArrow(
+            c.sourcePoint,
+            direction,
+            side: _smallArrowSide,
+            halfBase: _smallArrowHalfBase,
+          ),
           _fill,
         );
     }
@@ -292,25 +318,29 @@ class _ScenePainter {
   }
 
   Offset _outward(DebugEdge edge) => switch (edge) {
-        DebugEdge.left => const Offset(-1, 0),
-        DebugEdge.right => const Offset(1, 0),
-        DebugEdge.top => const Offset(0, -1),
-        DebugEdge.bottom => const Offset(0, 1),
-        DebugEdge.baseline => const Offset(0, 1),
-      };
+    DebugEdge.left => const Offset(-1, 0),
+    DebugEdge.right => const Offset(1, 0),
+    DebugEdge.top => const Offset(0, -1),
+    DebugEdge.bottom => const Offset(0, 1),
+    DebugEdge.baseline => const Offset(0, 1),
+  };
 
   DebugEdge _oppositeEdge(DebugEdge edge) => switch (edge) {
-        DebugEdge.left => DebugEdge.right,
-        DebugEdge.right => DebugEdge.left,
-        DebugEdge.top => DebugEdge.bottom,
-        DebugEdge.bottom => DebugEdge.top,
-        DebugEdge.baseline => DebugEdge.baseline,
-      };
+    DebugEdge.left => DebugEdge.right,
+    DebugEdge.right => DebugEdge.left,
+    DebugEdge.top => DebugEdge.bottom,
+    DebugEdge.bottom => DebugEdge.top,
+    DebugEdge.baseline => DebugEdge.baseline,
+  };
 
   /// The curved connection path from [source] to [target], ending [inset] px
   /// short of the target (the arrow occupies that inset).
-  Path _legPath(Offset source, Offset target, DebugEdge sourceEdge,
-      {required double inset}) {
+  Path _legPath(
+    Offset source,
+    Offset target,
+    DebugEdge sourceEdge, {
+    required double inset,
+  }) {
     final path = Path()..moveTo(source.dx, source.dy);
     final arrival = _axisArrival(source, target);
     final end = target - arrival * inset;
@@ -341,8 +371,12 @@ class _ScenePainter {
     return Offset(0, delta.dy.isNegative ? -1 : 1);
   }
 
-  void _paintLeg(Offset source, Offset target, DebugEdge sourceEdge,
-      {required bool arrow}) {
+  void _paintLeg(
+    Offset source,
+    Offset target,
+    DebugEdge sourceEdge, {
+    required bool arrow,
+  }) {
     final arrival = _axisArrival(source, target);
     canvas.drawPath(
       _legPath(source, target, sourceEdge, inset: arrow ? _arrowSide : 0),
@@ -391,10 +425,14 @@ class _ScenePainter {
     canvas.drawPath(
       debugDashPath(
         Path()
-          ..moveTo(d.dx - perpendicular.dx * _marginOverhang,
-              d.dy - perpendicular.dy * _marginOverhang)
-          ..lineTo(d.dx + perpendicular.dx * _marginOverhang,
-              d.dy + perpendicular.dy * _marginOverhang),
+          ..moveTo(
+            d.dx - perpendicular.dx * _marginOverhang,
+            d.dy - perpendicular.dy * _marginOverhang,
+          )
+          ..lineTo(
+            d.dx + perpendicular.dx * _marginOverhang,
+            d.dy + perpendicular.dy * _marginOverhang,
+          ),
         4,
         6,
       ),
@@ -416,8 +454,9 @@ class _ScenePainter {
     canvas.drawRect(
       box.rect,
       Paint()
-        ..color = palette.componentFill
-            .withValues(alpha: palette.componentFill.a * opacity),
+        ..color = palette.componentFill.withValues(
+          alpha: palette.componentFill.a * opacity,
+        ),
     );
     canvas.drawRect(
       box.rect,
@@ -435,8 +474,7 @@ class _ScenePainter {
     if (box.rect.width < 40 || box.rect.height < 24) return;
     final id = box.idLabel;
     final type = box.typeLabel;
-    final textColor =
-        palette.text.withValues(alpha: palette.text.a * opacity);
+    final textColor = palette.text.withValues(alpha: palette.text.a * opacity);
     switch (labelStyle) {
       case DebugLabelStyle.id:
         _label(id ?? type ?? '', box.rect.center, _labelFontSize, textColor);
@@ -448,8 +486,12 @@ class _ScenePainter {
         if (secondary == null || box.rect.height < 44) {
           _label(primary, box.rect.center, _labelFontSize, textColor);
         } else {
-          _label(primary, box.rect.center - const Offset(0, 8),
-              _labelFontSize, textColor);
+          _label(
+            primary,
+            box.rect.center - const Offset(0, 8),
+            _labelFontSize,
+            textColor,
+          );
           _label(
             secondary,
             box.rect.center + const Offset(0, 9),
@@ -515,11 +557,11 @@ class _ScenePainter {
   void _paintGuideline(DebugGuidelineInfo guideline) {
     final line = guideline.vertical
         ? (Path()
-          ..moveTo(guideline.position, 0)
-          ..lineTo(guideline.position, size.height))
+            ..moveTo(guideline.position, 0)
+            ..lineTo(guideline.position, size.height))
         : (Path()
-          ..moveTo(0, guideline.position)
-          ..lineTo(size.width, guideline.position));
+            ..moveTo(0, guideline.position)
+            ..lineTo(size.width, guideline.position));
     canvas.drawPath(debugDashPath(line, 2, 2), _stroke);
     final center = guideline.vertical
         ? Offset(guideline.position, 16)
@@ -545,7 +587,9 @@ class _ScenePainter {
       Paint()..color = palette.line.withValues(alpha: 0.25),
     );
     painter.paint(
-        canvas, center - Offset(painter.width / 2, painter.height / 2));
+      canvas,
+      center - Offset(painter.width / 2, painter.height / 2),
+    );
     painter.dispose();
   }
 
@@ -590,7 +634,9 @@ class _ScenePainter {
       textDirection: TextDirection.ltr,
     )..layout();
     painter.paint(
-        canvas, center - Offset(painter.width / 2, painter.height / 2));
+      canvas,
+      center - Offset(painter.width / 2, painter.height / 2),
+    );
     painter.dispose();
   }
 }

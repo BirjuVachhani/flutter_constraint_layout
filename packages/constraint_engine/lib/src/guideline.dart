@@ -142,13 +142,15 @@ class Guideline extends ConstraintWidget {
     }
     var begin = parent.getAnchor(ConstraintAnchorType.left)!;
     var end = parent.getAnchor(ConstraintAnchorType.right)!;
-    var parentWrapContent = mParent != null &&
+    var parentWrapContent =
+        mParent != null &&
         mParent!.mListDimensionBehaviors[ConstraintWidget.HORIZONTAL] ==
             DimensionBehaviour.wrapContent;
     if (mOrientation == horizontal) {
       begin = parent.getAnchor(ConstraintAnchorType.top)!;
       end = parent.getAnchor(ConstraintAnchorType.bottom)!;
-      parentWrapContent = mParent != null &&
+      parentWrapContent =
+          mParent != null &&
           mParent!.mListDimensionBehaviors[ConstraintWidget.VERTICAL] ==
               DimensionBehaviour.wrapContent;
     }
@@ -157,16 +159,28 @@ class Guideline extends ConstraintWidget {
       system.addEqualityConstant(guide, mAnchor.getFinalValue());
       if (mRelativeBegin != -1) {
         if (parentWrapContent) {
-          system.addGreaterThan(system.createObjectVariable(end)!, guide, 0,
-              SolverVariable.STRENGTH_EQUALITY);
+          system.addGreaterThan(
+            system.createObjectVariable(end)!,
+            guide,
+            0,
+            SolverVariable.STRENGTH_EQUALITY,
+          );
         }
       } else if (mRelativeEnd != -1) {
         if (parentWrapContent) {
           final parentRight = system.createObjectVariable(end)!;
-          system.addGreaterThan(guide, system.createObjectVariable(begin)!, 0,
-              SolverVariable.STRENGTH_EQUALITY);
-          system.addGreaterThan(parentRight, guide, 0,
-              SolverVariable.STRENGTH_EQUALITY);
+          system.addGreaterThan(
+            guide,
+            system.createObjectVariable(begin)!,
+            0,
+            SolverVariable.STRENGTH_EQUALITY,
+          );
+          system.addGreaterThan(
+            parentRight,
+            guide,
+            0,
+            SolverVariable.STRENGTH_EQUALITY,
+          );
         }
       }
       mResolved = false;
@@ -175,28 +189,54 @@ class Guideline extends ConstraintWidget {
     if (mRelativeBegin != -1) {
       final guide = system.createObjectVariable(mAnchor)!;
       final parentLeft = system.createObjectVariable(begin)!;
-      system.addEquality(guide, parentLeft, mRelativeBegin,
-          SolverVariable.STRENGTH_FIXED);
+      system.addEquality(
+        guide,
+        parentLeft,
+        mRelativeBegin,
+        SolverVariable.STRENGTH_FIXED,
+      );
       if (parentWrapContent) {
-        system.addGreaterThan(system.createObjectVariable(end)!, guide, 0,
-            SolverVariable.STRENGTH_EQUALITY);
+        system.addGreaterThan(
+          system.createObjectVariable(end)!,
+          guide,
+          0,
+          SolverVariable.STRENGTH_EQUALITY,
+        );
       }
     } else if (mRelativeEnd != -1) {
       final guide = system.createObjectVariable(mAnchor)!;
       final parentRight = system.createObjectVariable(end)!;
-      system.addEquality(guide, parentRight, -mRelativeEnd,
-          SolverVariable.STRENGTH_FIXED);
+      system.addEquality(
+        guide,
+        parentRight,
+        -mRelativeEnd,
+        SolverVariable.STRENGTH_FIXED,
+      );
       if (parentWrapContent) {
-        system.addGreaterThan(guide, system.createObjectVariable(begin)!, 0,
-            SolverVariable.STRENGTH_EQUALITY);
-        system.addGreaterThan(parentRight, guide, 0,
-            SolverVariable.STRENGTH_EQUALITY);
+        system.addGreaterThan(
+          guide,
+          system.createObjectVariable(begin)!,
+          0,
+          SolverVariable.STRENGTH_EQUALITY,
+        );
+        system.addGreaterThan(
+          parentRight,
+          guide,
+          0,
+          SolverVariable.STRENGTH_EQUALITY,
+        );
       }
     } else if (mRelativePercent != -1) {
       final guide = system.createObjectVariable(mAnchor)!;
       final parentRight = system.createObjectVariable(end)!;
-      system.addConstraint(LinearSystem.createRowDimensionPercent(
-          system, guide, parentRight, mRelativePercent));
+      system.addConstraint(
+        LinearSystem.createRowDimensionPercent(
+          system,
+          guide,
+          parentRight,
+          mRelativePercent,
+        ),
+      );
     }
   }
 

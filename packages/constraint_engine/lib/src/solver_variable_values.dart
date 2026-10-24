@@ -35,8 +35,8 @@ class SolverVariableValues implements ArrayRowVariables {
   final Cache mCache;
 
   SolverVariableValues(ArrayRow? row, Cache cache)
-      : _row = row,
-        mCache = cache {
+    : _row = row,
+      mCache = cache {
     clear();
   }
 
@@ -157,7 +157,10 @@ class SolverVariableValues implements ArrayRowVariables {
 
   void _increaseSize() {
     final size = _size * 2;
-    mVariables = [...mVariables, ...List.filled(size - mVariables.length, _none)];
+    mVariables = [
+      ...mVariables,
+      ...List.filled(size - mVariables.length, _none),
+    ];
     mValues = [...mValues, ...List.filled(size - mValues.length, 0.0)];
     mPrevious = [...mPrevious, ...List.filled(size - mPrevious.length, _none)];
     mNext = [...mNext, ...List.filled(size - mNext.length, _none)];
@@ -344,7 +347,8 @@ class SolverVariableValues implements ArrayRowVariables {
     for (var i = 0; j < definitionSize; i++) {
       if (localDef.mVariables[i] != _none) {
         final definitionValue = localDef.mValues[i];
-        final definitionVariable = mCache.mIndexedVariables[localDef.mVariables[i]]!;
+        final definitionVariable =
+            mCache.mIndexedVariables[localDef.mVariables[i]]!;
         add(definitionVariable, definitionValue * value, removeFromDefinition);
         j++;
       }

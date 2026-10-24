@@ -103,32 +103,44 @@ class Barrier extends HelperWidget {
         }
         if (!initialized) {
           if (mBarrierType == left) {
-            barrierPosition =
-                widget.getAnchor(ConstraintAnchorType.left)!.getFinalValue();
+            barrierPosition = widget
+                .getAnchor(ConstraintAnchorType.left)!
+                .getFinalValue();
           } else if (mBarrierType == right) {
-            barrierPosition =
-                widget.getAnchor(ConstraintAnchorType.right)!.getFinalValue();
+            barrierPosition = widget
+                .getAnchor(ConstraintAnchorType.right)!
+                .getFinalValue();
           } else if (mBarrierType == top) {
-            barrierPosition =
-                widget.getAnchor(ConstraintAnchorType.top)!.getFinalValue();
+            barrierPosition = widget
+                .getAnchor(ConstraintAnchorType.top)!
+                .getFinalValue();
           } else if (mBarrierType == bottom) {
-            barrierPosition =
-                widget.getAnchor(ConstraintAnchorType.bottom)!.getFinalValue();
+            barrierPosition = widget
+                .getAnchor(ConstraintAnchorType.bottom)!
+                .getFinalValue();
           }
           initialized = true;
         }
         if (mBarrierType == left) {
-          barrierPosition = math.min(barrierPosition,
-              widget.getAnchor(ConstraintAnchorType.left)!.getFinalValue());
+          barrierPosition = math.min(
+            barrierPosition,
+            widget.getAnchor(ConstraintAnchorType.left)!.getFinalValue(),
+          );
         } else if (mBarrierType == right) {
-          barrierPosition = math.max(barrierPosition,
-              widget.getAnchor(ConstraintAnchorType.right)!.getFinalValue());
+          barrierPosition = math.max(
+            barrierPosition,
+            widget.getAnchor(ConstraintAnchorType.right)!.getFinalValue(),
+          );
         } else if (mBarrierType == top) {
-          barrierPosition = math.min(barrierPosition,
-              widget.getAnchor(ConstraintAnchorType.top)!.getFinalValue());
+          barrierPosition = math.min(
+            barrierPosition,
+            widget.getAnchor(ConstraintAnchorType.top)!.getFinalValue(),
+          );
         } else if (mBarrierType == bottom) {
-          barrierPosition = math.max(barrierPosition,
-              widget.getAnchor(ConstraintAnchorType.bottom)!.getFinalValue());
+          barrierPosition = math.max(
+            barrierPosition,
+            widget.getAnchor(ConstraintAnchorType.bottom)!.getFinalValue(),
+          );
         }
       }
       barrierPosition += mMargin;
@@ -151,7 +163,9 @@ class Barrier extends HelperWidget {
     mListAnchors[ConstraintWidget.ANCHOR_RIGHT] = mRight;
     mListAnchors[ConstraintWidget.ANCHOR_BOTTOM] = mBottom;
     for (var i = 0; i < mListAnchors.length; i++) {
-      mListAnchors[i].mSolverVariable = system.createObjectVariable(mListAnchors[i]);
+      mListAnchors[i].mSolverVariable = system.createObjectVariable(
+        mListAnchors[i],
+      );
     }
     if (mBarrierType >= 0 && mBarrierType < 4) {
       position = mListAnchors[mBarrierType];
@@ -206,7 +220,8 @@ class Barrier extends HelperWidget {
         mLeft.hasCenteredDependents() || mRight.hasCenteredDependents();
     final hasVerticalCenteredDependents =
         mTop.hasCenteredDependents() || mBottom.hasCenteredDependents();
-    final applyEqualityOnReferences = !hasMatchConstraintWidgets &&
+    final applyEqualityOnReferences =
+        !hasMatchConstraintWidgets &&
         ((mBarrierType == left && hasHorizontalCenteredDependents) ||
             (mBarrierType == top && hasVerticalCenteredDependents) ||
             (mBarrierType == right && hasHorizontalCenteredDependents) ||
@@ -221,8 +236,9 @@ class Barrier extends HelperWidget {
       if (!mAllowsGoneWidget && !widget.allowedInBarrier()) {
         continue;
       }
-      final target =
-          system.createObjectVariable(widget.mListAnchors[mBarrierType])!;
+      final target = system.createObjectVariable(
+        widget.mListAnchors[mBarrierType],
+      )!;
       widget.mListAnchors[mBarrierType].mSolverVariable = target;
       var margin = 0;
       if (widget.mListAnchors[mBarrierType].mTarget != null &&
@@ -230,22 +246,38 @@ class Barrier extends HelperWidget {
         margin += widget.mListAnchors[mBarrierType].mMargin;
       }
       if (mBarrierType == left || mBarrierType == top) {
-        system.addLowerBarrier(position.mSolverVariable!, target,
-            mMargin - margin, hasMatchConstraintWidgets);
+        system.addLowerBarrier(
+          position.mSolverVariable!,
+          target,
+          mMargin - margin,
+          hasMatchConstraintWidgets,
+        );
       } else {
-        system.addGreaterBarrier(position.mSolverVariable!, target,
-            mMargin + margin, hasMatchConstraintWidgets);
+        system.addGreaterBarrier(
+          position.mSolverVariable!,
+          target,
+          mMargin + margin,
+          hasMatchConstraintWidgets,
+        );
       }
       if (_USE_RELAX_GONE) {
         if (widget.getVisibility() != ConstraintWidget.GONE ||
             widget is Guideline ||
             widget is Barrier) {
-          system.addEquality(position.mSolverVariable!, target, mMargin + margin,
-              equalityOnReferencesStrength);
+          system.addEquality(
+            position.mSolverVariable!,
+            target,
+            mMargin + margin,
+            equalityOnReferencesStrength,
+          );
         }
       } else {
-        system.addEquality(position.mSolverVariable!, target, mMargin + margin,
-            equalityOnReferencesStrength);
+        system.addEquality(
+          position.mSolverVariable!,
+          target,
+          mMargin + margin,
+          equalityOnReferencesStrength,
+        );
       }
     }
 
@@ -253,33 +285,81 @@ class Barrier extends HelperWidget {
     const barrierParentStrengthOpposite = SolverVariable.STRENGTH_NONE;
 
     if (mBarrierType == left) {
-      system.addEquality(mRight.mSolverVariable!, mLeft.mSolverVariable!, 0,
-          SolverVariable.STRENGTH_FIXED);
-      system.addEquality(mLeft.mSolverVariable!, mParent!.mRight.mSolverVariable!,
-          0, barrierParentStrength);
-      system.addEquality(mLeft.mSolverVariable!, mParent!.mLeft.mSolverVariable!,
-          0, barrierParentStrengthOpposite);
+      system.addEquality(
+        mRight.mSolverVariable!,
+        mLeft.mSolverVariable!,
+        0,
+        SolverVariable.STRENGTH_FIXED,
+      );
+      system.addEquality(
+        mLeft.mSolverVariable!,
+        mParent!.mRight.mSolverVariable!,
+        0,
+        barrierParentStrength,
+      );
+      system.addEquality(
+        mLeft.mSolverVariable!,
+        mParent!.mLeft.mSolverVariable!,
+        0,
+        barrierParentStrengthOpposite,
+      );
     } else if (mBarrierType == right) {
-      system.addEquality(mLeft.mSolverVariable!, mRight.mSolverVariable!, 0,
-          SolverVariable.STRENGTH_FIXED);
-      system.addEquality(mLeft.mSolverVariable!, mParent!.mLeft.mSolverVariable!,
-          0, barrierParentStrength);
-      system.addEquality(mLeft.mSolverVariable!, mParent!.mRight.mSolverVariable!,
-          0, barrierParentStrengthOpposite);
+      system.addEquality(
+        mLeft.mSolverVariable!,
+        mRight.mSolverVariable!,
+        0,
+        SolverVariable.STRENGTH_FIXED,
+      );
+      system.addEquality(
+        mLeft.mSolverVariable!,
+        mParent!.mLeft.mSolverVariable!,
+        0,
+        barrierParentStrength,
+      );
+      system.addEquality(
+        mLeft.mSolverVariable!,
+        mParent!.mRight.mSolverVariable!,
+        0,
+        barrierParentStrengthOpposite,
+      );
     } else if (mBarrierType == top) {
-      system.addEquality(mBottom.mSolverVariable!, mTop.mSolverVariable!, 0,
-          SolverVariable.STRENGTH_FIXED);
-      system.addEquality(mTop.mSolverVariable!, mParent!.mBottom.mSolverVariable!,
-          0, barrierParentStrength);
-      system.addEquality(mTop.mSolverVariable!, mParent!.mTop.mSolverVariable!,
-          0, barrierParentStrengthOpposite);
+      system.addEquality(
+        mBottom.mSolverVariable!,
+        mTop.mSolverVariable!,
+        0,
+        SolverVariable.STRENGTH_FIXED,
+      );
+      system.addEquality(
+        mTop.mSolverVariable!,
+        mParent!.mBottom.mSolverVariable!,
+        0,
+        barrierParentStrength,
+      );
+      system.addEquality(
+        mTop.mSolverVariable!,
+        mParent!.mTop.mSolverVariable!,
+        0,
+        barrierParentStrengthOpposite,
+      );
     } else if (mBarrierType == bottom) {
-      system.addEquality(mTop.mSolverVariable!, mBottom.mSolverVariable!, 0,
-          SolverVariable.STRENGTH_FIXED);
-      system.addEquality(mTop.mSolverVariable!, mParent!.mTop.mSolverVariable!,
-          0, barrierParentStrength);
-      system.addEquality(mTop.mSolverVariable!, mParent!.mBottom.mSolverVariable!,
-          0, barrierParentStrengthOpposite);
+      system.addEquality(
+        mTop.mSolverVariable!,
+        mBottom.mSolverVariable!,
+        0,
+        SolverVariable.STRENGTH_FIXED,
+      );
+      system.addEquality(
+        mTop.mSolverVariable!,
+        mParent!.mTop.mSolverVariable!,
+        0,
+        barrierParentStrength,
+      );
+      system.addEquality(
+        mTop.mSolverVariable!,
+        mParent!.mBottom.mSolverVariable!,
+        0,
+        barrierParentStrengthOpposite,
+      );
     }
   }
 

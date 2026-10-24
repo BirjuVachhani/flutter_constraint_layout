@@ -136,12 +136,15 @@ class VirtualLayout extends HelperWidget {
         continue;
       }
 
-      var widthBehavior =
-          widget.getDimensionBehaviour(ConstraintWidget.HORIZONTAL)!;
-      var heightBehavior =
-          widget.getDimensionBehaviour(ConstraintWidget.VERTICAL)!;
+      var widthBehavior = widget.getDimensionBehaviour(
+        ConstraintWidget.HORIZONTAL,
+      )!;
+      var heightBehavior = widget.getDimensionBehaviour(
+        ConstraintWidget.VERTICAL,
+      )!;
 
-      final skip = widthBehavior == DimensionBehaviour.matchConstraint &&
+      final skip =
+          widthBehavior == DimensionBehaviour.matchConstraint &&
           widget.mMatchConstraintDefaultWidth !=
               ConstraintWidget.MATCH_CONSTRAINT_WRAP &&
           heightBehavior == DimensionBehaviour.matchConstraint &&
@@ -173,11 +176,12 @@ class VirtualLayout extends HelperWidget {
   }
 
   void measureWidget(
-      ConstraintWidget widget,
-      DimensionBehaviour horizontalBehavior,
-      int horizontalDimension,
-      DimensionBehaviour verticalBehavior,
-      int verticalDimension) {
+    ConstraintWidget widget,
+    DimensionBehaviour horizontalBehavior,
+    int horizontalDimension,
+    DimensionBehaviour verticalBehavior,
+    int verticalDimension,
+  ) {
     while (mMeasurer == null && getParent() != null) {
       final parent = getParent()! as ConstraintWidgetContainer;
       mMeasurer = parent.getMeasurer();

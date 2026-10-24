@@ -32,7 +32,10 @@ abstract class Row {
   bool isEmpty();
   void updateFromRow(LinearSystem system, ArrayRow definition, bool b);
   void updateFromFinalVariable(
-      LinearSystem system, SolverVariable variable, bool removeFromDefinition);
+    LinearSystem system,
+    SolverVariable variable,
+    bool removeFromDefinition,
+  );
 }
 
 /// An ArrayRow backed by the hash-based SolverVariableValues storage, used
@@ -83,8 +86,10 @@ class LinearSystem {
 
   final Cache mCache = Cache();
 
-  late List<SolverVariable?> _poolVariables =
-      List<SolverVariable?>.filled(_poolSize, null);
+  late List<SolverVariable?> _poolVariables = List<SolverVariable?>.filled(
+    _poolSize,
+    null,
+  );
   int _poolVariablesCount = 0;
 
   late Row _tempGoal;
@@ -107,11 +112,16 @@ class LinearSystem {
   /// Reallocate memory to accommodate increased amount of variables.
   void _increaseTableSize() {
     _tableSize *= 2;
-    mRows = [...mRows, ...List<ArrayRow?>.filled(_tableSize - mRows.length, null)];
+    mRows = [
+      ...mRows,
+      ...List<ArrayRow?>.filled(_tableSize - mRows.length, null),
+    ];
     mCache.mIndexedVariables = [
       ...mCache.mIndexedVariables,
       ...List<SolverVariable?>.filled(
-          _tableSize - mCache.mIndexedVariables.length, null),
+        _tableSize - mCache.mIndexedVariables.length,
+        null,
+      ),
     ];
     _alreadyTestedCandidates = List.filled(_tableSize, false);
     _maxColumns = _tableSize;
@@ -281,7 +291,10 @@ class LinearSystem {
   }
 
   /// Returns a SolverVariable instance of the given type.
-  SolverVariable _acquireSolverVariable(SolverVariableType type, String? prefix) {
+  SolverVariable _acquireSolverVariable(
+    SolverVariableType type,
+    String? prefix,
+  ) {
     var variable = mCache.mSolverVariablePool.acquire();
     if (variable == null) {
       variable = SolverVariable.typed(type, prefix);
@@ -294,7 +307,10 @@ class LinearSystem {
       _poolSize *= 2;
       _poolVariables = [
         ..._poolVariables,
-        ...List<SolverVariable?>.filled(_poolSize - _poolVariables.length, null),
+        ...List<SolverVariable?>.filled(
+          _poolSize - _poolVariables.length,
+          null,
+        ),
       ];
     }
     _poolVariables[_poolVariablesCount++] = variable;
@@ -542,7 +558,10 @@ class LinearSystem {
       if (goal.getKey() != null) {
         _alreadyTestedCandidates[goal.getKey()!.id] = true;
       }
-      final pivotCandidate = goal.getPivotCandidate(this, _alreadyTestedCandidates);
+      final pivotCandidate = goal.getPivotCandidate(
+        this,
+        _alreadyTestedCandidates,
+      );
       if (pivotCandidate != null) {
         if (_alreadyTestedCandidates[pivotCandidate.id]) {
           return tries;
@@ -590,8 +609,10 @@ class LinearSystem {
           pivotEquation.mVariable!.mDefinitionId = -1;
           pivotEquation.pivot(pivotCandidate);
           pivotEquation.mVariable!.mDefinitionId = pivotRowIndex;
-          pivotEquation.mVariable!
-              .updateReferencesWithNewDefinition(this, pivotEquation);
+          pivotEquation.mVariable!.updateReferencesWithNewDefinition(
+            this,
+            pivotEquation,
+          );
           // now that we pivoted, we're going to continue looping on the next
           // goal columns, until we exhaust all possibilities of improvement
         }
@@ -693,8 +714,10 @@ class LinearSystem {
           pivotEquation.mVariable!.mDefinitionId = -1;
           pivotEquation.pivot(mCache.mIndexedVariables[pivotColumnIndex]!);
           pivotEquation.mVariable!.mDefinitionId = pivotRowIndex;
-          pivotEquation.mVariable!
-              .updateReferencesWithNewDefinition(this, pivotEquation);
+          pivotEquation.mVariable!.updateReferencesWithNewDefinition(
+            this,
+            pivotEquation,
+          );
         } else {
           done = true;
         }
@@ -730,7 +753,11 @@ class LinearSystem {
 
   /// Add an equation of the form `a >= b + margin`.
   void addGreaterThan(
-      SolverVariable a, SolverVariable b, int margin, int strength) {
+    SolverVariable a,
+    SolverVariable b,
+    int margin,
+    int strength,
+  ) {
     final row = createRow();
     final slack = createSlackVariable();
     slack.strength = 0;
@@ -742,8 +769,12 @@ class LinearSystem {
     addConstraint(row);
   }
 
-  void addGreaterBarrier(SolverVariable a, SolverVariable b, int margin,
-      bool hasMatchConstraintWidgets) {
+  void addGreaterBarrier(
+    SolverVariable a,
+    SolverVariable b,
+    int margin,
+    bool hasMatchConstraintWidgets,
+  ) {
     final row = createRow();
     final slack = createSlackVariable();
     slack.strength = 0;
@@ -753,7 +784,11 @@ class LinearSystem {
 
   /// Add an equation of the form `a <= b + margin`.
   void addLowerThan(
-      SolverVariable a, SolverVariable b, int margin, int strength) {
+    SolverVariable a,
+    SolverVariable b,
+    int margin,
+    int strength,
+  ) {
     final row = createRow();
     final slack = createSlackVariable();
     slack.strength = 0;
@@ -765,8 +800,12 @@ class LinearSystem {
     addConstraint(row);
   }
 
-  void addLowerBarrier(SolverVariable a, SolverVariable b, int margin,
-      bool hasMatchConstraintWidgets) {
+  void addLowerBarrier(
+    SolverVariable a,
+    SolverVariable b,
+    int margin,
+    bool hasMatchConstraintWidgets,
+  ) {
     final row = createRow();
     final slack = createSlackVariable();
     slack.strength = 0;
@@ -775,8 +814,16 @@ class LinearSystem {
   }
 
   /// Add an equation of the form `(1 - bias) * (a - b) = bias * (c - d)`.
-  void addCentering(SolverVariable a, SolverVariable b, int m1, double bias,
-      SolverVariable c, SolverVariable d, int m2, int strength) {
+  void addCentering(
+    SolverVariable a,
+    SolverVariable b,
+    int m1,
+    double bias,
+    SolverVariable c,
+    SolverVariable d,
+    int m2,
+    int strength,
+  ) {
     final row = createRow();
     row.createRowCentering(a, b, m1, bias, c, d, m2);
     if (strength != SolverVariable.STRENGTH_FIXED) {
@@ -785,8 +832,14 @@ class LinearSystem {
     addConstraint(row);
   }
 
-  void addRatio(SolverVariable a, SolverVariable b, SolverVariable c,
-      SolverVariable d, double ratio, int strength) {
+  void addRatio(
+    SolverVariable a,
+    SolverVariable b,
+    SolverVariable c,
+    SolverVariable d,
+    double ratio,
+    int strength,
+  ) {
     final row = createRow();
     row.createRowDimensionRatio(a, b, c, d, ratio);
     if (strength != SolverVariable.STRENGTH_FIXED) {
@@ -814,7 +867,11 @@ class LinearSystem {
 
   /// Add an equation of the form `a = b + margin`.
   ArrayRow? addEquality(
-      SolverVariable a, SolverVariable b, int margin, int strength) {
+    SolverVariable a,
+    SolverVariable b,
+    int margin,
+    int strength,
+  ) {
     if (USE_BASIC_SYNONYMS &&
         strength == SolverVariable.STRENGTH_FIXED &&
         b.isFinalValue &&
@@ -837,7 +894,9 @@ class LinearSystem {
       a.setFinalValue(this, value.toDouble());
       for (var i = 0; i < mVariablesID + 1; i++) {
         final variable = mCache.mIndexedVariables[i];
-        if (variable != null && variable.mIsSynonym && variable.mSynonym == a.id) {
+        if (variable != null &&
+            variable.mIsSynonym &&
+            variable.mSynonym == a.id) {
           variable.setFinalValue(this, value + variable.mSynonymDelta);
         }
       }
@@ -866,8 +925,12 @@ class LinearSystem {
   }
 
   /// Create a constraint to express `A = C * percent`.
-  static ArrayRow createRowDimensionPercent(LinearSystem linearSystem,
-      SolverVariable variableA, SolverVariable variableC, double percent) {
+  static ArrayRow createRowDimensionPercent(
+    LinearSystem linearSystem,
+    SolverVariable variableA,
+    SolverVariable variableC,
+    double percent,
+  ) {
     final row = linearSystem.createRow();
     return row.createRowDimensionPercent(variableA, variableC, percent);
   }
@@ -875,16 +938,36 @@ class LinearSystem {
   /// Add the equations constraining a widget center to another widget center,
   /// positioned on a circle, following an angle and radius.
   void addCenterPoint(
-      ConstraintWidget widget, ConstraintWidget target, double angle, int radius) {
-    final al = createObjectVariable(widget.getAnchor(ConstraintAnchorType.left))!;
-    final at = createObjectVariable(widget.getAnchor(ConstraintAnchorType.top))!;
-    final ar = createObjectVariable(widget.getAnchor(ConstraintAnchorType.right))!;
-    final ab = createObjectVariable(widget.getAnchor(ConstraintAnchorType.bottom))!;
+    ConstraintWidget widget,
+    ConstraintWidget target,
+    double angle,
+    int radius,
+  ) {
+    final al = createObjectVariable(
+      widget.getAnchor(ConstraintAnchorType.left),
+    )!;
+    final at = createObjectVariable(
+      widget.getAnchor(ConstraintAnchorType.top),
+    )!;
+    final ar = createObjectVariable(
+      widget.getAnchor(ConstraintAnchorType.right),
+    )!;
+    final ab = createObjectVariable(
+      widget.getAnchor(ConstraintAnchorType.bottom),
+    )!;
 
-    final bl = createObjectVariable(target.getAnchor(ConstraintAnchorType.left))!;
-    final bt = createObjectVariable(target.getAnchor(ConstraintAnchorType.top))!;
-    final br = createObjectVariable(target.getAnchor(ConstraintAnchorType.right))!;
-    final bb = createObjectVariable(target.getAnchor(ConstraintAnchorType.bottom))!;
+    final bl = createObjectVariable(
+      target.getAnchor(ConstraintAnchorType.left),
+    )!;
+    final bt = createObjectVariable(
+      target.getAnchor(ConstraintAnchorType.top),
+    )!;
+    final br = createObjectVariable(
+      target.getAnchor(ConstraintAnchorType.right),
+    )!;
+    final bb = createObjectVariable(
+      target.getAnchor(ConstraintAnchorType.bottom),
+    )!;
 
     var row = createRow();
     var angleComponent = math.sin(angle) * radius;

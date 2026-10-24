@@ -20,12 +20,11 @@ DebugScene buildDebugScene({
   required List<ConstraintWidget> widgets,
   required List<ConstraintParentData> parentData,
   required List<RenderBox> children,
-}) =>
-    _SceneExtractor(container, widgets, parentData, children).extract();
+}) => _SceneExtractor(container, widgets, parentData, children).extract();
 
 class _SceneExtractor {
   _SceneExtractor(this.container, this.widgets, this.parentData, this.children)
-      : indexOf = Map<ConstraintWidget, int>.identity() {
+    : indexOf = Map<ConstraintWidget, int>.identity() {
     for (var i = 0; i < widgets.length; i++) {
       indexOf[widgets[i]] = i;
     }
@@ -76,11 +75,11 @@ class _SceneExtractor {
   }
 
   Rect _rectOf(ConstraintWidget w) => Rect.fromLTWH(
-        w.getX().toDouble(),
-        w.getY().toDouble(),
-        w.getWidth().toDouble(),
-        w.getHeight().toDouble(),
-      );
+    w.getX().toDouble(),
+    w.getY().toDouble(),
+    w.getWidth().toDouble(),
+    w.getHeight().toDouble(),
+  );
 
   // ---------------------------------------------------------------- boxes --
 
@@ -88,24 +87,27 @@ class _SceneExtractor {
     final w = widgets[i];
     final pd = parentData[i];
     final rect = _rectOf(w);
-    final baselineUsed = !virtual &&
+    final baselineUsed =
+        !virtual &&
         w.hasBaseline() &&
         (w.mBaseline.isConnected() || w.mBaseline.hasDependents());
-    boxes.add(DebugWidgetBox(
-      rect: rect,
-      idLabel: _idLabel(pd.id),
-      typeLabel: virtual ? null : _typeLabel(children[i]),
-      invisible: pd.visibility == ConstraintVisibility.invisible,
-      virtual: virtual,
-      baselineY: baselineUsed ? rect.top + w.getBaselineDistance() : null,
-      connectedEdges: {
-        if (w.mLeft.isConnected()) DebugEdge.left,
-        if (w.mRight.isConnected()) DebugEdge.right,
-        if (w.mTop.isConnected()) DebugEdge.top,
-        if (w.mBottom.isConnected()) DebugEdge.bottom,
-        if (w.mBaseline.isConnected()) DebugEdge.baseline,
-      },
-    ));
+    boxes.add(
+      DebugWidgetBox(
+        rect: rect,
+        idLabel: _idLabel(pd.id),
+        typeLabel: virtual ? null : _typeLabel(children[i]),
+        invisible: pd.visibility == ConstraintVisibility.invisible,
+        virtual: virtual,
+        baselineY: baselineUsed ? rect.top + w.getBaselineDistance() : null,
+        connectedEdges: {
+          if (w.mLeft.isConnected()) DebugEdge.left,
+          if (w.mRight.isConnected()) DebugEdge.right,
+          if (w.mTop.isConnected()) DebugEdge.top,
+          if (w.mBottom.isConnected()) DebugEdge.bottom,
+          if (w.mBaseline.isConnected()) DebugEdge.baseline,
+        },
+      ),
+    );
   }
 
   static final _symbolName = RegExp(r'^Symbol\("(.*)"\)$');
@@ -156,29 +158,32 @@ class _SceneExtractor {
     }
     final target = w.mCenter.getTarget()!.getOwner();
     final sourceRect = _rectOf(w);
-    final targetRect =
-        identical(target, container) ? _containerRect : _rectOf(target);
-    connections.add(DebugConnection(
-      type: DebugConnectionType.circular,
-      sourcePoint: sourceRect.center,
-      targetPoint: targetRect.center,
-      sourceEdge: DebugEdge.left,
-      targetEdge: DebugEdge.left,
-      horizontal: false,
-      targetIsParent: identical(target, container),
-      dashed: true,
-      circularAngle: w.mCircleConstraintAngle,
-      circularRadius: w.mCenter.getMargin().toDouble(),
-    ));
+    final targetRect = identical(target, container)
+        ? _containerRect
+        : _rectOf(target);
+    connections.add(
+      DebugConnection(
+        type: DebugConnectionType.circular,
+        sourcePoint: sourceRect.center,
+        targetPoint: targetRect.center,
+        sourceEdge: DebugEdge.left,
+        targetEdge: DebugEdge.left,
+        horizontal: false,
+        targetIsParent: identical(target, container),
+        dashed: true,
+        circularAngle: w.mCircleConstraintAngle,
+        circularRadius: w.mCenter.getMargin().toDouble(),
+      ),
+    );
     return true;
   }
 
   Rect get _containerRect => Rect.fromLTWH(
-        0,
-        0,
-        container.getWidth().toDouble(),
-        container.getHeight().toDouble(),
-      );
+    0,
+    0,
+    container.getWidth().toDouble(),
+    container.getHeight().toDouble(),
+  );
 
   void _addAxis(int i, ConstraintWidget w, {required bool horizontal}) {
     final startAnchor = horizontal ? w.mLeft : w.mTop;
@@ -191,15 +196,18 @@ class _SceneExtractor {
         !endIsChain &&
         startAnchor.isConnected() &&
         endAnchor.isConnected() &&
-        identical(startAnchor.getTarget()!.getOwner(),
-            endAnchor.getTarget()!.getOwner())) {
+        identical(
+          startAnchor.getTarget()!.getOwner(),
+          endAnchor.getTarget()!.getOwner(),
+        )) {
       _emitCenter(i, w, startAnchor, endAnchor, horizontal: horizontal);
       return;
     }
 
     final bothConnected = startAnchor.isConnected() && endAnchor.isConnected();
-    final bias =
-        horizontal ? parentData[i].horizontalBias : parentData[i].verticalBias;
+    final bias = horizontal
+        ? parentData[i].horizontalBias
+        : parentData[i].verticalBias;
     final biased = bothConnected && (bias - 0.5).abs() > 0.01;
 
     for (final (anchor, isChain, isStartSide) in [
@@ -241,28 +249,37 @@ class _SceneExtractor {
     final key = (i < j ? i : j, i < j ? j : i, horizontal);
     if (!_emittedChains.add(key)) return;
     final sourcePoint = _anchorPoint(widgets[i], anchor);
-    connections.add(DebugConnection(
-      type: DebugConnectionType.chain,
-      sourcePoint: sourcePoint,
-      targetPoint:
-          _targetPoint(target, crossAxis: sourcePoint, horizontal: horizontal),
-      sourceEdge: _edgeOf(anchor),
-      targetEdge: _edgeOf(target),
-      horizontal: horizontal,
-      chainStyle: _chainStyleOf(widgets[i], horizontal: horizontal),
-    ));
+    connections.add(
+      DebugConnection(
+        type: DebugConnectionType.chain,
+        sourcePoint: sourcePoint,
+        targetPoint: _targetPoint(
+          target,
+          crossAxis: sourcePoint,
+          horizontal: horizontal,
+        ),
+        sourceEdge: _edgeOf(anchor),
+        targetEdge: _edgeOf(target),
+        horizontal: horizontal,
+        chainStyle: _chainStyleOf(widgets[i], horizontal: horizontal),
+      ),
+    );
   }
 
   /// Walks to the chain head (source-side-most member) and reads its style.
-  ChainStyle _chainStyleOf(ConstraintWidget member, {required bool horizontal}) {
+  ChainStyle _chainStyleOf(
+    ConstraintWidget member, {
+    required bool horizontal,
+  }) {
     var head = member;
     for (var guard = 0; guard < widgets.length; guard++) {
       final anchor = horizontal ? head.mLeft : head.mTop;
       if (!_isChainLink(anchor)) break;
       head = anchor.getTarget()!.getOwner();
     }
-    final style =
-        horizontal ? head.mHorizontalChainStyle : head.mVerticalChainStyle;
+    final style = horizontal
+        ? head.mHorizontalChainStyle
+        : head.mVerticalChainStyle;
     return switch (style) {
       ConstraintWidget.CHAIN_SPREAD_INSIDE => ChainStyle.spreadInside,
       ConstraintWidget.CHAIN_PACKED => ChainStyle.packed,
@@ -279,23 +296,33 @@ class _SceneExtractor {
   }) {
     final startPoint = _anchorPoint(w, startAnchor);
     final endPoint = _anchorPoint(w, endAnchor);
-    final startTarget = _targetPoint(startAnchor.getTarget()!,
-        crossAxis: startPoint, horizontal: horizontal);
-    final endTarget = _targetPoint(endAnchor.getTarget()!,
-        crossAxis: endPoint, horizontal: horizontal);
-    connections.add(DebugConnection(
-      type: DebugConnectionType.center,
-      sourcePoint: startPoint,
-      targetPoint: startTarget,
-      sourceEdge: _edgeOf(startAnchor),
-      targetEdge: _edgeOf(startAnchor.getTarget()!),
+    final startTarget = _targetPoint(
+      startAnchor.getTarget()!,
+      crossAxis: startPoint,
       horizontal: horizontal,
-      margin: startAnchor.getMargin().toDouble(),
-      targetIsParent:
-          identical(startAnchor.getTarget()!.getOwner(), container),
-      // The second leg of the pair: opposite-side source and target points.
-      centerDashedLine: (endPoint, endTarget),
-    ));
+    );
+    final endTarget = _targetPoint(
+      endAnchor.getTarget()!,
+      crossAxis: endPoint,
+      horizontal: horizontal,
+    );
+    connections.add(
+      DebugConnection(
+        type: DebugConnectionType.center,
+        sourcePoint: startPoint,
+        targetPoint: startTarget,
+        sourceEdge: _edgeOf(startAnchor),
+        targetEdge: _edgeOf(startAnchor.getTarget()!),
+        horizontal: horizontal,
+        margin: startAnchor.getMargin().toDouble(),
+        targetIsParent: identical(
+          startAnchor.getTarget()!.getOwner(),
+          container,
+        ),
+        // The second leg of the pair: opposite-side source and target points.
+        centerDashedLine: (endPoint, endTarget),
+      ),
+    );
   }
 
   void _emitSingle(
@@ -308,24 +335,29 @@ class _SceneExtractor {
   }) {
     final target = anchor.getTarget()!;
     final sourcePoint = _anchorPoint(w, anchor);
-    final targetPoint =
-        _targetPoint(target, crossAxis: sourcePoint, horizontal: horizontal);
+    final targetPoint = _targetPoint(
+      target,
+      crossAxis: sourcePoint,
+      horizontal: horizontal,
+    );
     var resolved = type;
     if (type == DebugConnectionType.normal &&
         (sourcePoint - targetPoint).distance < 4) {
       resolved = DebugConnectionType.adjacent;
     }
-    connections.add(DebugConnection(
-      type: resolved,
-      sourcePoint: sourcePoint,
-      targetPoint: targetPoint,
-      sourceEdge: _edgeOf(anchor),
-      targetEdge: _edgeOf(target),
-      horizontal: horizontal,
-      margin: anchor.getMargin().toDouble(),
-      targetIsParent: identical(target.getOwner(), container),
-      dashed: dashed,
-    ));
+    connections.add(
+      DebugConnection(
+        type: resolved,
+        sourcePoint: sourcePoint,
+        targetPoint: targetPoint,
+        sourceEdge: _edgeOf(anchor),
+        targetEdge: _edgeOf(target),
+        horizontal: horizontal,
+        margin: anchor.getMargin().toDouble(),
+        targetIsParent: identical(target.getOwner(), container),
+        dashed: dashed,
+      ),
+    );
   }
 
   void _addBaseline(int i, ConstraintWidget w) {
@@ -333,35 +365,38 @@ class _SceneExtractor {
     final target = w.mBaseline.getTarget()!;
     final targetOwner = target.getOwner();
     final sourceRect = _rectOf(w);
-    final targetRect =
-        identical(targetOwner, container) ? _containerRect : _rectOf(targetOwner);
-    connections.add(DebugConnection(
-      type: DebugConnectionType.baseline,
-      sourcePoint: Offset(
-        sourceRect.center.dx,
-        sourceRect.top + w.getBaselineDistance(),
+    final targetRect = identical(targetOwner, container)
+        ? _containerRect
+        : _rectOf(targetOwner);
+    connections.add(
+      DebugConnection(
+        type: DebugConnectionType.baseline,
+        sourcePoint: Offset(
+          sourceRect.center.dx,
+          sourceRect.top + w.getBaselineDistance(),
+        ),
+        targetPoint: Offset(
+          targetRect.center.dx,
+          targetRect.top + targetOwner.getBaselineDistance(),
+        ),
+        sourceEdge: DebugEdge.baseline,
+        targetEdge: DebugEdge.baseline,
+        horizontal: false,
+        targetIsParent: identical(targetOwner, container),
       ),
-      targetPoint: Offset(
-        targetRect.center.dx,
-        targetRect.top + targetOwner.getBaselineDistance(),
-      ),
-      sourceEdge: DebugEdge.baseline,
-      targetEdge: DebugEdge.baseline,
-      horizontal: false,
-      targetIsParent: identical(targetOwner, container),
-    ));
+    );
   }
 
   // ------------------------------------------------------------ geometry --
 
   DebugEdge _edgeOf(ConstraintAnchor anchor) => switch (anchor.getType()) {
-        ConstraintAnchorType.left => DebugEdge.left,
-        ConstraintAnchorType.right => DebugEdge.right,
-        ConstraintAnchorType.top => DebugEdge.top,
-        ConstraintAnchorType.bottom => DebugEdge.bottom,
-        ConstraintAnchorType.baseline => DebugEdge.baseline,
-        _ => DebugEdge.left,
-      };
+    ConstraintAnchorType.left => DebugEdge.left,
+    ConstraintAnchorType.right => DebugEdge.right,
+    ConstraintAnchorType.top => DebugEdge.top,
+    ConstraintAnchorType.bottom => DebugEdge.bottom,
+    ConstraintAnchorType.baseline => DebugEdge.baseline,
+    _ => DebugEdge.left,
+  };
 
   /// The midpoint of the anchor's edge on its owner widget.
   Offset _anchorPoint(ConstraintWidget w, ConstraintAnchor anchor) {
@@ -383,8 +418,7 @@ class _SceneExtractor {
     required bool horizontal,
   }) {
     final owner = target.getOwner();
-    final rect =
-        identical(owner, container) ? _containerRect : _rectOf(owner);
+    final rect = identical(owner, container) ? _containerRect : _rectOf(owner);
     if (horizontal) {
       final x = switch (_edgeOf(target)) {
         DebugEdge.right => rect.right,
@@ -413,11 +447,13 @@ class _SceneExtractor {
     } else {
       chipText = 'end ${pd.guidelineEnd?.round() ?? 0}';
     }
-    guidelines.add(DebugGuidelineInfo(
-      vertical: vertical,
-      position: vertical ? w.getX().toDouble() : w.getY().toDouble(),
-      chipText: chipText,
-    ));
+    guidelines.add(
+      DebugGuidelineInfo(
+        vertical: vertical,
+        position: vertical ? w.getX().toDouble() : w.getY().toDouble(),
+        chipText: chipText,
+      ),
+    );
   }
 
   void _addBarrier(Barrier w) {
@@ -426,22 +462,26 @@ class _SceneExtractor {
     switch (w.getBarrierType()) {
       case Barrier.left || Barrier.right:
         final x = w.getLeft().toDouble();
-        barriers.add(DebugBarrierInfo(
-          start: Offset(x, 0),
-          end: Offset(x, height),
-          fadeDirection: w.getBarrierType() == Barrier.left
-              ? const Offset(-1, 0)
-              : const Offset(1, 0),
-        ));
+        barriers.add(
+          DebugBarrierInfo(
+            start: Offset(x, 0),
+            end: Offset(x, height),
+            fadeDirection: w.getBarrierType() == Barrier.left
+                ? const Offset(-1, 0)
+                : const Offset(1, 0),
+          ),
+        );
       default:
         final y = w.getTop().toDouble();
-        barriers.add(DebugBarrierInfo(
-          start: Offset(0, y),
-          end: Offset(width, y),
-          fadeDirection: w.getBarrierType() == Barrier.top
-              ? const Offset(0, -1)
-              : const Offset(0, 1),
-        ));
+        barriers.add(
+          DebugBarrierInfo(
+            start: Offset(0, y),
+            end: Offset(width, y),
+            fadeDirection: w.getBarrierType() == Barrier.top
+                ? const Offset(0, -1)
+                : const Offset(0, 1),
+          ),
+        );
     }
   }
 }

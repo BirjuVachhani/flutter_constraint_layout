@@ -22,9 +22,7 @@ class PriorityGoalRow extends ArrayRow {
 
   Cache mCache;
 
-  PriorityGoalRow(Cache cache)
-      : mCache = cache,
-        super(cache);
+  PriorityGoalRow(Cache cache) : mCache = cache, super(cache);
 
   @override
   void clear() {
@@ -109,7 +107,10 @@ class PriorityGoalRow extends ArrayRow {
 
   @override
   void updateFromRow(
-      LinearSystem system, ArrayRow definition, bool removeFromDefinition) {
+    LinearSystem system,
+    ArrayRow definition,
+    bool removeFromDefinition,
+  ) {
     final goalVariable = definition.mVariable;
     if (goalVariable == null) {
       return;
@@ -156,7 +157,8 @@ class GoalVariableAccessor {
     if (mVariable.inGoal) {
       var empty = true;
       for (var i = 0; i < SolverVariable.MAX_STRENGTH; i++) {
-        mVariable.mGoalStrengthVector[i] += other.mGoalStrengthVector[i] * value;
+        mVariable.mGoalStrengthVector[i] +=
+            other.mGoalStrengthVector[i] * value;
         final v = mVariable.mGoalStrengthVector[i];
         if (v.abs() < PriorityGoalRow._epsilon) {
           mVariable.mGoalStrengthVector[i] = 0;

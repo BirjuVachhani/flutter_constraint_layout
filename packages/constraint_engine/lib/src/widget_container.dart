@@ -12,7 +12,7 @@ class WidgetContainer extends ConstraintWidget {
 
   WidgetContainer() : super();
   WidgetContainer.rect(int x, int y, int width, int height)
-      : super.rect(x, y, width, height);
+    : super.rect(x, y, width, height);
   WidgetContainer.size(int width, int height) : super.size(width, height);
 
   /// Add a child widget.

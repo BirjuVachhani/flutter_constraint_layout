@@ -35,14 +35,16 @@ class ChainHead {
   /// [first] is the first widget in the chain; [orientation] is HORIZONTAL or
   /// VERTICAL; [isRtl] determines the actual head of a horizontal chain.
   ChainHead(ConstraintWidget first, int orientation, bool isRtl)
-      : mFirst = first,
-        _orientation = orientation,
-        _isRtl = isRtl;
+    : mFirst = first,
+      _orientation = orientation,
+      _isRtl = isRtl;
 
   /// True if the widget should be part of the match equality rules in the
   /// chain.
   static bool _isMatchConstraintEqualityCandidate(
-      ConstraintWidget widget, int orientation) {
+    ConstraintWidget widget,
+    int orientation,
+  ) {
     return widget.getVisibility() != ConstraintWidget.GONE &&
         widget.mListDimensionBehaviors[orientation] ==
             DimensionBehaviour.matchConstraint &&
@@ -107,7 +109,8 @@ class ChainHead {
             mFirstMatchConstraintWidget ??= widget;
             if (mLastMatchConstraintWidget != null) {
               mLastMatchConstraintWidget!
-                  .mListNextMatchConstraintsWidget[_orientation] = widget;
+                      .mListNextMatchConstraintsWidget[_orientation] =
+                  widget;
             }
             mLastMatchConstraintWidget = widget;
           }
@@ -183,9 +186,11 @@ class ChainHead {
 
   ConstraintWidget? getHead() => mHead;
 
-  ConstraintWidget? getFirstMatchConstraintWidget() => mFirstMatchConstraintWidget;
+  ConstraintWidget? getFirstMatchConstraintWidget() =>
+      mFirstMatchConstraintWidget;
 
-  ConstraintWidget? getLastMatchConstraintWidget() => mLastMatchConstraintWidget;
+  ConstraintWidget? getLastMatchConstraintWidget() =>
+      mLastMatchConstraintWidget;
 
   double getTotalWeight() => mTotalWeight;
 

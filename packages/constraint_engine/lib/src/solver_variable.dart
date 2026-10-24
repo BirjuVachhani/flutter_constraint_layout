@@ -68,8 +68,8 @@ class SolverVariable implements Comparable<SolverVariable> {
   double mSynonymDelta = 0;
 
   SolverVariable(String? name, SolverVariableType type)
-      : mName = name,
-        mType = type;
+    : mName = name,
+      mType = type;
 
   SolverVariable.typed(SolverVariableType type, String? prefix) : mType = type;
 
@@ -109,7 +109,9 @@ class SolverVariable implements Comparable<SolverVariable> {
   }
 
   void updateReferencesWithNewDefinition(
-      LinearSystem system, ArrayRow definition) {
+    LinearSystem system,
+    ArrayRow definition,
+  ) {
     final count = mClientEquationsCount;
     for (var i = 0; i < count; i++) {
       mClientEquations[i]!.updateFromRow(system, definition, false);
@@ -132,7 +134,10 @@ class SolverVariable implements Comparable<SolverVariable> {
   }
 
   void setSynonym(
-      LinearSystem system, SolverVariable synonymVariable, double value) {
+    LinearSystem system,
+    SolverVariable synonymVariable,
+    double value,
+  ) {
     mIsSynonym = true;
     mSynonym = synonymVariable.id;
     mSynonymDelta = value;

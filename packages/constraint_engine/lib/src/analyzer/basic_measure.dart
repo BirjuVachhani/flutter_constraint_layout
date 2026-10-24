@@ -54,7 +54,7 @@ class BasicMeasure {
   final ConstraintWidgetContainer _constraintWidgetContainer;
 
   BasicMeasure(ConstraintWidgetContainer constraintWidgetContainer)
-      : _constraintWidgetContainer = constraintWidgetContainer;
+    : _constraintWidgetContainer = constraintWidgetContainer;
 
   void updateHierarchy(ConstraintWidgetContainer layout) {
     _variableDimensionsWidgets.clear();
@@ -105,12 +105,15 @@ class BasicMeasure {
         continue;
       }
 
-      final widthBehavior =
-          child.getDimensionBehaviour(ConstraintWidget.HORIZONTAL);
-      final heightBehavior =
-          child.getDimensionBehaviour(ConstraintWidget.VERTICAL);
+      final widthBehavior = child.getDimensionBehaviour(
+        ConstraintWidget.HORIZONTAL,
+      );
+      final heightBehavior = child.getDimensionBehaviour(
+        ConstraintWidget.VERTICAL,
+      );
 
-      var skip = widthBehavior == DimensionBehaviour.matchConstraint &&
+      var skip =
+          widthBehavior == DimensionBehaviour.matchConstraint &&
           child.mMatchConstraintDefaultWidth !=
               ConstraintWidget.MATCH_CONSTRAINT_WRAP &&
           heightBehavior == DimensionBehaviour.matchConstraint &&
@@ -154,7 +157,12 @@ class BasicMeasure {
   }
 
   void _solveLinearSystem(
-      ConstraintWidgetContainer layout, String reason, int pass, int w, int h) {
+    ConstraintWidgetContainer layout,
+    String reason,
+    int pass,
+    int w,
+    int h,
+  ) {
     final minWidth = layout.getMinWidth();
     final minHeight = layout.getMinHeight();
     layout.setMinWidth(0);
@@ -173,35 +181,42 @@ class BasicMeasure {
 
   /// Called by the host's onMeasure equivalent.
   void solverMeasure(
-      ConstraintWidgetContainer layout,
-      int optimizationLevel,
-      int paddingX,
-      int paddingY,
-      int widthMode,
-      int widthSize,
-      int heightMode,
-      int heightSize,
-      int lastMeasureWidth,
-      int lastMeasureHeight) {
+    ConstraintWidgetContainer layout,
+    int optimizationLevel,
+    int paddingX,
+    int paddingY,
+    int widthMode,
+    int widthSize,
+    int heightMode,
+    int heightSize,
+    int lastMeasureWidth,
+    int lastMeasureHeight,
+  ) {
     final measurer = layout.getMeasurer();
 
     final childCount = layout.mChildren.length;
     final startingWidth = layout.getWidth();
     final startingHeight = layout.getHeight();
 
-    final optimizeWrap =
-        Optimizer.enabled(optimizationLevel, Optimizer.OPTIMIZATION_GRAPH_WRAP);
-    var optimize = optimizeWrap ||
+    final optimizeWrap = Optimizer.enabled(
+      optimizationLevel,
+      Optimizer.OPTIMIZATION_GRAPH_WRAP,
+    );
+    var optimize =
+        optimizeWrap ||
         Optimizer.enabled(optimizationLevel, Optimizer.OPTIMIZATION_GRAPH);
 
     if (optimize) {
       for (var i = 0; i < childCount; i++) {
         final child = layout.mChildren[i];
-        final matchWidth = child.getHorizontalDimensionBehaviour() ==
+        final matchWidth =
+            child.getHorizontalDimensionBehaviour() ==
             DimensionBehaviour.matchConstraint;
-        final matchHeight = child.getVerticalDimensionBehaviour() ==
+        final matchHeight =
+            child.getVerticalDimensionBehaviour() ==
             DimensionBehaviour.matchConstraint;
-        final ratio = matchWidth && matchHeight && child.getDimensionRatio() > 0;
+        final ratio =
+            matchWidth && matchHeight && child.getDimensionRatio() > 0;
         if (child.isInHorizontalChain() && ratio) {
           optimize = false;
           break;
@@ -219,7 +234,8 @@ class BasicMeasure {
 
     var allSolved = false;
 
-    optimize = optimize &&
+    optimize =
+        optimize &&
         ((widthMode == EXACTLY && heightMode == EXACTLY) || optimizeWrap);
 
     var computations = 0;
@@ -227,10 +243,12 @@ class BasicMeasure {
     if (optimize) {
       // For non-optimizer this doesn't seem to be a problem; for both cases,
       // having the width address max size early seems to work.
-      widthSize =
-          widthSize < layout.getMaxWidth() ? widthSize : layout.getMaxWidth();
-      heightSize =
-          heightSize < layout.getMaxHeight() ? heightSize : layout.getMaxHeight();
+      widthSize = widthSize < layout.getMaxWidth()
+          ? widthSize
+          : layout.getMaxWidth();
+      heightSize = heightSize < layout.getMaxHeight()
+          ? heightSize
+          : layout.getMaxHeight();
 
       if (widthMode == EXACTLY && layout.getWidth() != widthSize) {
         layout.setWidth(widthSize);
@@ -246,15 +264,21 @@ class BasicMeasure {
       } else {
         allSolved = layout.directMeasureSetup(optimizeWrap);
         if (widthMode == EXACTLY) {
-          allSolved = allSolved &&
+          allSolved =
+              allSolved &&
               layout.directMeasureWithOrientation(
-                  optimizeWrap, ConstraintWidget.HORIZONTAL);
+                optimizeWrap,
+                ConstraintWidget.HORIZONTAL,
+              );
           computations++;
         }
         if (heightMode == EXACTLY) {
-          allSolved = allSolved &&
+          allSolved =
+              allSolved &&
               layout.directMeasureWithOrientation(
-                  optimizeWrap, ConstraintWidget.VERTICAL);
+                optimizeWrap,
+                ConstraintWidget.VERTICAL,
+              );
           computations++;
         }
       }
@@ -276,23 +300,31 @@ class BasicMeasure {
 
       // let's solve the linear system.
       if (childCount > 0) {
-        _solveLinearSystem(layout, 'First pass', 0, startingWidth, startingHeight);
+        _solveLinearSystem(
+          layout,
+          'First pass',
+          0,
+          startingWidth,
+          startingHeight,
+        );
       }
 
       if (sizeDependentWidgetsCount > 0 && measurer != null) {
         var needSolverPass = false;
-        final containerWrapWidth = layout.getHorizontalDimensionBehaviour() ==
+        final containerWrapWidth =
+            layout.getHorizontalDimensionBehaviour() ==
             DimensionBehaviour.wrapContent;
-        final containerWrapHeight = layout.getVerticalDimensionBehaviour() ==
+        final containerWrapHeight =
+            layout.getVerticalDimensionBehaviour() ==
             DimensionBehaviour.wrapContent;
         var minWidth =
             layout.getWidth() > _constraintWidgetContainer.getMinWidth()
-                ? layout.getWidth()
-                : _constraintWidgetContainer.getMinWidth();
+            ? layout.getWidth()
+            : _constraintWidgetContainer.getMinWidth();
         var minHeight =
             layout.getHeight() > _constraintWidgetContainer.getMinHeight()
-                ? layout.getHeight()
-                : _constraintWidgetContainer.getMinHeight();
+            ? layout.getHeight()
+            : _constraintWidgetContainer.getMinHeight();
 
         // Let's first apply sizes for VirtualLayouts if any
         for (var i = 0; i < sizeDependentWidgetsCount; i++) {
@@ -302,8 +334,11 @@ class BasicMeasure {
           }
           final preWidth = widget.getWidth();
           final preHeight = widget.getHeight();
-          final hasMeasure =
-              measure(measurer, widget, Measure.TRY_GIVEN_DIMENSIONS);
+          final hasMeasure = measure(
+            measurer,
+            widget,
+            Measure.TRY_GIVEN_DIMENSIONS,
+          );
           needSolverPass = needSolverPass || hasMeasure;
           final measuredWidth = widget.getWidth();
           final measuredHeight = widget.getHeight();
@@ -385,7 +420,12 @@ class BasicMeasure {
           }
           if (needSolverPass) {
             _solveLinearSystem(
-                layout, 'intermediate pass', 1 + j, startingWidth, startingHeight);
+              layout,
+              'intermediate pass',
+              1 + j,
+              startingWidth,
+              startingHeight,
+            );
             needSolverPass = false;
           } else {
             break;
@@ -398,7 +438,11 @@ class BasicMeasure {
 
   /// Measure a widget through the host measurer using the given strategy.
   /// Returns true if another solver pass is needed.
-  bool measure(Measurer measurer, ConstraintWidget widget, int measureStrategy) {
+  bool measure(
+    Measurer measurer,
+    ConstraintWidget widget,
+    int measureStrategy,
+  ) {
     _measure.horizontalBehavior = widget.getHorizontalDimensionBehaviour();
     _measure.verticalBehavior = widget.getVerticalDimensionBehaviour();
     _measure.horizontalDimension = widget.getWidth();

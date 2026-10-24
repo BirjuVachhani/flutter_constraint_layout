@@ -74,8 +74,10 @@ class ConstraintAnchor {
   /// Reset (or lazily create) the solver variable.
   void resetSolverVariable(Cache cache) {
     if (mSolverVariable == null) {
-      mSolverVariable =
-          SolverVariable.typed(SolverVariableType.unrestricted, null);
+      mSolverVariable = SolverVariable.typed(
+        SolverVariableType.unrestricted,
+        null,
+      );
     } else {
       mSolverVariable!.reset();
     }
@@ -172,7 +174,8 @@ class ConstraintAnchor {
             target != ConstraintAnchorType.centerY;
       case ConstraintAnchorType.left:
       case ConstraintAnchorType.right:
-        var isCompatible = target == ConstraintAnchorType.left ||
+        var isCompatible =
+            target == ConstraintAnchorType.left ||
             target == ConstraintAnchorType.right;
         if (anchor.getOwner() is Guideline) {
           isCompatible = isCompatible || target == ConstraintAnchorType.centerX;
@@ -180,7 +183,8 @@ class ConstraintAnchor {
         return isCompatible;
       case ConstraintAnchorType.top:
       case ConstraintAnchorType.bottom:
-        var isCompatible = target == ConstraintAnchorType.top ||
+        var isCompatible =
+            target == ConstraintAnchorType.top ||
             target == ConstraintAnchorType.bottom;
         if (anchor.getOwner() is Guideline) {
           isCompatible = isCompatible || target == ConstraintAnchorType.centerY;

@@ -21,9 +21,11 @@ class ChainRun extends WidgetRun {
   @override
   String toString() {
     final log = StringBuffer('ChainRun ');
-    log.write(orientation == ConstraintWidget.HORIZONTAL
-        ? 'horizontal : '
-        : 'vertical : ');
+    log.write(
+      orientation == ConstraintWidget.HORIZONTAL
+          ? 'horizontal : '
+          : 'vertical : ',
+    );
     for (final run in mWidgets) {
       log.write('<$run> ');
     }
@@ -76,7 +78,8 @@ class ChainRun extends WidgetRun {
         run.mWidget.verticalChainRun = this;
       }
     }
-    final isInRtl = (orientation == ConstraintWidget.HORIZONTAL) &&
+    final isInRtl =
+        (orientation == ConstraintWidget.HORIZONTAL) &&
         (mWidget.getParent() as ConstraintWidgetContainer).isRtl();
     if (isInRtl && mWidgets.length > 1) {
       mWidget = mWidgets[mWidgets.length - 1].mWidget;
@@ -228,8 +231,11 @@ class ChainRun extends WidgetRun {
             max = run.mWidget.mMatchConstraintMaxHeight;
             min = run.mWidget.mMatchConstraintMinHeight;
           }
-          if (run.matchConstraintsType == ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
-            value = value < run.mDimension.wrapValue ? value : run.mDimension.wrapValue;
+          if (run.matchConstraintsType ==
+              ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
+            value = value < run.mDimension.wrapValue
+                ? value
+                : run.mDimension.wrapValue;
           }
           value = min > value ? min : value;
           if (max > 0) {
@@ -318,7 +324,8 @@ class ChainRun extends WidgetRun {
 
         var dimension = run.mDimension.value;
         if (run.mDimensionBehavior == DimensionBehaviour.matchConstraint &&
-            run.matchConstraintsType == ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
+            run.matchConstraintsType ==
+                ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
           dimension = run.mDimension.wrapValue;
         }
         if (isInRtl) {
@@ -378,7 +385,8 @@ class ChainRun extends WidgetRun {
 
         var dimension = run.mDimension.value;
         if (run.mDimensionBehavior == DimensionBehaviour.matchConstraint &&
-            run.matchConstraintsType == ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
+            run.matchConstraintsType ==
+                ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
           dimension = dimension < run.mDimension.wrapValue
               ? dimension
               : run.mDimension.wrapValue;
@@ -445,7 +453,8 @@ class ChainRun extends WidgetRun {
 
         var dimension = run.mDimension.value;
         if (run.mDimensionBehavior == DimensionBehaviour.matchConstraint &&
-            run.matchConstraintsType == ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
+            run.matchConstraintsType ==
+                ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
           dimension = run.mDimension.wrapValue;
         }
         if (isInRtl) {
@@ -513,8 +522,10 @@ class ChainRun extends WidgetRun {
     if (orientation == ConstraintWidget.HORIZONTAL) {
       final startAnchor = firstWidget.mLeft;
       final endAnchor = lastWidget.mRight;
-      final startTarget =
-          getTargetOriented(startAnchor, ConstraintWidget.HORIZONTAL);
+      final startTarget = getTargetOriented(
+        startAnchor,
+        ConstraintWidget.HORIZONTAL,
+      );
       var startMargin = startAnchor.getMargin();
       final firstVisibleWidget = _getFirstVisibleWidget();
       if (firstVisibleWidget != null) {
@@ -523,7 +534,10 @@ class ChainRun extends WidgetRun {
       if (startTarget != null) {
         addTarget(start, startTarget, startMargin);
       }
-      final endTarget = getTargetOriented(endAnchor, ConstraintWidget.HORIZONTAL);
+      final endTarget = getTargetOriented(
+        endAnchor,
+        ConstraintWidget.HORIZONTAL,
+      );
       var endMargin = endAnchor.getMargin();
       final lastVisibleWidget = _getLastVisibleWidget();
       if (lastVisibleWidget != null) {
@@ -535,7 +549,10 @@ class ChainRun extends WidgetRun {
     } else {
       final startAnchor = firstWidget.mTop;
       final endAnchor = lastWidget.mBottom;
-      final startTarget = getTargetOriented(startAnchor, ConstraintWidget.VERTICAL);
+      final startTarget = getTargetOriented(
+        startAnchor,
+        ConstraintWidget.VERTICAL,
+      );
       var startMargin = startAnchor.getMargin();
       final firstVisibleWidget = _getFirstVisibleWidget();
       if (firstVisibleWidget != null) {

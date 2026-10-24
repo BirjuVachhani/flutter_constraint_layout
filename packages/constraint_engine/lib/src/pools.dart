@@ -8,8 +8,8 @@
 /// Simple (non-synchronized) fixed-capacity object pool.
 class SimplePool<T> {
   SimplePool(int maxPoolSize)
-      : assert(maxPoolSize > 0, 'The max pool size must be > 0'),
-        _pool = List<T?>.filled(maxPoolSize, null);
+    : assert(maxPoolSize > 0, 'The max pool size must be > 0'),
+      _pool = List<T?>.filled(maxPoolSize, null);
 
   final List<T?> _pool;
   int _poolSize = 0;

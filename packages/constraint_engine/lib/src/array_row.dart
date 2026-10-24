@@ -140,7 +140,10 @@ class ArrayRow implements Row {
   }
 
   ArrayRow createRowEquals(
-      SolverVariable variableA, SolverVariable variableB, int margin) {
+    SolverVariable variableA,
+    SolverVariable variableB,
+    int margin,
+  ) {
     var inverse = false;
     if (margin != 0) {
       var m = margin;
@@ -165,8 +168,12 @@ class ArrayRow implements Row {
     return this;
   }
 
-  ArrayRow createRowGreaterThan(SolverVariable variableA,
-      SolverVariable variableB, SolverVariable slack, int margin) {
+  ArrayRow createRowGreaterThan(
+    SolverVariable variableA,
+    SolverVariable variableB,
+    SolverVariable slack,
+    int margin,
+  ) {
     var inverse = false;
     if (margin != 0) {
       var m = margin;
@@ -189,14 +196,21 @@ class ArrayRow implements Row {
   }
 
   ArrayRow createRowGreaterThanConstant(
-      SolverVariable a, int b, SolverVariable slack) {
+    SolverVariable a,
+    int b,
+    SolverVariable slack,
+  ) {
     mConstantValue = b.toDouble();
     variables.put(a, -1);
     return this;
   }
 
-  ArrayRow createRowLowerThan(SolverVariable variableA, SolverVariable variableB,
-      SolverVariable slack, int margin) {
+  ArrayRow createRowLowerThan(
+    SolverVariable variableA,
+    SolverVariable variableB,
+    SolverVariable slack,
+    int margin,
+  ) {
     var inverse = false;
     if (margin != 0) {
       var m = margin;
@@ -219,13 +233,14 @@ class ArrayRow implements Row {
   }
 
   ArrayRow createRowEqualMatchDimensions(
-      double currentWeight,
-      double totalWeights,
-      double nextWeight,
-      SolverVariable variableStartA,
-      SolverVariable variableEndA,
-      SolverVariable variableStartB,
-      SolverVariable variableEndB) {
+    double currentWeight,
+    double totalWeights,
+    double nextWeight,
+    SolverVariable variableStartA,
+    SolverVariable variableEndA,
+    SolverVariable variableStartB,
+    SolverVariable variableEndB,
+  ) {
     mConstantValue = 0;
     if (totalWeights == 0 || (currentWeight == nextWeight)) {
       // endA - startA == endB - startB
@@ -255,20 +270,21 @@ class ArrayRow implements Row {
   }
 
   ArrayRow createRowEqualDimension(
-      double currentWeight,
-      double totalWeights,
-      double nextWeight,
-      SolverVariable variableStartA,
-      int marginStartA,
-      SolverVariable variableEndA,
-      int marginEndA,
-      SolverVariable variableStartB,
-      int marginStartB,
-      SolverVariable variableEndB,
-      int marginEndB) {
+    double currentWeight,
+    double totalWeights,
+    double nextWeight,
+    SolverVariable variableStartA,
+    int marginStartA,
+    SolverVariable variableEndA,
+    int marginEndA,
+    SolverVariable variableStartB,
+    int marginStartB,
+    SolverVariable variableEndB,
+    int marginEndB,
+  ) {
     if (totalWeights == 0 || (currentWeight == nextWeight)) {
-      mConstantValue =
-          (-marginStartA - marginEndA + marginStartB + marginEndB).toDouble();
+      mConstantValue = (-marginStartA - marginEndA + marginStartB + marginEndB)
+          .toDouble();
       variables.put(variableStartA, 1);
       variables.put(variableEndA, -1);
       variables.put(variableEndB, 1);
@@ -288,13 +304,14 @@ class ArrayRow implements Row {
   }
 
   ArrayRow createRowCentering(
-      SolverVariable variableA,
-      SolverVariable variableB,
-      int marginA,
-      double bias,
-      SolverVariable variableC,
-      SolverVariable variableD,
-      int marginB) {
+    SolverVariable variableA,
+    SolverVariable variableB,
+    int marginA,
+    double bias,
+    SolverVariable variableC,
+    SolverVariable variableD,
+    int marginB,
+  ) {
     if (identical(variableB, variableC)) {
       // centering on the same position: 0 = A + D - 2 * B
       variables.put(variableA, 1);
@@ -340,7 +357,10 @@ class ArrayRow implements Row {
   }
 
   ArrayRow createRowDimensionPercent(
-      SolverVariable variableA, SolverVariable variableC, double percent) {
+    SolverVariable variableA,
+    SolverVariable variableC,
+    double percent,
+  ) {
     variables.put(variableA, -1);
     variables.put(variableC, percent);
     return this;
@@ -348,9 +368,13 @@ class ArrayRow implements Row {
 
   /// Create a constraint to express `A = B + (C - D) * ratio`.
   /// Used for ratio, e.g. `Right = Left + (Bottom - Top) * percent`.
-  ArrayRow createRowDimensionRatio(SolverVariable variableA,
-      SolverVariable variableB, SolverVariable variableC, SolverVariable variableD,
-      double ratio) {
+  ArrayRow createRowDimensionRatio(
+    SolverVariable variableA,
+    SolverVariable variableB,
+    SolverVariable variableC,
+    SolverVariable variableD,
+    double ratio,
+  ) {
     variables.put(variableA, -1);
     variables.put(variableB, 1);
     variables.put(variableC, ratio);
@@ -359,8 +383,13 @@ class ArrayRow implements Row {
   }
 
   /// Create a constraint to express `At + (Ab-At)/2 = Bt + (Bb-Bt)/2 - angle`.
-  ArrayRow createRowWithAngle(SolverVariable at, SolverVariable ab,
-      SolverVariable bt, SolverVariable bb, double angleComponent) {
+  ArrayRow createRowWithAngle(
+    SolverVariable at,
+    SolverVariable ab,
+    SolverVariable bt,
+    SolverVariable bb,
+    double angleComponent,
+  ) {
     variables.put(bt, 0.5);
     variables.put(bb, 0.5);
     variables.put(at, -0.5);
@@ -489,7 +518,10 @@ class ArrayRow implements Row {
 
   @override
   void updateFromRow(
-      LinearSystem system, ArrayRow definition, bool removeFromDefinition) {
+    LinearSystem system,
+    ArrayRow definition,
+    bool removeFromDefinition,
+  ) {
     final value = variables.use(definition, removeFromDefinition);
 
     mConstantValue += definition.mConstantValue * value;
@@ -506,7 +538,10 @@ class ArrayRow implements Row {
 
   @override
   void updateFromFinalVariable(
-      LinearSystem system, SolverVariable? variable, bool removeFromDefinition) {
+    LinearSystem system,
+    SolverVariable? variable,
+    bool removeFromDefinition,
+  ) {
     if (variable == null || !variable.isFinalValue) {
       return;
     }
@@ -523,7 +558,10 @@ class ArrayRow implements Row {
   }
 
   void updateFromSynonymVariable(
-      LinearSystem system, SolverVariable? variable, bool removeFromDefinition) {
+    LinearSystem system,
+    SolverVariable? variable,
+    bool removeFromDefinition,
+  ) {
     if (variable == null || !variable.mIsSynonym) {
       return;
     }
@@ -534,7 +572,10 @@ class ArrayRow implements Row {
       variable.removeFromRow(this);
     }
     variables.add(
-        system.mCache.mIndexedVariables[variable.mSynonym]!, value, removeFromDefinition);
+      system.mCache.mIndexedVariables[variable.mSynonym]!,
+      value,
+      removeFromDefinition,
+    );
     if (LinearSystem.SIMPLIFY_SYNONYMS && variables.getCurrentSize() == 0) {
       mIsSimpleDefinition = true;
       system.hasSimpleDefinition = true;
@@ -543,7 +584,10 @@ class ArrayRow implements Row {
 
   // Upstream carries an always-true `all` flag with a dead slack-preferring
   // branch; only the live branch is ported.
-  SolverVariable? _pickPivotInVariables(List<bool>? avoid, SolverVariable? exclude) {
+  SolverVariable? _pickPivotInVariables(
+    List<bool>? avoid,
+    SolverVariable? exclude,
+  ) {
     double value = 0;
     SolverVariable? pivot;
 

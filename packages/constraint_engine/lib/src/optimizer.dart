@@ -35,8 +35,11 @@ class Optimizer {
   static const int FLAG_RECOMPUTE_BOUNDS = 2;
 
   /// Looks at optimizing match_parent.
-  static void checkMatchParent(ConstraintWidgetContainer container,
-      LinearSystem system, ConstraintWidget widget) {
+  static void checkMatchParent(
+    ConstraintWidgetContainer container,
+    LinearSystem system,
+    ConstraintWidget widget,
+  ) {
     widget.mHorizontalResolution = ConstraintWidget.UNKNOWN;
     widget.mVerticalResolution = ConstraintWidget.UNKNOWN;
     if (container.mListDimensionBehaviors[ConstraintWidget.HORIZONTAL] !=
@@ -47,7 +50,9 @@ class Optimizer {
       final right = container.getWidth() - widget.mRight.mMargin;
 
       widget.mLeft.mSolverVariable = system.createObjectVariable(widget.mLeft);
-      widget.mRight.mSolverVariable = system.createObjectVariable(widget.mRight);
+      widget.mRight.mSolverVariable = system.createObjectVariable(
+        widget.mRight,
+      );
       system.addEqualityConstant(widget.mLeft.mSolverVariable!, left);
       system.addEqualityConstant(widget.mRight.mSolverVariable!, right);
       widget.mHorizontalResolution = ConstraintWidget.DIRECT;
@@ -61,15 +66,20 @@ class Optimizer {
       final bottom = container.getHeight() - widget.mBottom.mMargin;
 
       widget.mTop.mSolverVariable = system.createObjectVariable(widget.mTop);
-      widget.mBottom.mSolverVariable = system.createObjectVariable(widget.mBottom);
+      widget.mBottom.mSolverVariable = system.createObjectVariable(
+        widget.mBottom,
+      );
       system.addEqualityConstant(widget.mTop.mSolverVariable!, top);
       system.addEqualityConstant(widget.mBottom.mSolverVariable!, bottom);
       if (widget.mBaselineDistance > 0 ||
           widget.getVisibility() == ConstraintWidget.GONE) {
-        widget.mBaseline.mSolverVariable =
-            system.createObjectVariable(widget.mBaseline);
+        widget.mBaseline.mSolverVariable = system.createObjectVariable(
+          widget.mBaseline,
+        );
         system.addEqualityConstant(
-            widget.mBaseline.mSolverVariable!, top + widget.mBaselineDistance);
+          widget.mBaseline.mSolverVariable!,
+          top + widget.mBaselineDistance,
+        );
       }
       widget.mVerticalResolution = ConstraintWidget.DIRECT;
       widget.setVerticalDimension(top, bottom);

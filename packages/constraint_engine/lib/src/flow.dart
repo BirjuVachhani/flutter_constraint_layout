@@ -102,8 +102,13 @@ class Flow extends VirtualLayout {
         final value = (widget.mMatchConstraintPercentWidth * max).toInt();
         if (value != widget.getWidth()) {
           widget.setMeasureRequested(true);
-          measureWidget(widget, DimensionBehaviour.fixed, value,
-              widget.getVerticalDimensionBehaviour(), widget.getHeight());
+          measureWidget(
+            widget,
+            DimensionBehaviour.fixed,
+            value,
+            widget.getVerticalDimensionBehaviour(),
+            widget.getHeight(),
+          );
         }
         return value;
       } else if (widget.mMatchConstraintDefaultWidth ==
@@ -131,8 +136,13 @@ class Flow extends VirtualLayout {
         final value = (widget.mMatchConstraintPercentHeight * max).toInt();
         if (value != widget.getHeight()) {
           widget.setMeasureRequested(true);
-          measureWidget(widget, widget.getHorizontalDimensionBehaviour(),
-              widget.getWidth(), DimensionBehaviour.fixed, value);
+          measureWidget(
+            widget,
+            widget.getHorizontalDimensionBehaviour(),
+            widget.getWidth(),
+            DimensionBehaviour.fixed,
+            value,
+          );
         }
         return value;
       } else if (widget.mMatchConstraintDefaultHeight ==
@@ -255,14 +265,27 @@ class Flow extends VirtualLayout {
   // ---- measure chain wrap ----
 
   /// Measure the virtual layout using a list of chains for the children.
-  void _measureChainWrap(List<ConstraintWidget?> widgets, int count,
-      int orientation, int max, List<int> measured) {
+  void _measureChainWrap(
+    List<ConstraintWidget?> widgets,
+    int count,
+    int orientation,
+    int max,
+    List<int> measured,
+  ) {
     if (count == 0) {
       return;
     }
 
     _chainList.clear();
-    var list = _WidgetsList(this, orientation, mLeft, mTop, mRight, mBottom, max);
+    var list = _WidgetsList(
+      this,
+      orientation,
+      mLeft,
+      mTop,
+      mRight,
+      mBottom,
+      max,
+    );
     _chainList.add(list);
 
     var nbMatchConstraintsWidgets = 0;
@@ -276,14 +299,26 @@ class Flow extends VirtualLayout {
             DimensionBehaviour.matchConstraint) {
           nbMatchConstraintsWidgets++;
         }
-        var doWrap = (width == max || (width + _horizontalGap + w) > max) &&
+        var doWrap =
+            (width == max || (width + _horizontalGap + w) > max) &&
             list.mBiggest != null;
-        if (!doWrap && i > 0 && _maxElementsWrap > 0 && (i % _maxElementsWrap == 0)) {
+        if (!doWrap &&
+            i > 0 &&
+            _maxElementsWrap > 0 &&
+            (i % _maxElementsWrap == 0)) {
           doWrap = true;
         }
         if (doWrap) {
           width = w;
-          list = _WidgetsList(this, orientation, mLeft, mTop, mRight, mBottom, max);
+          list = _WidgetsList(
+            this,
+            orientation,
+            mLeft,
+            mTop,
+            mRight,
+            mBottom,
+            max,
+          );
           list.setStartIndex(i);
           _chainList.add(list);
         } else {
@@ -304,14 +339,26 @@ class Flow extends VirtualLayout {
             DimensionBehaviour.matchConstraint) {
           nbMatchConstraintsWidgets++;
         }
-        var doWrap = (height == max || (height + _verticalGap + h) > max) &&
+        var doWrap =
+            (height == max || (height + _verticalGap + h) > max) &&
             list.mBiggest != null;
-        if (!doWrap && i > 0 && _maxElementsWrap > 0 && (i % _maxElementsWrap == 0)) {
+        if (!doWrap &&
+            i > 0 &&
+            _maxElementsWrap > 0 &&
+            (i % _maxElementsWrap == 0)) {
           doWrap = true;
         }
         if (doWrap) {
           height = h;
-          list = _WidgetsList(this, orientation, mLeft, mTop, mRight, mBottom, max);
+          list = _WidgetsList(
+            this,
+            orientation,
+            mLeft,
+            mTop,
+            mRight,
+            mBottom,
+            max,
+          );
           list.setStartIndex(i);
           _chainList.add(list);
         } else {
@@ -341,7 +388,7 @@ class Flow extends VirtualLayout {
 
     final needInternalMeasure =
         getHorizontalDimensionBehaviour() == DimensionBehaviour.wrapContent ||
-            getVerticalDimensionBehaviour() == DimensionBehaviour.wrapContent;
+        getVerticalDimensionBehaviour() == DimensionBehaviour.wrapContent;
 
     if (nbMatchConstraintsWidgets > 0 && needInternalMeasure) {
       // we have to remeasure them.
@@ -367,11 +414,23 @@ class Flow extends VirtualLayout {
           paddingBottom = getPaddingBottom();
         }
         final currentBottom = current.mBiggest!.mBottom;
-        current.setup(orientation, left, top, right, bottom, paddingLeft,
-            paddingTop, paddingRight, paddingBottom, max);
+        current.setup(
+          orientation,
+          left,
+          top,
+          right,
+          bottom,
+          paddingLeft,
+          paddingTop,
+          paddingRight,
+          paddingBottom,
+          max,
+        );
         top = currentBottom;
         paddingTop = 0;
-        maxWidth = maxWidth > current.getWidth() ? maxWidth : current.getWidth();
+        maxWidth = maxWidth > current.getWidth()
+            ? maxWidth
+            : current.getWidth();
         maxHeight += current.getHeight();
         if (i > 0) {
           maxHeight += _verticalGap;
@@ -386,13 +445,24 @@ class Flow extends VirtualLayout {
           paddingRight = getPaddingRight();
         }
         final currentRight = current.mBiggest!.mRight;
-        current.setup(orientation, left, top, right, bottom, paddingLeft,
-            paddingTop, paddingRight, paddingBottom, max);
+        current.setup(
+          orientation,
+          left,
+          top,
+          right,
+          bottom,
+          paddingLeft,
+          paddingTop,
+          paddingRight,
+          paddingBottom,
+          max,
+        );
         left = currentRight;
         paddingLeft = 0;
         maxWidth += current.getWidth();
-        maxHeight =
-            maxHeight > current.getHeight() ? maxHeight : current.getHeight();
+        maxHeight = maxHeight > current.getHeight()
+            ? maxHeight
+            : current.getHeight();
         if (i > 0) {
           maxWidth += _horizontalGap;
         }
@@ -406,14 +476,27 @@ class Flow extends VirtualLayout {
 
   /// Measure the virtual layout using a list of chains for the children in
   /// new "fixed way".
-  void _measureChainWrapNew(List<ConstraintWidget?> widgets, int count,
-      int orientation, int max, List<int> measured) {
+  void _measureChainWrapNew(
+    List<ConstraintWidget?> widgets,
+    int count,
+    int orientation,
+    int max,
+    List<int> measured,
+  ) {
     if (count == 0) {
       return;
     }
 
     _chainList.clear();
-    var list = _WidgetsList(this, orientation, mLeft, mTop, mRight, mBottom, max);
+    var list = _WidgetsList(
+      this,
+      orientation,
+      mLeft,
+      mTop,
+      mRight,
+      mBottom,
+      max,
+    );
     _chainList.add(list);
 
     var nbMatchConstraintsWidgets = 0;
@@ -429,15 +512,27 @@ class Flow extends VirtualLayout {
             DimensionBehaviour.matchConstraint) {
           nbMatchConstraintsWidgets++;
         }
-        var doWrap = (width == max || (width + _horizontalGap + w) > max) &&
+        var doWrap =
+            (width == max || (width + _horizontalGap + w) > max) &&
             list.mBiggest != null;
-        if (!doWrap && i > 0 && _maxElementsWrap > 0 && (col > _maxElementsWrap)) {
+        if (!doWrap &&
+            i > 0 &&
+            _maxElementsWrap > 0 &&
+            (col > _maxElementsWrap)) {
           doWrap = true;
         }
         if (doWrap) {
           col = 1;
           width = w;
-          list = _WidgetsList(this, orientation, mLeft, mTop, mRight, mBottom, max);
+          list = _WidgetsList(
+            this,
+            orientation,
+            mLeft,
+            mTop,
+            mRight,
+            mBottom,
+            max,
+          );
           list.setStartIndex(i);
           _chainList.add(list);
         } else {
@@ -460,15 +555,27 @@ class Flow extends VirtualLayout {
             DimensionBehaviour.matchConstraint) {
           nbMatchConstraintsWidgets++;
         }
-        var doWrap = (height == max || (height + _verticalGap + h) > max) &&
+        var doWrap =
+            (height == max || (height + _verticalGap + h) > max) &&
             list.mBiggest != null;
-        if (!doWrap && i > 0 && _maxElementsWrap > 0 && (row > _maxElementsWrap)) {
+        if (!doWrap &&
+            i > 0 &&
+            _maxElementsWrap > 0 &&
+            (row > _maxElementsWrap)) {
           doWrap = true;
         }
         if (doWrap) {
           row = 1;
           height = h;
-          list = _WidgetsList(this, orientation, mLeft, mTop, mRight, mBottom, max);
+          list = _WidgetsList(
+            this,
+            orientation,
+            mLeft,
+            mTop,
+            mRight,
+            mBottom,
+            max,
+          );
           list.setStartIndex(i);
           _chainList.add(list);
         } else {
@@ -498,7 +605,7 @@ class Flow extends VirtualLayout {
 
     final needInternalMeasure =
         getHorizontalDimensionBehaviour() == DimensionBehaviour.wrapContent ||
-            getVerticalDimensionBehaviour() == DimensionBehaviour.wrapContent;
+        getVerticalDimensionBehaviour() == DimensionBehaviour.wrapContent;
 
     if (nbMatchConstraintsWidgets > 0 && needInternalMeasure) {
       // we have to remeasure them.
@@ -524,11 +631,23 @@ class Flow extends VirtualLayout {
           paddingBottom = getPaddingBottom();
         }
         final currentBottom = current.mBiggest!.mBottom;
-        current.setup(orientation, left, top, right, bottom, paddingLeft,
-            paddingTop, paddingRight, paddingBottom, max);
+        current.setup(
+          orientation,
+          left,
+          top,
+          right,
+          bottom,
+          paddingLeft,
+          paddingTop,
+          paddingRight,
+          paddingBottom,
+          max,
+        );
         top = currentBottom;
         paddingTop = 0;
-        maxWidth = maxWidth > current.getWidth() ? maxWidth : current.getWidth();
+        maxWidth = maxWidth > current.getWidth()
+            ? maxWidth
+            : current.getWidth();
         maxHeight += current.getHeight();
         if (i > 0) {
           maxHeight += _verticalGap;
@@ -543,13 +662,24 @@ class Flow extends VirtualLayout {
           paddingRight = getPaddingRight();
         }
         final currentRight = current.mBiggest!.mRight;
-        current.setup(orientation, left, top, right, bottom, paddingLeft,
-            paddingTop, paddingRight, paddingBottom, max);
+        current.setup(
+          orientation,
+          left,
+          top,
+          right,
+          bottom,
+          paddingLeft,
+          paddingTop,
+          paddingRight,
+          paddingBottom,
+          max,
+        );
         left = currentRight;
         paddingLeft = 0;
         maxWidth += current.getWidth();
-        maxHeight =
-            maxHeight > current.getHeight() ? maxHeight : current.getHeight();
+        maxHeight = maxHeight > current.getHeight()
+            ? maxHeight
+            : current.getHeight();
         if (i > 0) {
           maxWidth += _horizontalGap;
         }
@@ -562,8 +692,13 @@ class Flow extends VirtualLayout {
   // ---- measure no wrap ----
 
   /// Measure the virtual layout using a single chain for the children.
-  void _measureNoWrap(List<ConstraintWidget?> widgets, int count,
-      int orientation, int max, List<int> measured) {
+  void _measureNoWrap(
+    List<ConstraintWidget?> widgets,
+    int count,
+    int orientation,
+    int max,
+    List<int> measured,
+  ) {
     if (count == 0) {
       return;
     }
@@ -574,8 +709,18 @@ class Flow extends VirtualLayout {
     } else {
       list = _chainList[0];
       list.clear();
-      list.setup(orientation, mLeft, mTop, mRight, mBottom, getPaddingLeft(),
-          getPaddingTop(), getPaddingRight(), getPaddingBottom(), max);
+      list.setup(
+        orientation,
+        mLeft,
+        mTop,
+        mRight,
+        mBottom,
+        getPaddingLeft(),
+        getPaddingTop(),
+        getPaddingRight(),
+        getPaddingBottom(),
+        max,
+      );
     }
 
     for (var i = 0; i < count; i++) {
@@ -590,8 +735,13 @@ class Flow extends VirtualLayout {
   // ---- measure aligned ----
 
   /// Measure the virtual layout arranging the children in a regular grid.
-  void _measureAligned(List<ConstraintWidget?> widgets, int count,
-      int orientation, int max, List<int> measured) {
+  void _measureAligned(
+    List<ConstraintWidget?> widgets,
+    int count,
+    int orientation,
+    int max,
+    List<int> measured,
+  ) {
     var done = false;
     var rows = 0;
     var cols = 0;
@@ -659,19 +809,29 @@ class Flow extends VirtualLayout {
 
       if (_alignedBiggestElementsInCols == null ||
           _alignedBiggestElementsInCols!.length < cols) {
-        _alignedBiggestElementsInCols =
-            List<ConstraintWidget?>.filled(cols, null);
+        _alignedBiggestElementsInCols = List<ConstraintWidget?>.filled(
+          cols,
+          null,
+        );
       } else {
         _alignedBiggestElementsInCols!.fillRange(
-            0, _alignedBiggestElementsInCols!.length, null);
+          0,
+          _alignedBiggestElementsInCols!.length,
+          null,
+        );
       }
       if (_alignedBiggestElementsInRows == null ||
           _alignedBiggestElementsInRows!.length < rows) {
-        _alignedBiggestElementsInRows =
-            List<ConstraintWidget?>.filled(rows, null);
+        _alignedBiggestElementsInRows = List<ConstraintWidget?>.filled(
+          rows,
+          null,
+        );
       } else {
         _alignedBiggestElementsInRows!.fillRange(
-            0, _alignedBiggestElementsInRows!.length, null);
+          0,
+          _alignedBiggestElementsInRows!.length,
+          null,
+        );
       }
 
       for (var i = 0; i < cols; i++) {
@@ -878,12 +1038,18 @@ class Flow extends VirtualLayout {
 
 /// A single chain of widgets inside a [Flow] (one row or column).
 class _WidgetsList {
-  _WidgetsList(this._flow, this._orientation, this._left, this._top,
-      this._right, this._bottom, this._max)
-      : _paddingLeft = _flow.getPaddingLeft(),
-        _paddingTop = _flow.getPaddingTop(),
-        _paddingRight = _flow.getPaddingRight(),
-        _paddingBottom = _flow.getPaddingBottom();
+  _WidgetsList(
+    this._flow,
+    this._orientation,
+    this._left,
+    this._top,
+    this._right,
+    this._bottom,
+    this._max,
+  ) : _paddingLeft = _flow.getPaddingLeft(),
+      _paddingTop = _flow.getPaddingTop(),
+      _paddingRight = _flow.getPaddingRight(),
+      _paddingBottom = _flow.getPaddingBottom();
 
   final Flow _flow;
   int _orientation;
@@ -905,16 +1071,17 @@ class _WidgetsList {
   int _max;
 
   void setup(
-      int orientation,
-      ConstraintAnchor left,
-      ConstraintAnchor top,
-      ConstraintAnchor right,
-      ConstraintAnchor bottom,
-      int paddingLeft,
-      int paddingTop,
-      int paddingRight,
-      int paddingBottom,
-      int max) {
+    int orientation,
+    ConstraintAnchor left,
+    ConstraintAnchor top,
+    ConstraintAnchor right,
+    ConstraintAnchor bottom,
+    int paddingLeft,
+    int paddingTop,
+    int paddingRight,
+    int paddingBottom,
+    int max,
+  ) {
     _orientation = orientation;
     _left = left;
     _top = top;
@@ -1021,7 +1188,8 @@ class _WidgetsList {
         break;
       }
       final widget = _flow._displayedWidgets[_startIndex + index];
-      if (widget != null && widget.getVisibility() == ConstraintWidget.VISIBLE) {
+      if (widget != null &&
+          widget.getVisibility() == ConstraintWidget.VISIBLE) {
         if (firstVisible == -1) {
           firstVisible = i;
         }
@@ -1085,8 +1253,9 @@ class _WidgetsList {
         // E.g. RTL would have head at the right most widget.
         if (index == 0) {
           var style = _flow._horizontalStyle;
-          var bias =
-              isInRtl ? (1 - _flow._horizontalBias) : _flow._horizontalBias;
+          var bias = isInRtl
+              ? (1 - _flow._horizontalBias)
+              : _flow._horizontalBias;
           if (_startIndex == 0 &&
               _flow._firstHorizontalStyle != ConstraintWidget.UNKNOWN) {
             style = _flow._firstHorizontalStyle;
@@ -1265,8 +1434,13 @@ class _WidgetsList {
                 DimensionBehaviour.matchConstraint) {
           if (widget.mMatchConstraintDefaultWidth ==
               ConstraintWidget.MATCH_CONSTRAINT_SPREAD) {
-            _flow.measureWidget(widget, DimensionBehaviour.fixed, widgetSize,
-                widget.getVerticalDimensionBehaviour(), widget.getHeight());
+            _flow.measureWidget(
+              widget,
+              DimensionBehaviour.fixed,
+              widgetSize,
+              widget.getVerticalDimensionBehaviour(),
+              widget.getHeight(),
+            );
           }
         }
       } else {
@@ -1275,8 +1449,13 @@ class _WidgetsList {
                 DimensionBehaviour.matchConstraint) {
           if (widget.mMatchConstraintDefaultHeight ==
               ConstraintWidget.MATCH_CONSTRAINT_SPREAD) {
-            _flow.measureWidget(widget, widget.getHorizontalDimensionBehaviour(),
-                widget.getWidth(), DimensionBehaviour.fixed, widgetSize);
+            _flow.measureWidget(
+              widget,
+              widget.getHorizontalDimensionBehaviour(),
+              widget.getWidth(),
+              DimensionBehaviour.fixed,
+              widgetSize,
+            );
           }
         }
       }

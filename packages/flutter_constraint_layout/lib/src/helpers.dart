@@ -28,15 +28,15 @@ class Guideline extends ParentDataWidget<ConstraintParentData> {
     this.begin,
     this.end,
     this.percent,
-  })  : axis = Axis.vertical,
-        assert(
-          (begin != null ? 1 : 0) +
-                  (end != null ? 1 : 0) +
-                  (percent != null ? 1 : 0) ==
-              1,
-          'Provide exactly one of begin, end, or percent.',
-        ),
-        super(child: const SizedBox.shrink());
+  }) : axis = Axis.vertical,
+       assert(
+         (begin != null ? 1 : 0) +
+                 (end != null ? 1 : 0) +
+                 (percent != null ? 1 : 0) ==
+             1,
+         'Provide exactly one of begin, end, or percent.',
+       ),
+       super(child: const SizedBox.shrink());
 
   /// A horizontal line at [begin] from the top, [end] from the bottom, or
   /// [percent] of the layout's height.
@@ -46,15 +46,15 @@ class Guideline extends ParentDataWidget<ConstraintParentData> {
     this.begin,
     this.end,
     this.percent,
-  })  : axis = Axis.horizontal,
-        assert(
-          (begin != null ? 1 : 0) +
-                  (end != null ? 1 : 0) +
-                  (percent != null ? 1 : 0) ==
-              1,
-          'Provide exactly one of begin, end, or percent.',
-        ),
-        super(child: const SizedBox.shrink());
+  }) : axis = Axis.horizontal,
+       assert(
+         (begin != null ? 1 : 0) +
+                 (end != null ? 1 : 0) +
+                 (percent != null ? 1 : 0) ==
+             1,
+         'Provide exactly one of begin, end, or percent.',
+       ),
+       super(child: const SizedBox.shrink());
 
   /// Unique id siblings use to link to this guideline.
   final Symbol id;

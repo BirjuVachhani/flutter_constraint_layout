@@ -74,7 +74,11 @@ class VerticalWidgetRun extends WidgetRun {
         break;
       case RunType.center:
         updateRunCenter(
-            dependency, mWidget.mTop, mWidget.mBottom, ConstraintWidget.VERTICAL);
+          dependency,
+          mWidget.mTop,
+          mWidget.mBottom,
+          ConstraintWidget.VERTICAL,
+        );
         return;
       default:
         break;
@@ -89,22 +93,25 @@ class VerticalWidgetRun extends WidgetRun {
                 final ratioSide = mWidget.getDimensionRatioSide();
                 switch (ratioSide) {
                   case ConstraintWidget.HORIZONTAL:
-                    size = (0.5 +
-                            mWidget.mHorizontalRun!.mDimension.value *
-                                mWidget.getDimensionRatio())
-                        .toInt();
+                    size =
+                        (0.5 +
+                                mWidget.mHorizontalRun!.mDimension.value *
+                                    mWidget.getDimensionRatio())
+                            .toInt();
                     break;
                   case ConstraintWidget.VERTICAL:
-                    size = (0.5 +
-                            mWidget.mHorizontalRun!.mDimension.value /
-                                mWidget.getDimensionRatio())
-                        .toInt();
+                    size =
+                        (0.5 +
+                                mWidget.mHorizontalRun!.mDimension.value /
+                                    mWidget.getDimensionRatio())
+                            .toInt();
                     break;
                   case ConstraintWidget.UNKNOWN:
-                    size = (0.5 +
-                            mWidget.mHorizontalRun!.mDimension.value /
-                                mWidget.getDimensionRatio())
-                        .toInt();
+                    size =
+                        (0.5 +
+                                mWidget.mHorizontalRun!.mDimension.value /
+                                    mWidget.getDimensionRatio())
+                            .toInt();
                     break;
                   default:
                     break;
@@ -117,7 +124,8 @@ class VerticalWidgetRun extends WidgetRun {
               if (parent != null) {
                 if (parent.mVerticalRun!.mDimension.resolved) {
                   final percent = mWidget.mMatchConstraintPercentHeight;
-                  final targetDimensionValue = parent.mVerticalRun!.mDimension.value;
+                  final targetDimensionValue =
+                      parent.mVerticalRun!.mDimension.value;
                   final size = (0.5 + targetDimensionValue * percent).toInt();
                   // Divergence from upstream: percent is clamped by the
                   // matchConstraint min/max here. Upstream leaves this resolve
@@ -126,7 +134,8 @@ class VerticalWidgetRun extends WidgetRun {
                   // the clamp has to happen at the resolve site. See
                   // UPSTREAM.md.
                   mDimension.resolve(
-                      getLimitedDimension(size, ConstraintWidget.VERTICAL));
+                    getLimitedDimension(size, ConstraintWidget.VERTICAL),
+                  );
                 }
               }
               break;
@@ -211,12 +220,22 @@ class VerticalWidgetRun extends WidgetRun {
         if (mDimensionBehavior == DimensionBehaviour.matchParent) {
           final parent = mWidget.getParent();
           if (parent != null &&
-              parent.getVerticalDimensionBehaviour() == DimensionBehaviour.fixed) {
-            final resolvedDimension = parent.getHeight() -
+              parent.getVerticalDimensionBehaviour() ==
+                  DimensionBehaviour.fixed) {
+            final resolvedDimension =
+                parent.getHeight() -
                 mWidget.mTop.getMargin() -
                 mWidget.mBottom.getMargin();
-            addTarget(start, parent.mVerticalRun!.start, mWidget.mTop.getMargin());
-            addTarget(end, parent.mVerticalRun!.end, -mWidget.mBottom.getMargin());
+            addTarget(
+              start,
+              parent.mVerticalRun!.start,
+              mWidget.mTop.getMargin(),
+            );
+            addTarget(
+              end,
+              parent.mVerticalRun!.end,
+              -mWidget.mBottom.getMargin(),
+            );
             mDimension.resolve(resolvedDimension);
             return;
           }
@@ -229,9 +248,18 @@ class VerticalWidgetRun extends WidgetRun {
       if (mDimensionBehavior == DimensionBehaviour.matchParent) {
         final parent = mWidget.getParent();
         if (parent != null &&
-            parent.getVerticalDimensionBehaviour() == DimensionBehaviour.fixed) {
-          addTarget(start, parent.mVerticalRun!.start, mWidget.mTop.getMargin());
-          addTarget(end, parent.mVerticalRun!.end, -mWidget.mBottom.getMargin());
+            parent.getVerticalDimensionBehaviour() ==
+                DimensionBehaviour.fixed) {
+          addTarget(
+            start,
+            parent.mVerticalRun!.start,
+            mWidget.mTop.getMargin(),
+          );
+          addTarget(
+            end,
+            parent.mVerticalRun!.end,
+            -mWidget.mBottom.getMargin(),
+          );
           return;
         }
       }
@@ -239,25 +267,34 @@ class VerticalWidgetRun extends WidgetRun {
 
     if (mDimension.resolved && mWidget.measured) {
       if (mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].mTarget != null &&
-          mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].mTarget != null) {
+          mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].mTarget !=
+              null) {
         // <-s-e->
         if (mWidget.isInVerticalChain()) {
-          start.mMargin =
-              mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].getMargin();
-          end.mMargin =
-              -mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].getMargin();
+          start.mMargin = mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP]
+              .getMargin();
+          end.mMargin = -mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM]
+              .getMargin();
         } else {
-          final startTarget =
-              getTarget(mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP]);
+          final startTarget = getTarget(
+            mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP],
+          );
           if (startTarget != null) {
-            addTarget(start, startTarget,
-                mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].getMargin());
+            addTarget(
+              start,
+              startTarget,
+              mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].getMargin(),
+            );
           }
-          final endTarget =
-              getTarget(mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM]);
+          final endTarget = getTarget(
+            mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM],
+          );
           if (endTarget != null) {
-            addTarget(end, endTarget,
-                -mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].getMargin());
+            addTarget(
+              end,
+              endTarget,
+              -mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].getMargin(),
+            );
           }
           start.delegateToWidgetRun = true;
           end.delegateToWidgetRun = true;
@@ -268,11 +305,15 @@ class VerticalWidgetRun extends WidgetRun {
       } else if (mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].mTarget !=
           null) {
         // <-s-e
-        final target =
-            getTarget(mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP]);
+        final target = getTarget(
+          mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP],
+        );
         if (target != null) {
-          addTarget(start, target,
-              mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].getMargin());
+          addTarget(
+            start,
+            target,
+            mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].getMargin(),
+          );
           addTarget(end, start, mDimension.value);
           if (mWidget.hasBaseline()) {
             addTarget(baseline, start, mWidget.getBaselineDistance());
@@ -281,20 +322,27 @@ class VerticalWidgetRun extends WidgetRun {
       } else if (mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].mTarget !=
           null) {
         //   s-e->
-        final target =
-            getTarget(mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM]);
+        final target = getTarget(
+          mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM],
+        );
         if (target != null) {
-          addTarget(end, target,
-              -mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].getMargin());
+          addTarget(
+            end,
+            target,
+            -mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].getMargin(),
+          );
           addTarget(start, end, -mDimension.value);
         }
         if (mWidget.hasBaseline()) {
           addTarget(baseline, start, mWidget.getBaselineDistance());
         }
-      } else if (mWidget.mListAnchors[ConstraintWidget.ANCHOR_BASELINE].mTarget !=
+      } else if (mWidget
+              .mListAnchors[ConstraintWidget.ANCHOR_BASELINE]
+              .mTarget !=
           null) {
-        final target =
-            getTarget(mWidget.mListAnchors[ConstraintWidget.ANCHOR_BASELINE]);
+        final target = getTarget(
+          mWidget.mListAnchors[ConstraintWidget.ANCHOR_BASELINE],
+        );
         if (target != null) {
           addTarget(baseline, target, 0);
           addTarget(start, baseline, -mWidget.getBaselineDistance());
@@ -353,18 +401,21 @@ class VerticalWidgetRun extends WidgetRun {
         mDimension.addDependency(this);
       }
       if (mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].mTarget != null &&
-          mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].mTarget != null) {
+          mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].mTarget !=
+              null) {
         // <-s-d-e->
         if (mWidget.isInVerticalChain()) {
-          start.mMargin =
-              mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].getMargin();
-          end.mMargin =
-              -mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].getMargin();
+          start.mMargin = mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP]
+              .getMargin();
+          end.mMargin = -mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM]
+              .getMargin();
         } else {
-          final startTarget =
-              getTarget(mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP]);
-          final endTarget =
-              getTarget(mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM]);
+          final startTarget = getTarget(
+            mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP],
+          );
+          final endTarget = getTarget(
+            mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM],
+          );
           if (startTarget != null) {
             startTarget.addDependency(this);
           }
@@ -379,11 +430,15 @@ class VerticalWidgetRun extends WidgetRun {
       } else if (mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].mTarget !=
           null) {
         // <-s<-d<-e
-        final target =
-            getTarget(mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP]);
+        final target = getTarget(
+          mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP],
+        );
         if (target != null) {
-          addTarget(start, target,
-              mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].getMargin());
+          addTarget(
+            start,
+            target,
+            mWidget.mListAnchors[ConstraintWidget.ANCHOR_TOP].getMargin(),
+          );
           addTargetDimension(end, start, 1, mDimension);
           if (mWidget.hasBaseline()) {
             addTargetDimension(baseline, start, 1, mBaselineDimension!);
@@ -392,7 +447,9 @@ class VerticalWidgetRun extends WidgetRun {
             if (mWidget.getDimensionRatio() > 0) {
               if (mWidget.mHorizontalRun!.mDimensionBehavior ==
                   DimensionBehaviour.matchConstraint) {
-                mWidget.mHorizontalRun!.mDimension.mDependencies.add(mDimension);
+                mWidget.mHorizontalRun!.mDimension.mDependencies.add(
+                  mDimension,
+                );
                 mDimension.mTargets.add(mWidget.mHorizontalRun!.mDimension);
                 mDimension.updateDelegate = this;
               }
@@ -402,20 +459,27 @@ class VerticalWidgetRun extends WidgetRun {
       } else if (mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].mTarget !=
           null) {
         //   s->d->e->
-        final target =
-            getTarget(mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM]);
+        final target = getTarget(
+          mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM],
+        );
         if (target != null) {
-          addTarget(end, target,
-              -mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].getMargin());
+          addTarget(
+            end,
+            target,
+            -mWidget.mListAnchors[ConstraintWidget.ANCHOR_BOTTOM].getMargin(),
+          );
           addTargetDimension(start, end, -1, mDimension);
           if (mWidget.hasBaseline()) {
             addTargetDimension(baseline, start, 1, mBaselineDimension!);
           }
         }
-      } else if (mWidget.mListAnchors[ConstraintWidget.ANCHOR_BASELINE].mTarget !=
+      } else if (mWidget
+              .mListAnchors[ConstraintWidget.ANCHOR_BASELINE]
+              .mTarget !=
           null) {
-        final target =
-            getTarget(mWidget.mListAnchors[ConstraintWidget.ANCHOR_BASELINE]);
+        final target = getTarget(
+          mWidget.mListAnchors[ConstraintWidget.ANCHOR_BASELINE],
+        );
         if (target != null) {
           addTarget(baseline, target, 0);
           addTargetDimension(start, baseline, -1, mBaselineDimension!);
@@ -434,7 +498,9 @@ class VerticalWidgetRun extends WidgetRun {
             if (mWidget.getDimensionRatio() > 0) {
               if (mWidget.mHorizontalRun!.mDimensionBehavior ==
                   DimensionBehaviour.matchConstraint) {
-                mWidget.mHorizontalRun!.mDimension.mDependencies.add(mDimension);
+                mWidget.mHorizontalRun!.mDimension.mDependencies.add(
+                  mDimension,
+                );
                 mDimension.mTargets.add(mWidget.mHorizontalRun!.mDimension);
                 mDimension.updateDelegate = this;
               }

@@ -19,20 +19,32 @@ enum VerticalEdge { top, bottom, baseline }
 @immutable
 class HorizontalLink {
   /// Align to the target's left edge (absolute).
-  const HorizontalLink.leftOf(this.target, {this.margin = 0, this.goneMargin = 0})
-      : edge = HorizontalEdge.left;
+  const HorizontalLink.leftOf(
+    this.target, {
+    this.margin = 0,
+    this.goneMargin = 0,
+  }) : edge = HorizontalEdge.left;
 
   /// Align to the target's right edge (absolute).
-  const HorizontalLink.rightOf(this.target, {this.margin = 0, this.goneMargin = 0})
-      : edge = HorizontalEdge.right;
+  const HorizontalLink.rightOf(
+    this.target, {
+    this.margin = 0,
+    this.goneMargin = 0,
+  }) : edge = HorizontalEdge.right;
 
   /// Align to the target's start edge (RTL-aware).
-  const HorizontalLink.startOf(this.target, {this.margin = 0, this.goneMargin = 0})
-      : edge = HorizontalEdge.start;
+  const HorizontalLink.startOf(
+    this.target, {
+    this.margin = 0,
+    this.goneMargin = 0,
+  }) : edge = HorizontalEdge.start;
 
   /// Align to the target's end edge (RTL-aware).
-  const HorizontalLink.endOf(this.target, {this.margin = 0, this.goneMargin = 0})
-      : edge = HorizontalEdge.end;
+  const HorizontalLink.endOf(
+    this.target, {
+    this.margin = 0,
+    this.goneMargin = 0,
+  }) : edge = HorizontalEdge.end;
 
   /// The id of the target (a sibling, or `parent`).
   final Symbol target;
@@ -69,11 +81,14 @@ class HorizontalLink {
 class VerticalLink {
   /// Align to the target's top edge.
   const VerticalLink.topOf(this.target, {this.margin = 0, this.goneMargin = 0})
-      : edge = VerticalEdge.top;
+    : edge = VerticalEdge.top;
 
   /// Align to the target's bottom edge.
-  const VerticalLink.bottomOf(this.target, {this.margin = 0, this.goneMargin = 0})
-      : edge = VerticalEdge.bottom;
+  const VerticalLink.bottomOf(
+    this.target, {
+    this.margin = 0,
+    this.goneMargin = 0,
+  }) : edge = VerticalEdge.bottom;
 
   /// Align to the target's text baseline.
   const VerticalLink.baselineOf(

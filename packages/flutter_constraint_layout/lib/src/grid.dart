@@ -157,8 +157,11 @@ class ConstraintGrid extends ParentDataWidget<ConstraintParentData> {
     update(verticalBias, data.verticalBias, (v) => data.verticalBias = v);
     update(width, data.width, (v) => data.width = v);
     update(height, data.height, (v) => data.height = v);
-    update(horizontalGap, data.gridHorizontalGap,
-        (v) => data.gridHorizontalGap = v);
+    update(
+      horizontalGap,
+      data.gridHorizontalGap,
+      (v) => data.gridHorizontalGap = v,
+    );
     update(verticalGap, data.gridVerticalGap, (v) => data.gridVerticalGap = v);
     if (!listEquals(data.gridRowWeights, rowWeights)) {
       data.gridRowWeights = rowWeights;

@@ -66,8 +66,8 @@ sealed class Dimension {
   /// the links, so a single link is enough to place the child; two opposing
   /// links place it by the axis bias. Android `0dp` with
   /// `layout_constraintWidth_percent`.
-  const factory Dimension.percent(double fraction,
-      {double? min, double? max}) = MatchConstraintDimension.percent;
+  const factory Dimension.percent(double fraction, {double? min, double? max}) =
+      MatchConstraintDimension.percent;
 }
 
 /// Sizes to the child's own content. See [Dimension.wrapContent].
@@ -93,26 +93,25 @@ final class MatchParentDimension extends Dimension {
 /// [Dimension.constrainedWrap], and [Dimension.percent].
 final class MatchConstraintDimension extends Dimension {
   const MatchConstraintDimension._()
-      : min = null,
-        max = null,
-        percent = null,
-        wrap = false;
+    : min = null,
+      max = null,
+      percent = null,
+      wrap = false;
 
   /// Creates a spread match-constraint dimension. See [Dimension.spread].
   const MatchConstraintDimension.spread({this.min, this.max})
-      : percent = null,
-        wrap = false;
+    : percent = null,
+      wrap = false;
 
   /// Creates a constrained-wrap dimension. See [Dimension.constrainedWrap].
   const MatchConstraintDimension.constrainedWrap({this.min, this.max})
-      : percent = null,
-        wrap = true;
+    : percent = null,
+      wrap = true;
 
   /// Creates a percent-of-parent dimension. See [Dimension.percent].
-  const MatchConstraintDimension.percent(double fraction,
-      {this.min, this.max})
-      : percent = fraction,
-        wrap = false;
+  const MatchConstraintDimension.percent(double fraction, {this.min, this.max})
+    : percent = fraction,
+      wrap = false;
 
   /// Minimum size in logical pixels, or null for no minimum.
   final double? min;

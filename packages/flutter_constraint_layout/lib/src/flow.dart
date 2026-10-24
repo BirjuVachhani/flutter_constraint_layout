@@ -165,23 +165,47 @@ class ConstraintFlow extends ParentDataWidget<ConstraintParentData> {
     update(width, data.width, (v) => data.width = v);
     update(height, data.height, (v) => data.height = v);
     update(wrap, data.flowWrap, (v) => data.flowWrap = v);
-    update(horizontalGap, data.flowHorizontalGap,
-        (v) => data.flowHorizontalGap = v);
+    update(
+      horizontalGap,
+      data.flowHorizontalGap,
+      (v) => data.flowHorizontalGap = v,
+    );
     update(verticalGap, data.flowVerticalGap, (v) => data.flowVerticalGap = v);
-    update(horizontalChainStyle, data.flowHorizontalStyle,
-        (v) => data.flowHorizontalStyle = v);
-    update(verticalChainStyle, data.flowVerticalStyle,
-        (v) => data.flowVerticalStyle = v);
-    update(contentHorizontalBias, data.flowHorizontalBias,
-        (v) => data.flowHorizontalBias = v);
-    update(contentVerticalBias, data.flowVerticalBias,
-        (v) => data.flowVerticalBias = v);
-    update(horizontalAlign, data.flowHorizontalAlign,
-        (v) => data.flowHorizontalAlign = v);
-    update(verticalAlign, data.flowVerticalAlign,
-        (v) => data.flowVerticalAlign = v);
-    update(maxElementsWrap, data.flowMaxElementsWrap,
-        (v) => data.flowMaxElementsWrap = v);
+    update(
+      horizontalChainStyle,
+      data.flowHorizontalStyle,
+      (v) => data.flowHorizontalStyle = v,
+    );
+    update(
+      verticalChainStyle,
+      data.flowVerticalStyle,
+      (v) => data.flowVerticalStyle = v,
+    );
+    update(
+      contentHorizontalBias,
+      data.flowHorizontalBias,
+      (v) => data.flowHorizontalBias = v,
+    );
+    update(
+      contentVerticalBias,
+      data.flowVerticalBias,
+      (v) => data.flowVerticalBias = v,
+    );
+    update(
+      horizontalAlign,
+      data.flowHorizontalAlign,
+      (v) => data.flowHorizontalAlign = v,
+    );
+    update(
+      verticalAlign,
+      data.flowVerticalAlign,
+      (v) => data.flowVerticalAlign = v,
+    );
+    update(
+      maxElementsWrap,
+      data.flowMaxElementsWrap,
+      (v) => data.flowMaxElementsWrap = v,
+    );
     update(padding, data.flowPadding, (v) => data.flowPadding = v);
     update(visibility, data.visibility, (v) => data.visibility = v);
 
