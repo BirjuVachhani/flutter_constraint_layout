@@ -75,10 +75,14 @@ relevant code, and include:
   with optional graph optimization; this port tries the dependency graph
   first and falls back to the ported solver when the graph cannot faithfully
   resolve. The graph declines (routes to the solver) for: chains with GONE or
-  ratio-sized members, chains along a wrap-content axis, MATCH_CONSTRAINT_WRAP
-  widgets, circular (center) constraints, nested containers, widgets centered
-  along a wrap axis, wrap results whose children overflow the computed
-  bounds, and wrap results larger than the container's max size
+  ratio-sized members, chains along a wrap-content axis, chains with margins
+  in a right-to-left container (upstream's `ChainRun` lays every chain there,
+  vertical ones included, out from its end but applies each member's margins
+  on the left-to-right side; Android's default optimization leaves the graph
+  off and avoids this), MATCH_CONSTRAINT_WRAP widgets, circular (center)
+  constraints, nested containers, widgets centered along a wrap axis, wrap
+  results whose children overflow the computed bounds, and wrap results
+  larger than the container's max size
   (`setMaxWidth`/`setMaxHeight`, which upstream's solver applies to a
   wrap-content container in `addToSolver` and the graph's wrap computation
   ignores). It also falls back whenever a run is left unresolved. As in
@@ -87,12 +91,13 @@ relevant code, and include:
   or dimension. Pre-graph widget state is snapshotted and restored before the
   fallback, and wrap-sized children are re-measured, so the solver sees the
   same input upstream's would. After the fallback solve, children with a
-  solver-sized axis (a matchConstraint axis with both anchors, or a
-  MATCH_CONSTRAINT_WRAP axis, which the solver caps) and a content-sized
-  other axis (wrapContent or MATCH_CONSTRAINT_WRAP) are measured again, with
-  TRY_GIVEN_DIMENSIONS and then USE_GIVEN_DIMENSIONS, and the layout is solved
-  again when a size changed. Upstream runs that loop in
-  `BasicMeasure.solverMeasure`, around `layout()` (which does not measure
+  solver-sized axis (any matchConstraint axis, including a percent or bounded
+  size with only one anchor) and a content-sized other axis (wrapContent or
+  MATCH_CONSTRAINT_WRAP) are measured again, with TRY_GIVEN_DIMENSIONS and then
+  USE_GIVEN_DIMENSIONS. The layout is solved again when a size or baseline
+  changes, or the measurer requests another pass. Changes from virtual layouts
+  and ordinary children share that first follow-up solve. Upstream runs that
+  loop in `BasicMeasure.solverMeasure`, around `layout()` (which does not measure
   again after solving), for every widget with a matchConstraint axis; the
   port runs it only for those combinations.
 - Upstream's "width/height measured too small" clamp in the solver loop is
@@ -186,7 +191,7 @@ and are not ported.
 
 The other test files are the engine's own, not derived from upstream:
 `anchor_api_test.dart`, `barrier_modes_test.dart`, `flow_modes_test.dart`,
-`grid_modes_test.dart`, `max_dimension_test.dart`,
+`flow_wrap_test.dart`, `grid_modes_test.dart`, `max_dimension_test.dart`,
 `measure_ordering_test.dart`, `persistent_layout_test.dart`, and
 `smoke_test.dart`. No upstream core test sets a max width or height, so the
 expected values in `max_dimension_test.dart` were taken from upstream's Java

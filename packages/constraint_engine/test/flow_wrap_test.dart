@@ -14,6 +14,12 @@ import 'package:test/test.dart';
 /// resolved size (TRY_GIVEN_DIMENSIONS and USE_GIVEN_DIMENSIONS). Plain
 /// widgets keep their own size.
 class _HostMeasurer implements Measurer {
+  _HostMeasurer({this.text = const {}});
+
+  /// Content length of the text-like widgets, keyed by debug name: one unit
+  /// per pixel along a 20 px line, wrapped at the measured width.
+  final Map<String, int> text;
+
   @override
   void measure(ConstraintWidget widget, Measure measure) {
     if (widget is VirtualLayout) {
@@ -34,6 +40,17 @@ class _HostMeasurer implements Measurer {
       );
       measure.measuredWidth = widget.getMeasuredWidth();
       measure.measuredHeight = widget.getMeasuredHeight();
+    } else if (text[widget.getDebugName()] case final length?) {
+      final width = measure.horizontalBehavior == DimensionBehaviour.wrapContent
+          ? length
+          : measure.horizontalDimension;
+      final lines =
+          (length + (width <= 0 ? 1 : width) - 1) ~/ (width <= 0 ? 1 : width);
+      measure.measuredWidth = width;
+      measure.measuredHeight =
+          measure.verticalBehavior == DimensionBehaviour.wrapContent
+          ? lines * 20
+          : measure.verticalDimension;
     } else {
       measure.measuredWidth = measure.horizontalDimension;
       measure.measuredHeight = measure.verticalDimension;
@@ -205,5 +222,82 @@ void main() {
 
       expect(geometry(laidOut.getChildren()), geometry(measured.getChildren()));
     });
+
+    test('a re-measured flow and a re-measured text share one solve, as in '
+        'upstream solverMeasure', () {
+      // The flow wraps its fifth chip once measured at its solved width, and
+      // the text below it measured its height at width 0 before the first
+      // solve, so both need a solver pass after it. Upstream's solverMeasure
+      // applies both with one solve (its VirtualLayout step only sets
+      // needSolverPass for the first pass of the re-measure loop), so it
+      // solves twice in all; checked against upstream's Java engine, run with
+      // the same measurer at OPTIMIZATION_NONE and OPTIMIZATION_STANDARD.
+      final root = _CountingContainer(390, 800);
+      root.setMeasurer(_HostMeasurer(text: {'t': 900}));
+      final chips = [
+        for (var i = 0; i < 5; i++) ConstraintWidget.size(70, 30),
+      ];
+      root.addAll(chips);
+      final flow = Flow();
+      flow.setOrientation(ConstraintWidget.HORIZONTAL);
+      flow.setWrapMode(Flow.WRAP_CHAIN);
+      flow.setHorizontalGap(10);
+      flow.setVerticalGap(10);
+      flow.applyRtl(false);
+      for (final chip in chips) {
+        flow.add(chip);
+      }
+      flow.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
+      flow.setVerticalDimensionBehaviour(DimensionBehaviour.wrapContent);
+      flow.connectAnchors(flow.mLeft, root.mLeft, 12);
+      flow.connectAnchors(flow.mRight, root.mRight, 12);
+      flow.connectAnchors(flow.mTop, root.mTop, 12);
+      root.add(flow);
+      final text = ConstraintWidget()..setDebugName('t');
+      root.add(text);
+      text.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
+      text.setVerticalDimensionBehaviour(DimensionBehaviour.wrapContent);
+      text.connect(
+        ConstraintAnchorType.left,
+        root,
+        ConstraintAnchorType.left,
+        16,
+      );
+      text.connect(
+        ConstraintAnchorType.right,
+        root,
+        ConstraintAnchorType.right,
+        16,
+      );
+      text.connect(
+        ConstraintAnchorType.top,
+        flow,
+        ConstraintAnchorType.bottom,
+        8,
+      );
+
+      root.layout();
+
+      expect(flow.getHeight(), 70, reason: 'two rows of 30 and a gap of 10');
+      expect(chips.last.getTop(), chips.first.getBottom() + 10);
+      expect(text.getTop(), flow.getBottom() + 8);
+      expect(text.getWidth(), 358);
+      expect(text.getHeight(), 60, reason: 'ceil(900/358)=3 lines at 20px');
+      expect(root.solves, 2);
+    });
   });
+}
+
+/// Counts solver passes: the solver loop adds the children to the solver
+/// once per pass.
+class _CountingContainer extends ConstraintWidgetContainer {
+  _CountingContainer(int width, int height) : super.rect(0, 0, width, height);
+
+  int solves = 0;
+
+  @override
+  bool addChildrenToSolver(LinearSystem system) {
+    solves++;
+    return super.addChildrenToSolver(system);
+  }
 }

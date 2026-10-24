@@ -107,6 +107,36 @@ class _WrapStyleMeasurer implements Measurer {
   void didMeasures() {}
 }
 
+/// A box whose baseline moves with its width while its height stays at 60.
+/// The main widget is initially 500 wide, then capped to 300 by the solver.
+class _BaselineMeasurer implements Measurer {
+  @override
+  void measure(ConstraintWidget widget, Measure measure) {
+    final a = widget.getDebugName() == 'a';
+    final width = a &&
+            (measure.horizontalBehavior == DimensionBehaviour.wrapContent ||
+                (measure.horizontalBehavior == DimensionBehaviour.matchConstraint &&
+                    measure.measureStrategy == Measure.SELF_DIMENSIONS))
+        ? 500
+        : measure.horizontalDimension;
+    final height = measure.verticalBehavior == DimensionBehaviour.wrapContent
+        ? 60
+        : measure.verticalDimension;
+    final baseline = a ? width ~/ 10 : 10;
+    measure.measuredWidth = width;
+    measure.measuredHeight = height;
+    measure.measuredHasBaseline = true;
+    measure.measuredBaseline = baseline;
+    measure.measuredNeedsSolverPass = width != measure.horizontalDimension ||
+        height != measure.verticalDimension ||
+        baseline != widget.getBaselineDistance();
+    widget.setMeasureRequested(false);
+  }
+
+  @override
+  void didMeasures() {}
+}
+
 void main() {
   group('measure ordering: wrap size depends on resolved match size', () {
     test('matchConstraint width resolves before the wrapContent height is '
@@ -287,6 +317,103 @@ void main() {
       expect(a.getTop(), 20);
       expect(a.getHeight(), 300);
       expect(a.getWidth(), 40, reason: 'ceil(500/300)=2 lines at 20px');
+    });
+
+    test('a baseline-only change after capping a width re-solves the '
+        'baseline link', () {
+      final root = ConstraintWidgetContainer.rect(0, 0, 340, 600);
+      root.setMeasurer(_BaselineMeasurer());
+      final a = wrapStyled(root);
+      a.setHasBaseline(true);
+      a.setBaselineDistance(1);
+      a.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left, 20);
+      a.connect(ConstraintAnchorType.right, root, ConstraintAnchorType.right, 20);
+      a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+      final b = ConstraintWidget.size(50, 60)..setDebugName('b');
+      b.setHasBaseline(true);
+      b.setBaselineDistance(10);
+      root.add(b);
+      b.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
+      b.connect(ConstraintAnchorType.baseline, a, ConstraintAnchorType.baseline);
+
+      root.layout();
+
+      // Upstream BasicMeasure.solverMeasure checks both the measurer's
+      // request for another pass and a changed baseline. The absolute
+      // baselines must still align even though the size did not change on
+      // re-measure (300 x 60 before and after); checked against Java core at
+      // OPTIMIZATION_NONE and OPTIMIZATION_STANDARD.
+      expect(a.getWidth(), 300);
+      expect(a.getHeight(), 60);
+      expect(a.getBaselineDistance(), 30);
+      expect(b.getTop(), 20);
+      expect(b.getTop() + b.getBaselineDistance(),
+          a.getTop() + a.getBaselineDistance());
+    });
+  });
+
+  group('measure ordering: a one-link matchConstraint axis the solver '
+      'resizes is measured again', () {
+    // With fewer than two links, the solver still sizes a matchConstraint
+    // axis: as a percent of the parent in the percent style, and as its
+    // measured size capped by its min/max in the spread style
+    // (applyConstraints, numConnections != 2). Upstream's solverMeasure then
+    // measures every matchConstraint widget again, so content whose other
+    // axis depends on it is measured at the solved size. The expected values
+    // match upstream's Java engine run with an equivalent measurer.
+    ConstraintWidget oneLinkWidth(
+      ConstraintWidgetContainer root,
+      int style, {
+      int max = 0,
+      double percent = 1,
+    }) {
+      final a = ConstraintWidget()..setDebugName('a');
+      root.add(a);
+      a.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
+      a.setHorizontalMatchStyle(style, 0, max, percent);
+      a.setVerticalDimensionBehaviour(DimensionBehaviour.wrapContent);
+      a.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
+      a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+      // An unrelated barrier routes the layout through the solver fallback.
+      final g = ConstraintWidget.size(10, 10)..setDebugName('g');
+      root.add(g);
+      g.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
+      g.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+      final barrier = Barrier()..setBarrierType(Barrier.right);
+      barrier.add(g);
+      root.add(barrier);
+      return a;
+    }
+
+    test('a percent width re-measures the wrapContent height', () {
+      final root = ConstraintWidgetContainer.rect(0, 0, 340, 600);
+      root.setMeasurer(_TextLikeMeasurer({'a': 500}));
+      final a = oneLinkWidth(
+        root,
+        ConstraintWidget.MATCH_CONSTRAINT_PERCENT,
+        percent: 0.5,
+      );
+
+      root.layout();
+
+      expect(a.getWidth(), 170);
+      expect(a.getHeight(), 60, reason: 'ceil(500/170)=3 lines at 20px');
+    });
+
+    test('a spread width capped by its max re-measures the wrapContent '
+        'height', () {
+      final root = ConstraintWidgetContainer.rect(0, 0, 340, 600);
+      root.setMeasurer(_TextLikeMeasurer({'a': 500}));
+      final a = oneLinkWidth(
+        root,
+        ConstraintWidget.MATCH_CONSTRAINT_SPREAD,
+        max: 200,
+      );
+
+      root.layout();
+
+      expect(a.getWidth(), 200);
+      expect(a.getHeight(), 60, reason: 'ceil(500/200)=3 lines at 20px');
     });
   });
 }

@@ -275,6 +275,20 @@ class DependencyGraph {
             }
           }
         }
+        // In a right-to-left container, upstream's ChainRun lays every chain
+        // (vertical ones included) out from its end but applies each member's
+        // margins on the left-to-right side, so a chain with margins lands
+        // off by them. Android does not run this path by default (its
+        // standard optimization level leaves the graph off), so such chains
+        // go to the solver, which places them as Android does.
+        if (!needsSolver && mWidgetcontainer.isRtl()) {
+          for (final memberRun in run.mWidgets) {
+            if (memberRun.start.mMargin != 0 || memberRun.end.mMargin != 0) {
+              needsSolver = true;
+              break;
+            }
+          }
+        }
         if (needsSolver) {
           allResolved = false;
           break;

@@ -21,14 +21,17 @@ abstract class Measurer {
   /// outputs.
   ///
   /// Report the content's natural size on a [DimensionBehaviour.wrapContent]
-  /// axis (and on a [ConstraintWidget.MATCH_CONSTRAINT_WRAP] one), and the
+  /// axis (and on a [ConstraintWidget.MATCH_CONSTRAINT_WRAP] one, except on a
+  /// re-measure after a solve; see [Measure.TRY_GIVEN_DIMENSIONS]), and the
   /// proposed size on the others. Set [Measure.measuredWidth],
   /// [Measure.measuredHeight], [Measure.measuredBaseline], and
   /// [Measure.measuredHasBaseline] on every call: the engine reuses its
   /// [Measure] objects, then copies the outputs onto [widget].
   ///
   /// A [VirtualLayout] arranges its widgets in its own
-  /// [VirtualLayout.measure], which only a measurer runs: call it and report
+  /// [VirtualLayout.measure], which only a measurer runs: call it, with
+  /// [BasicMeasure.EXACTLY] and the proposed size on a fixed axis and on a
+  /// match-constraint axis that is measured again after a solve, and report
   /// [VirtualLayout.getMeasuredWidth] and [VirtualLayout.getMeasuredHeight].
   void measure(ConstraintWidget widget, Measure measure);
 

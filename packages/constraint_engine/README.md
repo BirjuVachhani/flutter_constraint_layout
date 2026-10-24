@@ -405,15 +405,23 @@ themselves, and work out how to arrange their widgets, in a measure pass of
 their own that only your measurer can run: under the default measurer their
 widgets are left unplaced. Call their
 `measure(widthMode, widthSize, heightMode, heightSize)` with
-`BasicMeasure.EXACTLY` and the proposed size on a `fixed` axis, and
-`BasicMeasure.AT_MOST` and the space available to the layout (here
+`BasicMeasure.EXACTLY` and the proposed size on an axis whose size is known,
+and `BasicMeasure.AT_MOST` and the space available to the layout (here
 `availableWidth` and `availableHeight`, for example the container's size) on
-the others, then report `getMeasuredWidth()` and `getMeasuredHeight()`:
+the others, then report `getMeasuredWidth()` and `getMeasuredHeight()`. A
+`fixed` axis is known. So is a `matchConstraint` axis on a re-measure after a
+solve (`TRY_GIVEN_DIMENSIONS` or `USE_GIVEN_DIMENSIONS`): `layout()` measures
+a virtual layout with such an axis again at the size the solver gave it, so
+that a `Flow` narrower than the container wraps within its own bounds.
 
 ```dart
 if (widget is VirtualLayout) {
-  final fixedW = measure.horizontalBehavior == DimensionBehaviour.fixed;
-  final fixedH = measure.verticalBehavior == DimensionBehaviour.fixed;
+  final solved = measure.measureStrategy != Measure.SELF_DIMENSIONS;
+  bool known(DimensionBehaviour? behavior) =>
+      behavior == DimensionBehaviour.fixed ||
+      (solved && behavior == DimensionBehaviour.matchConstraint);
+  final fixedW = known(measure.horizontalBehavior);
+  final fixedH = known(measure.verticalBehavior);
   widget.measure(
     fixedW ? BasicMeasure.EXACTLY : BasicMeasure.AT_MOST,
     fixedW ? measure.horizontalDimension : availableWidth,
@@ -447,15 +455,19 @@ is typical.
    `layout()` restores the widget state from before the graph pass,
    re-measures wrap-sized children, and solves the layout as a system of
    linear equations and inequalities with the ported `LinearSystem`. The
-   solver gets the same input upstream's solver would. A child whose content
-   size on one axis depends on a size the solver set on the other (a
-   `matchConstraint` axis, or a `MATCH_CONSTRAINT_WRAP` axis the solver
-   capped) is then measured again at that size, and the layout is solved
-   again if a size changed, as upstream's `BasicMeasure.solverMeasure` does.
+   solver gets the same input upstream's solver would. Then, as upstream's
+   `BasicMeasure.solverMeasure` does, a virtual layout with a
+   `matchConstraint` axis is measured again at the size the solver gave it,
+   and so is a child whose content size on one axis depends on a size the
+   solver set on the other (a `matchConstraint` axis, or a
+   `MATCH_CONSTRAINT_WRAP` axis the solver capped). Their changes share a
+   follow-up solve when a size or baseline changes, or the measurer requests
+   another solver pass.
 
 The graph declines, and hands the whole layout to the solver, for chains with
 `GONE` or ratio-sized members, chains along a `wrapContent` axis of the
-container, `MATCH_CONSTRAINT_WRAP` widgets, circular constraints, nested
+container, chains with margins in a right-to-left (`setRtl(true)`) container,
+`MATCH_CONSTRAINT_WRAP` widgets, circular constraints, nested
 containers, widgets centered between two anchors along a `wrapContent` axis,
 wrap results whose children overflow the computed bounds, wrap results larger
 than the container's `setMaxWidth` or `setMaxHeight`, and virtual layouts.

@@ -517,14 +517,11 @@ class ConstraintWidgetContainer extends WidgetContainer {
       // Virtual layouts were measured above before the solver had resolved
       // their own size, so a matchConstraint axis was measured against all the
       // space available to the container. A Flow computes its rows while it
-      // measures, so re-measure such layouts at the solved size and re-solve,
-      // as BasicMeasure.solverMeasure does after its first pass; otherwise a
+      // measures, so re-measure such layouts at the solved size, as
+      // BasicMeasure.solverMeasure does after its first pass; otherwise a
       // flow narrower than the container (margins, sibling anchors) keeps rows
       // that overflow its bounds instead of wrapping.
-      if (!mSkipFallbackRemeasure && fallbackMeasurer != null) {
-        _remeasureVirtualLayouts(fallbackMeasurer, preW, preH);
-      }
-
+      //
       // Content whose measured size on a wrap axis depends on its resolved size
       // on a matchConstraint axis (wrapping text: height depends on width) was
       // measured above at a not-yet-solved (zero) match size, or, on a
@@ -532,18 +529,30 @@ class ConstraintWidgetContainer extends WidgetContainer {
       // has resolved the match axis, re-measure those children at the real
       // size and re-solve if it moved anything. Mirrors the multi-pass
       // re-measure loop in BasicMeasure.solverMeasure, which the direct
-      // layout() path would otherwise skip.
+      // layout() path would otherwise skip. As upstream, a virtual layout
+      // that changed does not get a solve of its own: the loop's first solve
+      // applies it together with the children's first re-measure.
       if (!mSkipFallbackRemeasure && fallbackMeasurer != null) {
-        _remeasureSizeDependentChildren(fallbackMeasurer, preW, preH);
+        final virtualLayoutsChanged = _remeasureVirtualLayouts(
+          fallbackMeasurer,
+        );
+        _remeasureSizeDependentChildren(
+          fallbackMeasurer,
+          preW,
+          preH,
+          needSolverPass: virtualLayoutsChanged,
+        );
       }
     }
   }
 
   /// Re-measures the virtual layouts that have a matchConstraint axis at the
-  /// size the solver resolved for them (TRY_GIVEN_DIMENSIONS), then re-solves
-  /// if any of them changed size or asks for a solver pass. Ported from the
-  /// "apply sizes for VirtualLayouts" step of BasicMeasure.solverMeasure.
-  void _remeasureVirtualLayouts(Measurer measurer, int preW, int preH) {
+  /// size the solver resolved for them (TRY_GIVEN_DIMENSIONS), and returns
+  /// whether any of them changed size or asks for a solver pass. Ported from
+  /// the "apply sizes for VirtualLayouts" step of BasicMeasure.solverMeasure,
+  /// which leaves that solve to the first pass of the re-measure loop that
+  /// follows it ([_remeasureSizeDependentChildren]).
+  bool _remeasureVirtualLayouts(Measurer measurer) {
     // Collected first: measuring a GridCore re-adds its box widgets to this
     // container, which reorders mChildren.
     final layouts = _virtualLayoutsToMeasure..clear();
@@ -570,9 +579,7 @@ class ConstraintWidgetContainer extends WidgetContainer {
       }
     }
     layouts.clear();
-    if (needSolverPass) {
-      _solverLayout(preW, preH);
-    }
+    return needSolverPass;
   }
 
   /// Re-measures children with one solver-resolved (matchConstraint) axis and
@@ -589,10 +596,17 @@ class ConstraintWidgetContainer extends WidgetContainer {
   /// measures with USE_GIVEN_DIMENSIONS and the ones before it with
   /// TRY_GIVEN_DIMENSIONS, which lets the measurer keep measuring a
   /// MATCH_CONSTRAINT_WRAP axis around its content while its other axis is
-  /// still settling.
-  void _remeasureSizeDependentChildren(Measurer measurer, int preW, int preH) {
+  /// still settling. [needSolverPass] makes the first pass solve even when no
+  /// child changed, for the virtual layouts [_remeasureVirtualLayouts]
+  /// measured again just before.
+  void _remeasureSizeDependentChildren(
+    Measurer measurer,
+    int preW,
+    int preH, {
+    bool needSolverPass = false,
+  }) {
     for (var pass = 0; pass < _maxRemeasurePasses; pass++) {
-      var changed = false;
+      var changed = pass == 0 && needSolverPass;
       // Indexed loop: measuring a virtual layout can append internal widgets.
       final childCount = mChildren.length;
       for (var ci = 0; ci < childCount; ci++) {
@@ -607,13 +621,16 @@ class ConstraintWidgetContainer extends WidgetContainer {
           continue;
         }
 
-        // An axis is "solver-resolved" when the solver sets its size: a
-        // matchConstraint axis with both anchors present, or one in the WRAP
-        // style, whose measured content size the solver caps by the space
-        // between its anchors and by its min/max. An axis is "content-sized"
-        // when its size is measured from content: wrapContent, or the WRAP
-        // style. Only that combination can be mis-measured: one axis sized by
-        // the solver, the other wrapped around content that depends on it.
+        // An axis is "solver-resolved" when the solver sets its size, which it
+        // does for every matchConstraint axis: between its anchors when it has
+        // both, and otherwise (applyConstraints with numConnections != 2) as
+        // its measured size capped by its min/max in the spread and WRAP
+        // styles, or as a percent of the parent in the percent style. That
+        // is why upstream's solverMeasure measures every matchConstraint
+        // widget again. An axis is "content-sized" when its size is measured
+        // from content: wrapContent, or the WRAP style. Only that combination
+        // can be mis-measured: one axis sized by the solver, the other
+        // wrapped around content that depends on it.
         final widthMatch =
             widget.getHorizontalDimensionBehaviour() ==
             DimensionBehaviour.matchConstraint;
@@ -628,16 +645,8 @@ class ConstraintWidgetContainer extends WidgetContainer {
             heightMatch &&
             widget.mMatchConstraintDefaultHeight ==
                 ConstraintWidget.MATCH_CONSTRAINT_WRAP;
-        final widthResolved =
-            widthMatchWrap ||
-            (widthMatch &&
-                widget.mLeft.mTarget != null &&
-                widget.mRight.mTarget != null);
-        final heightResolved =
-            heightMatchWrap ||
-            (heightMatch &&
-                widget.mTop.mTarget != null &&
-                widget.mBottom.mTarget != null);
+        final widthResolved = widthMatch;
+        final heightResolved = heightMatch;
         final widthWrap =
             widthMatchWrap ||
             widget.getHorizontalDimensionBehaviour() ==
@@ -653,16 +662,21 @@ class ConstraintWidgetContainer extends WidgetContainer {
 
         final preWidth = widget.getWidth();
         final preHeight = widget.getHeight();
+        final preBaselineDistance = widget.getBaselineDistance();
         // The given-dimension strategies feed the solver-resolved size back as
         // the size to measure at, so the wrap axis is measured against it.
-        mBasicMeasureSolver.measure(
+        final needsSolverPass = mBasicMeasureSolver.measure(
           measurer,
           widget,
           pass == _maxRemeasurePasses - 1
               ? Measure.USE_GIVEN_DIMENSIONS
               : Measure.TRY_GIVEN_DIMENSIONS,
         );
-        if (widget.getWidth() != preWidth || widget.getHeight() != preHeight) {
+        if (needsSolverPass ||
+            widget.getWidth() != preWidth ||
+            widget.getHeight() != preHeight ||
+            (widget.hasBaseline() &&
+                widget.getBaselineDistance() != preBaselineDistance)) {
           changed = true;
         }
       }
