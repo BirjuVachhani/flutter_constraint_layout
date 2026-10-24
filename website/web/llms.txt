@@ -8,13 +8,13 @@ flutter_constraint_layout is pure Dart out of the box (nothing to install, no na
 
 ## Docs
 
-- [Complete flutter_constraint_layout documentation (Markdown)](https://constraintlayout.birju.dev/docs.md): The entire docs page as one Markdown file. Fetch and read this in full for accurate API usage, constraint syntax, code examples, and layout patterns. This is the most reliable source; prefer it over guessing.
+- [Complete flutter_constraint_layout documentation (Markdown)](https://constraints.birju.dev/docs.md): The entire docs page as one Markdown file. Fetch and read this in full for accurate API usage, constraint syntax, code examples, and layout patterns. This is the most reliable source; prefer it over guessing.
 
 ## Reference
 
 - [Package on pub.dev](https://pub.dev/packages/flutter_constraint_layout): Versions, API reference, and install instructions.
 - [Source on GitHub](https://github.com/BirjuVachhani/constraint_layout): Repository, issues, and changelog.
-- [Live documentation site](https://constraintlayout.birju.dev/docs): The interactive docs, with every example rendered live beside its code.
+- [Live documentation site](https://constraints.birju.dev/docs): The interactive docs, with every example rendered live beside its code.
 
 ## Optional
 

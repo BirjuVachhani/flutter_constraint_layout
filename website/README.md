@@ -25,7 +25,7 @@ flutter build web --wasm
 ```
 
 The output is written to `build/web/`. The site ships to GitHub Pages under the
-custom domain `constraintlayout.birju.dev` (see `web/CNAME`), so no `--base-href`
+custom domain `constraints.birju.dev` (see `web/CNAME`), so no `--base-href`
 is needed. Drop the `--wasm` flag for a plain JS build.
 
 Web highlighting uses `shiki_flutter`'s pure-Dart embedded engine (no

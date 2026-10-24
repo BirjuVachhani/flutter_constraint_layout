@@ -2,7 +2,7 @@
 
 > A faithful port of Android ConstraintLayout to Flutter, in pure Dart. Every child is a direct child of one `ConstraintLayout`, and each child declares where its own edges go (pinned to the parent or to a sibling by id) and how it is sized. The widget tree stays flat instead of nesting rows, columns, and stacks, and the same layout runs on iOS, Android, web, macOS, Windows, and Linux.
 
-This file is the complete flutter_constraint_layout documentation in a single Markdown file, meant to be fed to an LLM or read offline. It mirrors the live docs at https://constraintlayout.birju.dev/docs (the docs page is the source of truth).
+This file is the complete flutter_constraint_layout documentation in a single Markdown file, meant to be fed to an LLM or read offline. It mirrors the live docs at https://constraints.birju.dev/docs (the docs page is the source of truth).
 
 - Package: https://pub.dev/packages/flutter_constraint_layout
 - Source: https://github.com/BirjuVachhani/constraint_layout

@@ -1,5 +1,5 @@
-# https://constraintlayout.birju.dev
-# Full docs for AI assistants and crawlers: https://constraintlayout.birju.dev/llms.txt
+# https://constraints.birju.dev
+# Full docs for AI assistants and crawlers: https://constraints.birju.dev/llms.txt
 # (the same docs are also served as plain Markdown at /docs.md)
 
 User-agent: *
@@ -25,4 +25,4 @@ Allow: /
 User-agent: Google-Extended
 Allow: /
 
-Sitemap: https://constraintlayout.birju.dev/sitemap.xml
+Sitemap: https://constraints.birju.dev/sitemap.xml

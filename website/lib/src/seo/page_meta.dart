@@ -11,7 +11,7 @@
 import 'page_meta_stub.dart' if (dart.library.js_interop) 'page_meta_web.dart';
 
 /// Canonical origin the site is served from (GitHub Pages custom domain).
-const String _origin = 'https://constraintlayout.birju.dev';
+const String _origin = 'https://constraints.birju.dev';
 
 /// Document metadata for a single route.
 class SeoMeta {
