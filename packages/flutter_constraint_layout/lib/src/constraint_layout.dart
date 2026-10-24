@@ -724,6 +724,10 @@ class RenderConstraintLayout extends RenderBox
     });
     w.setMaxElementsWrap(pd.flowMaxElementsWrap ?? ConstraintWidget.UNKNOWN);
     w.setPadding(pd.flowPadding.round());
+    // setPadding sets the horizontal sides as start/end, which become the
+    // left/right padding the flow wraps and places with only once resolved
+    // for the text direction (as Android's ConstraintHelper.resolveRtl does).
+    w.applyRtl(!_ltr);
     for (final id in pd.flowReferenced) {
       final target = _byId[id];
       if (target == null) {

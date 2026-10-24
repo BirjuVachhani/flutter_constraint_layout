@@ -494,8 +494,8 @@ void main() {
         );
 
     // The flow is inset 12 from each side of the layout, so the layout needs
-    // 308 + 2 * 12 = 332 to keep the four chips on one row.
-    List<Widget> chipFlow(FlowWrap wrap) => [
+    // 308 + 2 * (12 + padding) to keep the four chips on one row.
+    List<Widget> chipFlow(FlowWrap wrap, {double padding = 0}) => [
           chip(#c0, 91),
           chip(#c1, 66),
           chip(#c2, 66),
@@ -512,6 +512,7 @@ void main() {
             verticalGap: 8,
             horizontalChainStyle: .packed,
             contentHorizontalBias: 0,
+            padding: padding,
           ),
         ];
 
@@ -538,6 +539,31 @@ void main() {
         }
       });
     }
+
+    testWidgets('padding insets every side and narrows the rows',
+        (tester) async {
+      await tester.pumpWidget(
+          host(chipFlow(FlowWrap.chain, padding: 10), width: 352));
+      expect(rectOf(tester, #c0).topLeft, const Offset(22, 22));
+      expect(rectOf(tester, #c3).top, 22);
+      expect(rectOf(tester, #c3).right, 352 - 22);
+
+      await tester.pumpWidget(
+          host(chipFlow(FlowWrap.chain, padding: 10), width: 351));
+      expect(rectOf(tester, #c3).left, 22);
+      expect(rectOf(tester, #c3).top, rectOf(tester, #c0).bottom + 8);
+    });
+
+    testWidgets('padding resolves to both sides in right-to-left layouts',
+        (tester) async {
+      await tester.pumpWidget(host(
+        chipFlow(FlowWrap.chain, padding: 10),
+        width: 352,
+        direction: TextDirection.rtl,
+      ));
+      expect(rectOf(tester, #c0).right, 352 - 22);
+      expect(rectOf(tester, #c3).left, 22);
+    });
 
     testWidgets('the website flow example wraps within its margins',
         (tester) async {
