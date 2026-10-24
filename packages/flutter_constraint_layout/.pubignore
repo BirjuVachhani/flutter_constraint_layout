@@ -7,10 +7,18 @@ coverage/
 doc/api/
 pubspec.lock
 
-# Golden images and their failure output are development fixtures, specific
-# to the platform that generated them; the published tests do not need them.
+# Golden tests and their images are development fixtures, specific to the
+# platform that generated them (macOS), so neither ships: a published golden
+# test without its image would only fail.
 test/**/goldens/
 test/**/failures/
+test/golden/layout_golden_test.dart
+test/debug/debug_painter_golden_test.dart
+test/debug/debug_repaint_test.dart
+
+# This package's analysis options include the workspace root's file, which is
+# not part of the published archive.
+analysis_options.yaml
 
 # Flutter tool metadata for this directory.
 .metadata
