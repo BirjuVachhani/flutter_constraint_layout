@@ -192,9 +192,6 @@ class ConstraintWidget {
   int horizontalGroup = -1;
   int verticalGroup = -1;
 
-  int mMaxWidthDim = intMaxValue;
-  int mMaxHeightDim = intMaxValue;
-
   ConstraintWidget() {
     _addAnchors();
   }
@@ -257,10 +254,10 @@ class ConstraintWidget {
   bool isInVirtualLayout() => mInVirtualLayout;
   void setInVirtualLayout(bool v) => mInVirtualLayout = v;
 
-  int getMaxHeight() => mMaxHeightDim;
-  int getMaxWidth() => mMaxWidthDim;
-  void setMaxWidth(int v) => mMaxWidthDim = v;
-  void setMaxHeight(int v) => mMaxHeightDim = v;
+  int getMaxHeight() => mMaxDimension[VERTICAL];
+  int getMaxWidth() => mMaxDimension[HORIZONTAL];
+  void setMaxWidth(int v) => mMaxDimension[HORIZONTAL] = v;
+  void setMaxHeight(int v) => mMaxDimension[VERTICAL] = v;
 
   void setHasBaseline(bool v) => mHasBaseline = v;
   bool getHasBaseline() => mHasBaseline;

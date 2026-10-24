@@ -171,8 +171,11 @@ and are not ported.
 
 The other test files are the engine's own, not derived from upstream:
 `anchor_api_test.dart`, `barrier_modes_test.dart`, `flow_modes_test.dart`,
-`grid_modes_test.dart`, `measure_ordering_test.dart`,
-`persistent_layout_test.dart`, and `smoke_test.dart`.
+`grid_modes_test.dart`, `max_dimension_test.dart`,
+`measure_ordering_test.dart`, `persistent_layout_test.dart`, and
+`smoke_test.dart`. No upstream core test sets a max width or height, so the
+expected values in `max_dimension_test.dart` were taken from upstream's Java
+engine at the pinned commit, run on the same layouts.
 
 Not ported, although in scope:
 
