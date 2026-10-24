@@ -1,8 +1,19 @@
 name: Tests
 
-# Runs the full test suite for every workspace package. Everything runs on
-# macOS because the golden tests (packages/flutter_constraint_layout/test/**/goldens/*.png)
-# are generated on macOS and are sensitive to platform font/raster differences.
+# Analyzes and tests every package in the repository, one job per
+# independently resolved unit:
+#
+# - workspace: the pub workspace (constraint_engine, flutter_constraint_layout,
+#   website). Runs on macOS because the flutter_constraint_layout goldens
+#   (packages/flutter_constraint_layout/test/**/goldens/*.png) are generated
+#   there and are sensitive to platform font and raster differences.
+# - lints: flutter_constraint_layout_lints. It resolves against the SDK's own
+#   analyzer, so it is deliberately outside the workspace.
+# - site_kit: template/ and its storyboard app, standalone so other repos can
+#   depend on them without inheriting this workspace's resolution.
+#
+# Every job tracks the latest Flutter stable release instead of a pinned
+# version, so a new release that breaks a package shows up here first.
 
 on:
   push:
@@ -15,30 +26,36 @@ concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  test:
-    name: Test (macOS)
+  workspace:
+    name: Workspace (engine, package, website)
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
-      - name: Set up Flutter
+      - name: Set up Flutter (stable)
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          # Pinned to match the version this repo is developed against.
-          flutter-version: 3.44.6
           cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
 
       - name: Resolve workspace dependencies
         # The root is a workspace shell with no code of its own; one resolve
-        # here covers every member (packages/constraint_engine,
-        # packages/flutter_constraint_layout, website).
+        # here covers every member.
         run: flutter pub get
 
       - name: Analyze
-        run: flutter analyze
+        # Scoped to the workspace members. The standalone packages are resolved
+        # and analyzed by their own jobs; an unscoped walk from the root would
+        # reach them unresolved and report every import as missing.
+        run: flutter analyze packages/constraint_engine packages/flutter_constraint_layout website
 
       - name: Engine tests (constraint_engine)
         working-directory: packages/constraint_engine
@@ -46,4 +63,74 @@ jobs:
 
       - name: Package tests (flutter_constraint_layout, incl. goldens)
         working-directory: packages/flutter_constraint_layout
+        run: flutter test
+
+      - name: Website tests
+        working-directory: website
+        run: flutter test
+
+  lints:
+    name: Lints plugin
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/flutter_constraint_layout_lints
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Flutter's bundled Dart, not a standalone SDK: the plugin is loaded by
+      # the analysis server of the SDK its Flutter users run.
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: dart pub get
+
+      - name: Analyze
+        run: dart analyze
+
+      - name: Test
+        run: dart test
+
+  site_kit:
+    name: site_kit (template + storyboard)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve site_kit
+        working-directory: template
+        run: flutter pub get
+
+      - name: Analyze site_kit
+        # template/analysis_options.yaml excludes storyboard/, which has its
+        # own package and options file and is analyzed below.
+        working-directory: template
+        run: flutter analyze
+
+      - name: Test site_kit
+        working-directory: template
+        run: flutter test
+
+      - name: Resolve storyboard
+        working-directory: template/storyboard
+        run: flutter pub get
+
+      - name: Analyze storyboard
+        working-directory: template/storyboard
+        run: flutter analyze
+
+      - name: Test storyboard
+        working-directory: template/storyboard
         run: flutter test

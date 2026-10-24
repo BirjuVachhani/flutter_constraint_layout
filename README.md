@@ -33,7 +33,17 @@ cd packages/constraint_engine  && dart test
 cd website                     && flutter run -d chrome
 ```
 
-`flutter analyze` from the root walks the whole tree; each package carries its
+Analyze the workspace members from the root:
+
+```bash
+flutter analyze packages/constraint_engine packages/flutter_constraint_layout website
+```
+
+An unscoped `flutter analyze` at the root also walks into the standalone
+packages (`packages/flutter_constraint_layout_lints`, `template/`, and
+`template/storyboard/`), which the root resolve does not cover. Run
+`dart pub get` (lints) or `flutter pub get` (template, storyboard) inside each
+first, or analyze them from their own directories. Each package carries its
 own `analysis_options.yaml`.
 
 ## Tests and coverage
@@ -56,9 +66,12 @@ its own `lib/`, and the engine lines it exercises go uncounted.
 source text.
 
 Golden images live beside their tests under
-`packages/flutter_constraint_layout/test/**/goldens/` and are generated on macOS, which
-is why [CI](.github/workflows/test.yml) pins a macOS runner. Refresh them with
-`flutter test --update-goldens` from inside that package.
+`packages/flutter_constraint_layout/test/**/goldens/` and are generated on
+macOS, which is why the workspace job in [CI](.github/workflows/test.yml) runs
+on a macOS runner. Refresh them with `flutter test --update-goldens` from inside
+that package. CI tracks the latest Flutter stable release rather than a pinned
+version, so regenerate the goldens if a Flutter upgrade changes text or raster
+output.
 
 ## Docs
 

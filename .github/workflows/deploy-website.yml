@@ -1,21 +1,23 @@
 name: Deploy website
 
 # Builds the showcase site (website/) with the WASM renderer and publishes it
-# to GitHub Pages. The custom domain is preserved by website/web/CNAME, which
-# `flutter build web` copies into the build output.
+# to GitHub Pages at https://constraints.birju.dev.
+#
+# With a GitHub Actions deploy, the custom domain comes from the repository's
+# Pages settings (Settings > Pages > Custom domain); the CNAME file in the
+# artifact is ignored. website/web/CNAME is kept in step with that setting so
+# the build output stays self-describing.
 
 on:
   push:
     branches: [main]
-    # Only rebuild when something that affects the site changes. The site
-    # depends on the root package (lib/) and the engine (packages/), so those
-    # count too.
+    # Only rebuild when something that affects the site changes: the site
+    # itself, the two packages it renders live, and the workspace resolution.
     paths:
       - "website/**"
-      - "lib/**"
-      - "packages/**"
+      - "packages/constraint_engine/**"
+      - "packages/flutter_constraint_layout/**"
       - "pubspec.yaml"
-      - "pubspec.lock"
       - ".github/workflows/deploy-website.yml"
   # Allow manual runs from the Actions tab.
   workflow_dispatch:
@@ -26,40 +28,46 @@ permissions:
   pages: write
   id-token: write
 
-# One deploy at a time. Cancel an in-progress run when a newer commit lands,
-# but never cancel an actual deployment already talking to Pages.
-concurrency:
-  group: pages
-  cancel-in-progress: true
-
 jobs:
   build:
     name: Build (WASM)
     runs-on: ubuntu-latest
+    # A newer commit cancels an in-progress build of an older one.
+    concurrency:
+      group: pages-build-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
-      - name: Set up Flutter
+      - name: Set up Flutter (stable)
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          # Pinned to match the version this repo is developed against.
-          flutter-version: 3.44.6
           cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Check the Pages configuration
+        # Fails fast, with a clear message, if Pages is not enabled with
+        # "GitHub Actions" as its source.
+        uses: actions/configure-pages@v6
 
       - name: Resolve workspace dependencies
         # Run at the repo root so the whole pub workspace
-        # (packages/constraint_engine, packages/flutter_constraint_layout, website)
-        # resolves together.
+        # (packages/constraint_engine, packages/flutter_constraint_layout,
+        # website) resolves together.
         run: flutter pub get
 
       - name: Build website (WASM)
+        # Served from the domain root, so the base href is "/". The --wasm
+        # build also emits a JavaScript fallback for browsers without WasmGC.
         working-directory: website
         run: flutter build web --wasm --base-href "/"
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: website/build/web
 
@@ -67,10 +75,15 @@ jobs:
     name: Deploy
     needs: build
     runs-on: ubuntu-latest
+    # Deployments queue rather than cancel: one already talking to Pages is
+    # always allowed to finish.
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
