@@ -13,3 +13,4 @@ environment:
 dev_dependencies:
   test: ^1.25.0
   lints: ^6.0.0
+  coverage: ^1.15.1
