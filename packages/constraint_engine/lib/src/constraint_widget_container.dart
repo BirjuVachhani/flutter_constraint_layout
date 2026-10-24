@@ -156,6 +156,10 @@ class ConstraintWidgetContainer extends WidgetContainer {
   /// taken by layout(); avoids per-pass allocations on the hot path.
   final List<int> _layoutSnapshot = [];
 
+  /// Reused list of the virtual layouts [_remeasureVirtualLayouts] measures,
+  /// for the same reason.
+  final List<VirtualLayout> _virtualLayoutsToMeasure = [];
+
   /// Invalidate the dependency graph after the children or their
   /// constraints changed (same as [invalidateGraph]).
   void updateHierarchy() {
@@ -510,6 +514,17 @@ class ConstraintWidgetContainer extends WidgetContainer {
       }
       _solverLayout(preW, preH);
 
+      // Virtual layouts were measured above before the solver had resolved
+      // their own size, so a matchConstraint axis was measured against all the
+      // space available to the container. A Flow computes its rows while it
+      // measures, so re-measure such layouts at the solved size and re-solve,
+      // as BasicMeasure.solverMeasure does after its first pass; otherwise a
+      // flow narrower than the container (margins, sibling anchors) keeps rows
+      // that overflow its bounds instead of wrapping.
+      if (!mSkipFallbackRemeasure && fallbackMeasurer != null) {
+        _remeasureVirtualLayouts(fallbackMeasurer, preW, preH);
+      }
+
       // Content whose measured size on a wrap axis depends on its resolved size
       // on a matchConstraint axis (wrapping text: height depends on width) was
       // measured above at a not-yet-solved (zero) match size, or, on a
@@ -521,6 +536,42 @@ class ConstraintWidgetContainer extends WidgetContainer {
       if (!mSkipFallbackRemeasure && fallbackMeasurer != null) {
         _remeasureSizeDependentChildren(fallbackMeasurer, preW, preH);
       }
+    }
+  }
+
+  /// Re-measures the virtual layouts that have a matchConstraint axis at the
+  /// size the solver resolved for them (TRY_GIVEN_DIMENSIONS), then re-solves
+  /// if any of them changed size or asks for a solver pass. Ported from the
+  /// "apply sizes for VirtualLayouts" step of BasicMeasure.solverMeasure.
+  void _remeasureVirtualLayouts(Measurer measurer, int preW, int preH) {
+    // Collected first: measuring a GridCore re-adds its box widgets to this
+    // container, which reorders mChildren.
+    final layouts = _virtualLayoutsToMeasure..clear();
+    for (final widget in mChildren) {
+      if (widget is VirtualLayout &&
+          widget.getVisibility() != ConstraintWidget.GONE &&
+          (widget.getHorizontalDimensionBehaviour() ==
+                  DimensionBehaviour.matchConstraint ||
+              widget.getVerticalDimensionBehaviour() ==
+                  DimensionBehaviour.matchConstraint)) {
+        layouts.add(widget);
+      }
+    }
+    const strategy = Measure.TRY_GIVEN_DIMENSIONS;
+    var needSolverPass = false;
+    for (final widget in layouts) {
+      final preWidth = widget.getWidth();
+      final preHeight = widget.getHeight();
+      if (mBasicMeasureSolver.measure(measurer, widget, strategy) ||
+          widget.getWidth() != preWidth ||
+          widget.getHeight() != preHeight ||
+          widget.needSolverPass()) {
+        needSolverPass = true;
+      }
+    }
+    layouts.clear();
+    if (needSolverPass) {
+      _solverLayout(preW, preH);
     }
   }
 

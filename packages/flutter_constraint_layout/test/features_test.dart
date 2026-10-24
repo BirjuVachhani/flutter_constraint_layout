@@ -486,6 +486,101 @@ void main() {
       expect(c.top, greaterThan(a.top));
     });
 
+    // Wrap-content chips like the website's flow example, whose first row
+    // holds chips 91, 66, 66 and 61 wide: 91 + 66 + 66 + 61 + 3 * 8 = 308.
+    Widget chip(Symbol id, double width) => Constrained(
+          id: id,
+          child: SizedBox(key: ValueKey(id), width: width, height: 35),
+        );
+
+    // The flow is inset 12 from each side of the layout, so the layout needs
+    // 308 + 2 * 12 = 332 to keep the four chips on one row.
+    List<Widget> chipFlow(FlowWrap wrap) => [
+          chip(#c0, 91),
+          chip(#c1, 66),
+          chip(#c2, 66),
+          chip(#c3, 61),
+          ConstraintFlow(
+            id: #flow,
+            referenced: const [#c0, #c1, #c2, #c3],
+            start: .startOf(parent, margin: 12),
+            end: .endOf(parent, margin: 12),
+            top: .topOf(parent, margin: 12),
+            width: .matchConstraint,
+            wrap: wrap,
+            horizontalGap: 8,
+            verticalGap: 8,
+            horizontalChainStyle: .packed,
+            contentHorizontalBias: 0,
+          ),
+        ];
+
+    for (final wrap in [FlowWrap.chain, FlowWrap.aligned]) {
+      testWidgets('${wrap.name} wrap keeps a row that exactly fits the flow',
+          (tester) async {
+        await tester.pumpWidget(host(chipFlow(wrap), width: 332));
+        for (final id in const [#c0, #c1, #c2, #c3]) {
+          expect(rectOf(tester, id).top, 12);
+        }
+        expect(rectOf(tester, #c0).left, 12);
+        expect(rectOf(tester, #c3).right, 332 - 12);
+      });
+
+      testWidgets(
+          '${wrap.name} wrap moves a widget that overflows the flow by one '
+          'pixel to the next row', (tester) async {
+        await tester.pumpWidget(host(chipFlow(wrap), width: 331));
+        expect(rectOf(tester, #c2).top, 12);
+        expect(rectOf(tester, #c3).top, rectOf(tester, #c0).bottom + 8);
+        for (final id in const [#c0, #c1, #c2, #c3]) {
+          expect(rectOf(tester, id).left, greaterThanOrEqualTo(12));
+          expect(rectOf(tester, id).right, lessThanOrEqualTo(331 - 12));
+        }
+      });
+    }
+
+    testWidgets('the website flow example wraps within its margins',
+        (tester) async {
+      // At a 390 px viewport the home page gives the example a 316 x 188
+      // layout, so the flow is 292 wide; these are the example's chips at
+      // their widths in the site's font. The first four need 308.
+      const chips = {
+        #constraint: 90.95,
+        #layout: 66.15,
+        #wraps: 65.62,
+        #when: 61.39,
+        #it: 36.42,
+        #runs: 55.3,
+        #out: 48.42,
+        #of: 40.83,
+        #room: 59.41,
+      };
+      await tester.pumpWidget(host(width: 316, height: 188, [
+        for (final MapEntry(key: id, value: width) in chips.entries)
+          chip(id, width),
+        ConstraintFlow(
+          id: #flow,
+          referenced: chips.keys.toList(),
+          start: .startOf(parent, margin: 12),
+          end: .endOf(parent, margin: 12),
+          top: .topOf(parent, margin: 12),
+          width: .matchConstraint,
+          wrap: .chain,
+          horizontalGap: 8,
+          verticalGap: 8,
+          horizontalChainStyle: .packed,
+          contentHorizontalBias: 0,
+        ),
+      ]));
+      final when = rectOf(tester, #when);
+      expect(when.left, 12);
+      expect(when.top, rectOf(tester, #constraint).bottom + 8);
+      for (final id in chips.keys) {
+        expect(rectOf(tester, id).left, greaterThanOrEqualTo(12));
+        expect(rectOf(tester, id).right, lessThanOrEqualTo(316 - 12));
+      }
+    });
+
     testWidgets('grid arranges cells into rows and columns', (tester) async {
       await tester.pumpWidget(host([
         cell(#a, 10, 10),

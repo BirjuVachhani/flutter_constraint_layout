@@ -793,6 +793,11 @@ Widget tagCloud(List<String> tags) {
 | `maxElementsWrap` | `null` | The most widgets per row before wrapping; `null` fits as many as possible. |
 | `padding` | 0 | Space inside the flow's bounds, on all four sides. |
 
+A flow wraps within its own width. As on Android, a flow whose size the solver
+resolves (a `.matchConstraint` width between margins or sibling links, as
+above) is measured again at that size after the first solve, so its rows fit
+inside its bounds rather than inside the whole layout's.
+
 ### Grid
 
 `ConstraintGrid` places the widgets in `referenced` into a grid of `rows` by

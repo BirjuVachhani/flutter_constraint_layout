@@ -116,8 +116,12 @@ relevant code, and include:
   rules): their addToSolver pass is what creates the member constraints.
   Before the solver runs, layout()'s fallback measures virtual layouts with
   `SELF_DIMENSIONS` so a matchConstraint axis measures against the available
-  space instead of a not-yet-solved zero size (upstream reaches the same
-  state through its solverMeasure loop).
+  space instead of a not-yet-solved zero size. After the first solve it
+  measures those with a matchConstraint axis again with
+  `TRY_GIVEN_DIMENSIONS`, at the size the solver resolved, and re-solves, so a
+  `Flow` narrower than the container wraps its rows within its own bounds.
+  Upstream reaches the same state through solverMeasure, which runs both
+  measures around its first solve.
 - `GridCore.measure` reports incoming EXACTLY sizes as its measured size.
   Upstream leaves the measured size untouched because its Compose host only
   sizes grids through the solver; a fixed-size grid measured through a host
