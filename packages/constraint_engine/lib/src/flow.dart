@@ -13,19 +13,52 @@ import 'linear_system.dart';
 import 'virtual_layout.dart';
 
 /// Implements the Flow virtual layout.
+///
+/// A flow arranges the widgets added to it in a row (or in a column, see
+/// [setOrientation]) like a chain, and can wrap them onto more rows or
+/// columns ([setWrapMode]). Gone widgets are left out. Like every
+/// [VirtualLayout], it needs a [Measurer] that calls [measure].
 class Flow extends VirtualLayout {
+  /// Horizontal alignment that lines up the widgets of a column on their
+  /// start edge (left, or right in a right-to-left layout).
   static const int HORIZONTAL_ALIGN_START = 0;
+
+  /// Horizontal alignment that lines up the widgets of a column on their end
+  /// edge (right, or left in a right-to-left layout).
   static const int HORIZONTAL_ALIGN_END = 1;
+
+  /// Horizontal alignment that centers the widgets of a column. The default.
   static const int HORIZONTAL_ALIGN_CENTER = 2;
 
+  /// Vertical alignment that lines up the widgets of a row on their top
+  /// edges.
   static const int VERTICAL_ALIGN_TOP = 0;
+
+  /// Vertical alignment that lines up the widgets of a row on their bottom
+  /// edges.
   static const int VERTICAL_ALIGN_BOTTOM = 1;
+
+  /// Vertical alignment that centers the widgets of a row. The default.
   static const int VERTICAL_ALIGN_CENTER = 2;
+
+  /// Vertical alignment that lines up the widgets of a row on their
+  /// baselines.
   static const int VERTICAL_ALIGN_BASELINE = 3;
 
+  /// Wrap mode that keeps every widget in a single row or column (one
+  /// chain), whether or not they fit. The default.
   static const int WRAP_NONE = 0;
+
+  /// Wrap mode that starts a new row or column, each its own chain, when the
+  /// next widget does not fit or after [setMaxElementsWrap] widgets.
   static const int WRAP_CHAIN = 1;
+
+  /// Wrap mode that wraps like [WRAP_CHAIN] but lines the widgets up in rows
+  /// and columns, like a table.
   static const int WRAP_ALIGNED = 2;
+
+  /// Wrap mode like [WRAP_CHAIN], measured with upstream's newer chain-wrap
+  /// pass.
   static const int WRAP_CHAIN_NEW = 3;
 
   int _horizontalStyle = ConstraintWidget.UNKNOWN;
@@ -65,25 +98,87 @@ class Flow extends VirtualLayout {
 
   // ---- accessors ----
 
+  /// Set the orientation of the layout: rows for
+  /// [ConstraintWidget.HORIZONTAL] (the default), columns for
+  /// [ConstraintWidget.VERTICAL].
   void setOrientation(int value) => _orientation = value;
+
+  /// Similar to [setHorizontalStyle], but only applies to the first row.
   void setFirstHorizontalStyle(int value) => _firstHorizontalStyle = value;
+
+  /// Similar to [setVerticalStyle], but only applies to the first column.
   void setFirstVerticalStyle(int value) => _firstVerticalStyle = value;
+
+  /// Similar to [setHorizontalStyle], but only applies to the last row.
   void setLastHorizontalStyle(int value) => _lastHorizontalStyle = value;
+
+  /// Similar to [setVerticalStyle], but only applies to the last column.
   void setLastVerticalStyle(int value) => _lastVerticalStyle = value;
+
+  /// Set the horizontal chain style: [ConstraintWidget.CHAIN_SPREAD] (the
+  /// default), [ConstraintWidget.CHAIN_SPREAD_INSIDE], or
+  /// [ConstraintWidget.CHAIN_PACKED]. It applies to each row, and to the
+  /// chain of columns.
   void setHorizontalStyle(int value) => _horizontalStyle = value;
+
+  /// Set the vertical chain style: [ConstraintWidget.CHAIN_SPREAD] (the
+  /// default), [ConstraintWidget.CHAIN_SPREAD_INSIDE], or
+  /// [ConstraintWidget.CHAIN_PACKED]. It applies to each column, and to the
+  /// chain of rows.
   void setVerticalStyle(int value) => _verticalStyle = value;
+
+  /// Set the horizontal bias (0 to 1, 0.5 by default) of each row's chain,
+  /// and of the chain of columns in [WRAP_ALIGNED] mode. It is mirrored in a
+  /// right-to-left layout.
   void setHorizontalBias(double value) => _horizontalBias = value;
+
+  /// Set the vertical bias (0 to 1, 0.5 by default) of each column's chain,
+  /// and of the chain of rows in [WRAP_ALIGNED] mode.
   void setVerticalBias(double value) => _verticalBias = value;
+
+  /// Similar to [setHorizontalBias], but only applies to the first row, and
+  /// only when [setFirstHorizontalStyle] is set.
   void setFirstHorizontalBias(double value) => _firstHorizontalBias = value;
+
+  /// Similar to [setVerticalBias], but only applies to the first column, and
+  /// only when [setFirstVerticalStyle] is set.
   void setFirstVerticalBias(double value) => _firstVerticalBias = value;
+
+  /// Similar to [setHorizontalBias], but only applies to the last row, and
+  /// only when [setLastHorizontalStyle] is set.
   void setLastHorizontalBias(double value) => _lastHorizontalBias = value;
+
+  /// Similar to [setVerticalBias], but only applies to the last column, and
+  /// only when [setLastVerticalStyle] is set.
   void setLastVerticalBias(double value) => _lastVerticalBias = value;
+
+  /// Set how the widgets of a column line up horizontally (in a vertical
+  /// flow): [HORIZONTAL_ALIGN_START], [HORIZONTAL_ALIGN_END], or
+  /// [HORIZONTAL_ALIGN_CENTER] (the default).
   void setHorizontalAlign(int value) => _horizontalAlign = value;
+
+  /// Set how the widgets of a row line up vertically (in a horizontal flow):
+  /// [VERTICAL_ALIGN_TOP], [VERTICAL_ALIGN_BOTTOM], [VERTICAL_ALIGN_CENTER]
+  /// (the default), or [VERTICAL_ALIGN_BASELINE].
   void setVerticalAlign(int value) => _verticalAlign = value;
+
+  /// Set the wrap mode: [WRAP_NONE] (the default), [WRAP_CHAIN],
+  /// [WRAP_ALIGNED], or [WRAP_CHAIN_NEW].
   void setWrapMode(int value) => _wrapMode = value;
+
+  /// Set the horizontal gap between the widgets of a row, and between
+  /// columns.
   void setHorizontalGap(int value) => _horizontalGap = value;
+
+  /// Set the vertical gap between the widgets of a column, and between rows.
   void setVerticalGap(int value) => _verticalGap = value;
+
+  /// Set the maximum number of widgets in a row or column before wrapping,
+  /// whether or not more would fit, or [ConstraintWidget.UNKNOWN] (the
+  /// default) for no maximum. Only the wrapping modes use it.
   void setMaxElementsWrap(int value) => _maxElementsWrap = value;
+
+  /// The maximum set by [setMaxElementsWrap].
   int getMaxElementsWrap() => _maxElementsWrap;
 
   // ---- utility methods ----
@@ -158,6 +253,12 @@ class Flow extends VirtualLayout {
 
   // ---- measure ----
 
+  /// Measure the referenced widgets ([measureChildren]), arrange them into
+  /// rows or columns as the wrap mode dictates, and size the flow:
+  /// [BasicMeasure.EXACTLY] takes the given size, [BasicMeasure.AT_MOST] the
+  /// content's size capped at it, and [BasicMeasure.UNSPECIFIED] the
+  /// content's size. A flow with widgets but no [Measurer] measures as
+  /// 0 x 0.
   @override
   void measure(int widthMode, int widthSize, int heightMode, int heightSize) {
     if (mWidgetsCount > 0 && !measureChildren()) {

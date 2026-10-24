@@ -11,25 +11,56 @@ import 'constraint_widget_container.dart';
 import 'linear_system.dart';
 import 'solver_variable.dart';
 
+/// A horizontal or vertical line that other widgets constrain to.
+///
+/// A guideline sits at a fixed distance from its parent's left or top edge
+/// ([setGuideBegin]), from its right or bottom edge ([setGuideEnd]), or at a
+/// fraction of the parent's size ([setGuidePercent]). It takes no space; add
+/// it to the container like any other widget.
 class Guideline extends ConstraintWidget {
+  /// Orientation of a horizontal guideline: a horizontal line that widgets
+  /// constrain their top and bottom anchors to.
   static const int horizontal = 0;
+
+  /// Orientation of a vertical guideline: a vertical line that widgets
+  /// constrain their left and right anchors to.
   static const int vertical = 1;
 
+  /// Relative behaviour of a guideline placed at a fraction of the parent's
+  /// size; see [getRelativeBehaviour].
   static const int relativePercent = 0;
+
+  /// Relative behaviour of a guideline placed at a distance from the
+  /// parent's left or top edge.
   static const int relativeBegin = 1;
+
+  /// Relative behaviour of a guideline placed at a distance from the
+  /// parent's right or bottom edge.
   static const int relativeEnd = 2;
+
+  /// Relative behaviour of a guideline with no position set.
   static const int relativeUnknown = -1;
 
+  /// The fraction set by [setGuidePercent], or -1 when unset.
   double mRelativePercent = -1;
+
+  /// The distance set by [setGuideBegin], or -1 when unset.
   int mRelativeBegin = -1;
+
+  /// The distance set by [setGuideEnd], or -1 when unset.
   int mRelativeEnd = -1;
   bool mGuidelineUseRtl = true;
 
+  /// The guideline's single anchor: [mTop] for a horizontal guideline,
+  /// [mLeft] for a vertical one.
   late ConstraintAnchor mAnchor = mTop;
+
+  /// The orientation, [horizontal] (the default) or [vertical].
   int mOrientation = horizontal;
   int mMinimumPosition = 0;
   bool mResolved = false;
 
+  /// Creates a horizontal guideline with no position set.
   Guideline() : super() {
     mAnchors.clear();
     mAnchors.add(mAnchor);
@@ -38,9 +69,12 @@ class Guideline extends ConstraintWidget {
     }
   }
 
+  /// Always true: a [Barrier] uses a guideline whatever its visibility.
   @override
   bool allowedInBarrier() => true;
 
+  /// How the guideline is positioned: [relativePercent], [relativeBegin],
+  /// [relativeEnd], or [relativeUnknown] when no position is set.
   int getRelativeBehaviour() {
     if (mRelativePercent != -1) {
       return relativePercent;
@@ -54,6 +88,8 @@ class Guideline extends ConstraintWidget {
     return relativeUnknown;
   }
 
+  /// Set the orientation, [horizontal] or [vertical], which also selects the
+  /// guideline's anchor ([mAnchor]).
   void setOrientation(int orientation) {
     if (mOrientation == orientation) {
       return;
@@ -71,16 +107,27 @@ class Guideline extends ConstraintWidget {
     }
   }
 
+  /// The guideline's single anchor ([mAnchor]).
   ConstraintAnchor getGuidelineAnchor() => mAnchor;
 
+  /// The type name of a guideline: `Guideline`.
   @override
   String? getType() => 'Guideline';
 
+  /// Get the orientation: [horizontal] or [vertical].
   int getOrientation() => mOrientation;
 
+  /// Set the minimum position. Kept from upstream; the engine does not read
+  /// it.
   void setMinimumPosition(int minimum) => mMinimumPosition = minimum;
+
+  /// Get the minimum position set by [setMinimumPosition].
   int getMinimumPosition() => mMinimumPosition;
 
+  /// The guideline's anchor for [ConstraintAnchorType.left] or
+  /// [ConstraintAnchorType.right] when it is vertical, and for
+  /// [ConstraintAnchorType.top] or [ConstraintAnchorType.bottom] when it is
+  /// horizontal; null for any other type.
   @override
   ConstraintAnchor? getAnchor(ConstraintAnchorType anchorType) {
     switch (anchorType) {
@@ -101,6 +148,9 @@ class Guideline extends ConstraintWidget {
     }
   }
 
+  /// Position the guideline at the fraction [value] (0 to 1) of the parent's
+  /// width for a vertical guideline, or of its height for a horizontal one.
+  /// Values of -1 or less are ignored.
   void setGuidePercent(double value) {
     if (value > -1) {
       mRelativePercent = value;
@@ -109,8 +159,12 @@ class Guideline extends ConstraintWidget {
     }
   }
 
+  /// Same as [setGuidePercent], with [value] as a percentage (0 to 100).
   void setGuidePercentInt(int value) => setGuidePercent(value / 100.0);
 
+  /// Position the guideline [value] from the parent's left edge for a
+  /// vertical guideline, or from its top edge for a horizontal one. Negative
+  /// values are ignored.
   void setGuideBegin(int value) {
     if (value > -1) {
       mRelativePercent = -1;
@@ -119,6 +173,9 @@ class Guideline extends ConstraintWidget {
     }
   }
 
+  /// Position the guideline [value] from the parent's right edge for a
+  /// vertical guideline, or from its bottom edge for a horizontal one.
+  /// Negative values are ignored.
   void setGuideEnd(int value) {
     if (value > -1) {
       mRelativePercent = -1;
@@ -127,10 +184,19 @@ class Guideline extends ConstraintWidget {
     }
   }
 
+  /// The fraction set by [setGuidePercent], or -1 when the guideline is not
+  /// positioned by percent.
   double getRelativePercent() => mRelativePercent;
+
+  /// The distance set by [setGuideBegin], or -1 when the guideline is not
+  /// positioned from the begin edge.
   int getRelativeBegin() => mRelativeBegin;
+
+  /// The distance set by [setGuideEnd], or -1 when the guideline is not
+  /// positioned from the end edge.
   int getRelativeEnd() => mRelativeEnd;
 
+  /// Whether the guideline is positioned by percent ([setGuidePercent]).
   bool isPercent() =>
       mRelativePercent != -1 && mRelativeBegin == -1 && mRelativeEnd == -1;
 

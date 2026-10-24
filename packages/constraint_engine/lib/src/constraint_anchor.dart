@@ -12,40 +12,77 @@ import 'solver_variable.dart';
 
 /// The type of an anchor (which edge of a widget it represents).
 enum ConstraintAnchorType {
+  /// No anchor.
   none,
+
+  /// The left edge.
   left,
+
+  /// The top edge.
   top,
+
+  /// The right edge.
   right,
+
+  /// The bottom edge.
   bottom,
+
+  /// The text baseline.
   baseline,
+
+  /// The center point, used for circular positioning (see
+  /// [ConstraintWidget.connectCircularConstraint]).
   center,
+
+  /// The horizontal center, midway between the left and right edges.
   centerX,
+
+  /// The vertical center, midway between the top and bottom edges.
   centerY,
 }
 
 /// Models a constraint relation. Widgets contain anchors, and a constraint
-/// between two widgets is made by connecting one anchor to another.
+/// between two widgets is made by connecting one anchor to another. A
+/// connected anchor holds its target ([mTarget]).
 class ConstraintAnchor {
+  /// The [mGoneMargin] value meaning no gone margin is set (Java's
+  /// `Integer.MIN_VALUE`).
   static const int unsetGoneMargin = -0x80000000; // Integer.MIN_VALUE
 
+  /// The widget this anchor belongs to.
   final ConstraintWidget mOwner;
+
+  /// Which part of [mOwner] this anchor represents.
   final ConstraintAnchorType mType;
+
+  /// The anchor this one is connected to, or null when it is not connected.
   ConstraintAnchor? mTarget;
+
+  /// The margin to keep from [mTarget]; [getMargin] applies visibility.
   int mMargin = 0;
+
+  /// The margin used instead of [mMargin] when the target's widget is gone,
+  /// or [unsetGoneMargin] for none.
   int mGoneMargin = unsetGoneMargin;
 
   int _finalValue = 0;
   bool _hasFinalValue = false;
 
+  /// The solver variable of this anchor's position, created on demand by the
+  /// solver; see [getSolverVariable].
   SolverVariable? mSolverVariable;
 
   /// Anchors currently targeting this anchor.
   Set<ConstraintAnchor>? mDependents;
 
+  /// Creates an anchor of type [mType] owned by [mOwner]. Widgets create
+  /// their own anchors; see [ConstraintWidget.getAnchor].
   ConstraintAnchor(this.mOwner, this.mType);
 
+  /// The anchors connected to this one, or null when there are none.
   Set<ConstraintAnchor>? getDependents() => mDependents;
 
+  /// Whether any anchor is connected to this one.
   bool hasDependents() {
     final dependents = mDependents;
     if (dependents == null) {
@@ -54,6 +91,9 @@ class ConstraintAnchor {
     return dependents.isNotEmpty;
   }
 
+  /// Whether an anchor connected to this one belongs to a widget that is
+  /// also connected on the opposite side of the same axis (so it is centered
+  /// between two targets).
   bool hasCenteredDependents() {
     final dependents = mDependents;
     if (dependents == null) {
@@ -83,22 +123,28 @@ class ConstraintAnchor {
     }
   }
 
+  /// Record [finalValue] as this anchor's resolved position.
   void setFinalValue(int finalValue) {
     _finalValue = finalValue;
     _hasFinalValue = true;
   }
 
+  /// The resolved position set by [setFinalValue], or 0 when there is none.
   int getFinalValue() => _hasFinalValue ? _finalValue : 0;
 
+  /// Clear the resolved position set by [setFinalValue].
   void resetFinalResolution() {
     _hasFinalValue = false;
     _finalValue = 0;
   }
 
+  /// Whether a resolved position is set; see [setFinalValue].
   bool hasFinalValue() => _hasFinalValue;
 
+  /// Return the anchor's owner: the widget it belongs to.
   ConstraintWidget getOwner() => mOwner;
 
+  /// Return the type of the anchor.
   ConstraintAnchorType getType() => mType;
 
   /// The connection's margin, honoring GONE visibility of self and target.
@@ -114,8 +160,12 @@ class ConstraintAnchor {
     return mMargin;
   }
 
+  /// Return the connection's target, or null if not connected.
   ConstraintAnchor? getTarget() => mTarget;
 
+  /// Reset the anchor's connection: clear the target, the margin and gone
+  /// margin, and the resolved position, and forget the anchors connected to
+  /// this one.
   void reset() {
     final targetDependents = mTarget?.mDependents;
     if (targetDependents != null) {
@@ -133,6 +183,10 @@ class ConstraintAnchor {
   }
 
   /// Connects this anchor to [toAnchor] with the given [margin]/[goneMargin].
+  ///
+  /// A null [toAnchor] resets the anchor. Unless [forceConnection] is true, a
+  /// connection that [isValidConnection] rejects is refused, and the method
+  /// returns false.
   bool connect(
     ConstraintAnchor? toAnchor,
     int margin, [
@@ -153,8 +207,18 @@ class ConstraintAnchor {
     return true;
   }
 
+  /// Returns the connection status of this anchor: true if it is connected
+  /// to another one.
   bool isConnected() => mTarget != null;
 
+  /// Checks if the connection to [anchor] is valid.
+  ///
+  /// Anchors of the same type can connect, baselines only when both widgets
+  /// have a baseline. Otherwise left and right connect to each other (and to
+  /// the centerX of a [Guideline]), top and bottom likewise (and to the
+  /// centerY of a [Guideline]), a baseline to anything but left or right,
+  /// and center to anything but baseline, centerX, or centerY. A null
+  /// [anchor] is invalid.
   bool isValidConnection(ConstraintAnchor? anchor) {
     if (anchor == null) {
       return false;
@@ -203,18 +267,23 @@ class ConstraintAnchor {
     }
   }
 
+  /// Set the margin of the connection, if there is one.
   void setMargin(int margin) {
     if (isConnected()) {
       mMargin = margin;
     }
   }
 
+  /// Set the gone margin of the connection, if there is one: the margin used
+  /// when the target's widget is gone.
   void setGoneMargin(int margin) {
     if (isConnected()) {
       mGoneMargin = margin;
     }
   }
 
+  /// Returns true if this anchor is a vertical one: top, bottom, baseline,
+  /// or centerY.
   bool isVerticalAnchor() {
     switch (mType) {
       case ConstraintAnchorType.left:

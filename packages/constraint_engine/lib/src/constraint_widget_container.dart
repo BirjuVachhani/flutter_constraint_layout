@@ -27,6 +27,13 @@ import 'optimizer.dart';
 import 'solver_variable.dart';
 import 'widget_container.dart';
 
+/// A container of [ConstraintWidget]s that can lay out its children.
+///
+/// The container is the root of a layout, and a widget like any other, so
+/// its children connect to its anchors. Add children with [add], connect
+/// them, then call [layout] to resolve every child's position and size. A
+/// container with a [DimensionBehaviour.wrapContent] axis sizes itself
+/// around its children.
 class ConstraintWidgetContainer extends WidgetContainer {
   static const int _MAX_ITERATIONS = 8;
 
@@ -36,17 +43,33 @@ class ConstraintWidgetContainer extends WidgetContainer {
   /// correct the size at the resolved dimension, one to confirm it settled.
   static const int _maxRemeasurePasses = 2;
 
+  /// The dependency graph that [layout] tries first.
   late final DependencyGraph mDependencyGraph = DependencyGraph(this);
 
+  /// The measurer set by [setMeasurer], or the default one [layout] installs
+  /// when none is set.
   Measurer? mMeasurer;
+
+  /// The left padding; see [setPadding].
   int mPaddingLeft = 0;
+
+  /// The top padding; see [setPadding].
   int mPaddingTop = 0;
+
+  /// The right padding; see [setPadding].
   int mPaddingRight = 0;
+
+  /// The bottom padding; see [setPadding].
   int mPaddingBottom = 0;
 
+  /// The optimization level; see [setOptimizationLevel].
   int mOptimizationLevel = Optimizer.OPTIMIZATION_STANDARD;
+
+  /// Whether the layout is right-to-left; see [setRtl].
   bool mIsRtl = false;
 
+  /// The solver [layout] falls back to when the dependency graph cannot
+  /// resolve the layout.
   final LinearSystem mSystem = LinearSystem();
 
   int mHorizontalChainsSize = 0;
@@ -64,33 +87,63 @@ class ConstraintWidgetContainer extends WidgetContainer {
 
   final Set<ConstraintWidget> _widgetsToAdd = <ConstraintWidget>{};
 
+  /// Creates an empty container at (0, 0) with a size of 0 x 0.
   ConstraintWidgetContainer() : super();
+
+  /// Creates an empty container at ([x], [y]) with the given [width] and
+  /// [height].
   ConstraintWidgetContainer.rect(int x, int y, int width, int height)
     : super.rect(x, y, width, height);
+
+  /// Creates an empty container at (0, 0) with the given [width] and
+  /// [height].
   ConstraintWidgetContainer.size(int width, int height)
     : super.size(width, height);
+
+  /// Creates an empty container at (0, 0) with the given [width] and
+  /// [height], named [debugName] for debugging.
   ConstraintWidgetContainer.sizeNamed(String debugName, int width, int height)
     : super.size(width, height) {
     setDebugName(debugName);
   }
 
+  /// The type name of a container: `ConstraintLayout`.
   @override
   String? getType() => 'ConstraintLayout';
 
+  /// Invalidate the graph of constraints, so that the next dependency-graph
+  /// pass rebuilds it. [layout] does this on every call.
   void invalidateGraph() => mDependencyGraph.invalidateGraph();
+
+  /// Invalidate the widgets' measures, so that the next dependency-graph pass
+  /// measures them again. [layout] does this on every call.
   void invalidateMeasures() => mDependencyGraph.invalidateMeasures();
 
+  /// Resolve the layout through the dependency graph alone, without the
+  /// solver fallback, and return whether every widget resolved.
+  /// [optimizeWrap] lets the graph compute wrap-content sizes itself.
   bool directMeasure(bool optimizeWrap) =>
       mDependencyGraph.directMeasure(optimizeWrap);
 
+  /// Prepare a dependency-graph pass that resolves one axis at a time:
+  /// rebuild the graph if it was invalidated and measure the children.
+  /// Follow it with [directMeasureWithOrientation] for each axis, as
+  /// [BasicMeasure.solverMeasure] does.
   bool directMeasureSetup(bool optimizeWrap) =>
       mDependencyGraph.directMeasureSetup(optimizeWrap);
 
+  /// Resolve [orientation] ([ConstraintWidget.HORIZONTAL] or
+  /// [ConstraintWidget.VERTICAL]) through the dependency graph after
+  /// [directMeasureSetup], and return whether every run along that axis
+  /// resolved.
   bool directMeasureWithOrientation(bool optimizeWrap, int orientation) =>
       mDependencyGraph.directMeasureWithOrientation(optimizeWrap, orientation);
 
+  /// The index of the current measure pass; see [setPass].
   int mPass = 0;
 
+  /// Keep track of the number of measure passes; [BasicMeasure] sets it
+  /// before each solve.
   void setPass(int pass) {
     mPass = pass;
   }
@@ -103,21 +156,42 @@ class ConstraintWidgetContainer extends WidgetContainer {
   /// taken by layout(); avoids per-pass allocations on the hot path.
   final List<int> _layoutSnapshot = [];
 
+  /// Invalidate the dependency graph after the children or their
+  /// constraints changed (same as [invalidateGraph]).
   void updateHierarchy() {
     invalidateGraph();
   }
 
+  /// Set the [Measurer] that measures the children's content, used by
+  /// [layout] and [measure]. Without one, [layout] installs a default under
+  /// which a wrap-content widget keeps its stored size.
   void setMeasurer(Measurer? measurer) {
     mMeasurer = measurer;
     mDependencyGraph.setMeasurer(measurer);
   }
 
+  /// The measurer set by [setMeasurer] or installed by [layout], or null.
   Measurer? getMeasurer() => mMeasurer;
 
+  /// Set the optimization level: a mask of [Optimizer] flags,
+  /// [Optimizer.OPTIMIZATION_STANDARD] by default. It tunes the solver and
+  /// the [measure] path; [layout] tries the dependency graph first whatever
+  /// the level.
   void setOptimizationLevel(int value) => mOptimizationLevel = value;
+
+  /// Returns the current optimization level; see [setOptimizationLevel].
   int getOptimizationLevel() => mOptimizationLevel;
+
+  /// Returns true if every flag of [feature] is set in the optimization
+  /// level.
   bool optimizeFor(int feature) => (mOptimizationLevel & feature) == feature;
 
+  /// Set the padding of this container.
+  ///
+  /// The left and top paddings offset the positions that
+  /// [ConstraintWidget.getX] and [ConstraintWidget.getY] report for the
+  /// children. The container's size is not reduced by any padding, and the
+  /// right and bottom paddings are only stored.
   void setPadding(int left, int top, int right, int bottom) {
     mPaddingLeft = left;
     mPaddingTop = top;
@@ -125,11 +199,21 @@ class ConstraintWidgetContainer extends WidgetContainer {
     mPaddingBottom = bottom;
   }
 
+  /// Set whether the layout is right-to-left, which affects chains (the
+  /// rightmost widget heads a horizontal chain) and [Flow]. Anchors are not
+  /// mirrored: left stays left.
   void setRtl(bool isRtl) => mIsRtl = isRtl;
+
+  /// Returns true if the layout is right-to-left; see [setRtl].
   bool isRtl() => mIsRtl;
 
+  /// Indicates if the container lays out its content on its own: false for
+  /// a [ConstraintWidgetContainer].
   bool handlesInternalConstraints() => false;
 
+  /// Copy the positions and sizes the dependency graph resolved into this
+  /// container and then into each child; see
+  /// [ConstraintWidget.updateFromRuns].
   @override
   void updateFromRuns(bool updateHorizontal, bool updateVertical) {
     super.updateFromRuns(updateHorizontal, updateVertical);
@@ -138,10 +222,19 @@ class ConstraintWidgetContainer extends WidgetContainer {
     }
   }
 
+  /// The measure passes behind [measure].
   late final BasicMeasure mBasicMeasureSolver = BasicMeasure(this);
 
   /// The `measure(...)` entry used by the host's onMeasure equivalent, ported
-  /// from upstream: delegates to BasicMeasure.solverMeasure.
+  /// from upstream: delegates to BasicMeasure.solverMeasure, which measures
+  /// the children through the [Measurer], solves the layout, and measures
+  /// again the children whose size depends on the result.
+  ///
+  /// [paddingX] and [paddingY] become the left and top padding. The modes
+  /// and sizes ([BasicMeasure.EXACTLY] and the like) only take effect when
+  /// [optimizationLevel] includes [Optimizer.OPTIMIZATION_GRAPH] or
+  /// [Optimizer.OPTIMIZATION_GRAPH_WRAP]; otherwise the container's own size
+  /// and dimension behaviours apply. [layout] is the simpler entry point.
   void measure(
     int optimizationLevel,
     int widthMode,
@@ -169,7 +262,12 @@ class ConstraintWidgetContainer extends WidgetContainer {
     );
   }
 
-  /// Resolve the layout using the dependency-graph engine.
+  /// Resolve the layout: compute the position and size of every child (and
+  /// the container's own size on a wrap-content axis).
+  ///
+  /// The dependency graph is tried first. When it cannot resolve the layout
+  /// faithfully, the widget state from before the graph pass is restored and
+  /// the [LinearSystem] solver resolves the layout instead.
   ///
   /// Safe to call repeatedly on a persistent container: widget runs are reset
   /// and the dependency graph is rebuilt from the current model each call.
@@ -502,8 +600,14 @@ class ConstraintWidgetContainer extends WidgetContainer {
     }
   }
 
+  /// Upstream returns true if the width given is too small for the content
+  /// laid out. Always false in this port, which omits the wrap clamp that
+  /// sets it upstream.
   bool isWidthMeasuredTooSmall() => _widthMeasuredTooSmall;
 
+  /// Upstream returns true if the height given is too small for the content
+  /// laid out. Always false in this port, which omits the wrap clamp that
+  /// sets it upstream.
   bool isHeightMeasuredTooSmall() => _heightMeasuredTooSmall;
 
   void addVerticalWrapMinVariable(ConstraintAnchor top) {
@@ -678,6 +782,7 @@ class ConstraintWidgetContainer extends WidgetContainer {
     return hasOverride;
   }
 
+  /// The [LinearSystem] that [layout] falls back to.
   LinearSystem getSystem() => mSystem;
 
   /// Reset the chains array. Needs to be called before layout.

@@ -14,36 +14,73 @@ import 'helper_widget.dart';
 import 'linear_system.dart';
 import 'solver_variable.dart';
 
+/// A Barrier takes multiple widgets: it is a line that follows the outermost
+/// edge, on one side, of the widgets added to it, so other widgets can
+/// constrain to whichever of them reaches furthest.
+///
+/// Add the widgets with [add], choose the side with [setBarrierType], and
+/// add the barrier to the container like any other widget.
 class Barrier extends HelperWidget {
+  /// Barrier type that follows the leftmost left edge of its widgets.
   static const int left = 0;
+
+  /// Barrier type that follows the rightmost right edge of its widgets.
   static const int right = 1;
+
+  /// Barrier type that follows the topmost top edge of its widgets.
   static const int top = 2;
+
+  /// Barrier type that follows the bottommost bottom edge of its widgets.
   static const int bottom = 3;
 
+  /// The barrier type: [left] (the default), [right], [top], or [bottom].
   int mBarrierType = left;
+
+  /// Whether gone widgets still count; see [setAllowsGoneWidget].
   bool mAllowsGoneWidget = true;
+
+  /// The offset added to the barrier's position; see [setMargin].
   int mMargin = 0;
   bool mResolved = false;
 
+  /// Creates a [left] barrier that references no widgets.
   Barrier() : super();
 
+  /// Creates a [left] barrier named [debugName] for debugging.
   Barrier.named(String debugName) : super() {
     setDebugName(debugName);
   }
 
+  /// Always true: a barrier can reference another barrier whatever its
+  /// visibility.
   @override
   bool allowedInBarrier() => true;
 
+  /// The barrier type: [left], [right], [top], or [bottom].
   int getBarrierType() => mBarrierType;
+
+  /// Set which side the barrier follows: [left], [right], [top], or
+  /// [bottom].
   void setBarrierType(int barrierType) => mBarrierType = barrierType;
 
+  /// Set whether referenced widgets that are [ConstraintWidget.GONE] still
+  /// count (true by default). When false, they are skipped.
   void setAllowsGoneWidget(bool allowsGoneWidget) =>
       mAllowsGoneWidget = allowsGoneWidget;
+
+  /// Find if this barrier supports gone widgets; see [setAllowsGoneWidget].
   bool getAllowsGoneWidget() => mAllowsGoneWidget;
 
+  /// Set the offset added to the barrier's position: a positive margin moves
+  /// the barrier right or down, whatever its type.
   void setMargin(int margin) => mMargin = margin;
+
+  /// The offset set by [setMargin].
   int getMargin() => mMargin;
 
+  /// The axis the barrier positions along: [ConstraintWidget.HORIZONTAL] for
+  /// a [left] or [right] barrier, [ConstraintWidget.VERTICAL] for a [top] or
+  /// [bottom] one, and [ConstraintWidget.UNKNOWN] for an invalid type.
   int getOrientation() {
     switch (mBarrierType) {
       case left:
@@ -56,6 +93,9 @@ class Barrier extends HelperWidget {
     return ConstraintWidget.UNKNOWN;
   }
 
+  /// Mark each widget the barrier uses as in a barrier along its axis (see
+  /// [ConstraintWidget.setInBarrier]). Gone widgets are skipped when they
+  /// are not allowed ([setAllowsGoneWidget]).
   void markWidgets() {
     for (var i = 0; i < mWidgetsCount; i++) {
       final widget = mWidgets[i]!;
@@ -73,6 +113,9 @@ class Barrier extends HelperWidget {
   static const bool _USE_RESOLUTION = true;
   static const bool _USE_RELAX_GONE = false;
 
+  /// When every widget the barrier uses is already resolved along its axis,
+  /// resolve the barrier's position from their outermost edge plus the
+  /// margin, and return true. Otherwise return false.
   bool allSolved() {
     if (!_USE_RESOLUTION) {
       return false;

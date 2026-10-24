@@ -47,6 +47,15 @@ class ValuesRow extends ArrayRow {
 }
 
 /// Represents and solves a system of linear equations.
+///
+/// This is the Cassowary-style solver that
+/// [ConstraintWidgetContainer.layout] falls back to. Get a variable for each
+/// anchor with [createObjectVariable], add equations with [addEquality],
+/// [addGreaterThan], [addLowerThan], [addCentering], and the like, call
+/// [minimize], then read the results with [getObjectVariableValue]. An
+/// equation's `strength` is one of the [SolverVariable] `STRENGTH_`
+/// constants: [SolverVariable.STRENGTH_FIXED] makes it required, and the
+/// solver satisfies the others by order of strength.
 class LinearSystem {
   static bool USE_DEPENDENCY_ORDERING = false;
   static bool USE_BASIC_SYNONYMS = true;
@@ -75,7 +84,12 @@ class LinearSystem {
   List<ArrayRow?> mRows = [];
 
   // if true, will use graph optimizations
+  /// If true, [minimize] only computes the values, without optimizing, when
+  /// every row is a simple definition.
   bool graphOptimizer = false;
+
+  /// Same as [graphOptimizer]. The container's solver loop sets it when the
+  /// optimization level includes the graph optimizations.
   bool newgraphOptimizer = false;
 
   late List<bool> _alreadyTestedCandidates = List.filled(_tableSize, false);
@@ -94,6 +108,7 @@ class LinearSystem {
 
   late Row _tempGoal;
 
+  /// Creates an empty system.
   LinearSystem() {
     mRows = List<ArrayRow?>.filled(_tableSize, null);
     _releaseRows();
@@ -181,6 +196,9 @@ class LinearSystem {
   // Creation of rows / variables / errors
   /*------------------------------------------------------------------------*/
 
+  /// Returns the solver variable for [anchor], a [ConstraintAnchor],
+  /// registering it with this system on first use (or after [reset]).
+  /// Returns null for null or for any other object.
   SolverVariable? createObjectVariable(Object? anchor) {
     if (anchor == null) {
       return null;
@@ -211,6 +229,8 @@ class LinearSystem {
     return variable;
   }
 
+  /// Creates an empty row (an equation), from the pool when possible, to fill
+  /// in and pass to [addConstraint].
   ArrayRow createRow() {
     ArrayRow? row;
     if (OPTIMIZED_ENGINE) {
@@ -232,6 +252,7 @@ class LinearSystem {
     return row;
   }
 
+  /// Creates a slack variable (restricted to positive values).
   SolverVariable createSlackVariable() {
     if (mNumColumns + 1 >= _maxColumns) {
       _increaseTableSize();
@@ -244,6 +265,8 @@ class LinearSystem {
     return variable;
   }
 
+  /// Creates an extra variable (a slack), which [addConstraint] uses for a
+  /// row that has no suitable subject variable.
   SolverVariable createExtraVariable() {
     if (mNumColumns + 1 >= _maxColumns) {
       _increaseTableSize();
@@ -256,6 +279,8 @@ class LinearSystem {
     return variable;
   }
 
+  /// Adds a new error variable of [strength] to [row], with [sign] as its
+  /// coefficient.
   void addSingleError(ArrayRow row, int sign, int strength) {
     final error = createErrorVariable(strength, null);
     row.addSingleError(error, sign);
@@ -276,6 +301,8 @@ class LinearSystem {
     return variable;
   }
 
+  /// Creates an error variable of [strength] and adds it to the goal that
+  /// [minimize] minimizes. [prefix] is not used.
   SolverVariable createErrorVariable(int strength, String? prefix) {
     if (mNumColumns + 1 >= _maxColumns) {
       _increaseTableSize();
@@ -324,13 +351,19 @@ class LinearSystem {
   /// Simple accessor for the current goal, used when minimizing the system.
   Row getGoal() => _goal;
 
+  /// The row at index [n], or null.
   ArrayRow? getRow(int n) => mRows[n];
 
+  /// The computed value of the variable named [name] (see [getVariable]),
+  /// which is created, unrestricted, if it does not exist.
   double getValueFor(String name) {
     final v = getVariable(name, SolverVariableType.unrestricted);
     return v.computedValue;
   }
 
+  /// The solved position of [object], a [ConstraintAnchor], as an `int`
+  /// (the computed value plus 0.5, truncated), or 0 when the anchor has no
+  /// solver variable.
   int getObjectVariableValue(Object object) {
     final anchor = object as ConstraintAnchor;
     // Upstream gates this on Chain.USE_CHAIN_OPTIMIZATION (statically false).
@@ -388,6 +421,8 @@ class LinearSystem {
     _computeValues();
   }
 
+  /// Remove the rows that are simple definitions (a variable equal to a
+  /// constant), giving their variables those values.
   void cleanupRows() {
     var i = 0;
     while (i < mNumRows) {
@@ -517,6 +552,8 @@ class LinearSystem {
     }
   }
 
+  /// Remove [row] if it is a simple definition, fixing its variable at the
+  /// row's constant value. Other rows are left in place.
   void removeRow(ArrayRow row) {
     if (row.mIsSimpleDefinition && row.mVariable != null) {
       if (row.mVariable!.mDefinitionId != -1) {
@@ -741,10 +778,14 @@ class LinearSystem {
   /// Debug hook (no-op in the port; upstream prints the system state).
   void displayReadableRows() {}
 
+  /// The number of rows (equations) in the system.
   int getNumEquations() => mNumRows;
 
+  /// The number of variables created since the system was created or
+  /// [reset].
   int getNumVariables() => mVariablesID;
 
+  /// The cache of pooled rows and variables this system uses.
   Cache getCache() => mCache;
 
   /*------------------------------------------------------------------------*/
@@ -769,6 +810,8 @@ class LinearSystem {
     addConstraint(row);
   }
 
+  /// Add a required equation of the form `a >= b + margin`, as barriers use.
+  /// [hasMatchConstraintWidgets] is not used.
   void addGreaterBarrier(
     SolverVariable a,
     SolverVariable b,
@@ -800,6 +843,8 @@ class LinearSystem {
     addConstraint(row);
   }
 
+  /// Add a required equation of the form `a <= b + margin`, as barriers use.
+  /// [hasMatchConstraintWidgets] is not used.
   void addLowerBarrier(
     SolverVariable a,
     SolverVariable b,
@@ -832,6 +877,7 @@ class LinearSystem {
     addConstraint(row);
   }
 
+  /// Add an equation of the form `a - b = (c - d) * ratio`.
   void addRatio(
     SolverVariable a,
     SolverVariable b,

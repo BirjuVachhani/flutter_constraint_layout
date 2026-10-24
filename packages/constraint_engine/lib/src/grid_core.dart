@@ -18,10 +18,27 @@ import 'virtual_layout.dart';
 ///
 /// Widgets referenced by the grid are constrained to invisible "box" widgets
 /// that form the grid skeleton (one chain per axis).
+///
+/// The grid places the widgets added to it into the cells of [setRows] rows
+/// and [setColumns] columns, in order, skipping the cells [setSkips] names;
+/// [setSpans] lets a widget cover several cells. Like every
+/// [VirtualLayout], it needs a [Measurer] that calls [measure], which
+/// builds the grid.
 class GridCore extends VirtualLayout {
+  /// Orientation that fills the grid row by row. The default; see
+  /// [setOrientation].
   static const int HORIZONTAL = 0;
+
+  /// Orientation that fills the grid column by column.
   static const int VERTICAL = 1;
+
+  /// Flag (see [setFlags]) that reads a span's size as columns x rows
+  /// instead of rows x columns.
   static const int SUB_GRID_BY_COL_ROW = 0;
+
+  /// Flag (see [setFlags]) that places the widgets strictly in order and
+  /// gives a span to the widget that lands on its position. Without it, the
+  /// spans go to the first widgets, in the order the spans are listed.
   static const int SPANS_RESPECT_WIDGET_ORDER = 1;
   static const int _DEFAULT_SIZE = 3;
   static const int _MAX_ROWS = 50;
@@ -74,11 +91,15 @@ class GridCore extends VirtualLayout {
   bool _spansRespectWidgetOrder = false;
   bool _subGridByColRow = false;
 
+  /// Creates a grid whose numbers of rows and columns are derived from the
+  /// number of widgets (see [setRows]).
   GridCore() {
     _updateActualRowsAndColumns();
     _initMatrices();
   }
 
+  /// Creates a grid of [rows] rows and [columns] columns (0 derives the
+  /// count, as in [setRows]); a count above 50 falls back to 3.
   GridCore.sized(int rows, int columns) {
     _rowsSet = rows;
     _columnsSet = columns;
@@ -92,11 +113,19 @@ class GridCore extends VirtualLayout {
     _initMatrices();
   }
 
+  /// Get the parent [ConstraintWidgetContainer]; see [setContainer].
   ConstraintWidgetContainer? getContainer() => mContainer;
 
+  /// Set the parent [ConstraintWidgetContainer], which the grid's box
+  /// widgets belong to. [measure] sets it to the grid's parent.
   void setContainer(ConstraintWidgetContainer container) =>
       mContainer = container;
 
+  /// Set the spans: comma-separated `position:rowsxcolumns` entries (such as
+  /// `0:2x2`), each making a widget cover that many rows and columns from
+  /// the cell at `position` (see [SPANS_RESPECT_WIDGET_ORDER] for which
+  /// widget). In a grid of one row or one column, an entry is
+  /// `position:span`.
   void setSpans(String spans) {
     if (_spans != null && _spans == spans) {
       return;
@@ -105,6 +134,8 @@ class GridCore extends VirtualLayout {
     _spans = spans;
   }
 
+  /// Set the cells to leave empty: comma-separated `position:rowsxcolumns`
+  /// entries (`position:count` in a grid of one row or one column).
   void setSkips(String skips) {
     if (_skips != null && _skips == skips) {
       return;
@@ -113,8 +144,10 @@ class GridCore extends VirtualLayout {
     _skips = skips;
   }
 
+  /// Get the gap between columns; see [setHorizontalGaps].
   double getHorizontalGaps() => _horizontalGaps;
 
+  /// Set the gap between columns. Negative values are ignored.
   void setHorizontalGaps(double horizontalGaps) {
     if (horizontalGaps < 0) {
       return;
@@ -125,8 +158,10 @@ class GridCore extends VirtualLayout {
     _horizontalGaps = horizontalGaps;
   }
 
+  /// Get the gap between rows; see [setVerticalGaps].
   double getVerticalGaps() => _verticalGaps;
 
+  /// Set the gap between rows. Negative values are ignored.
   void setVerticalGaps(double verticalGaps) {
     if (verticalGaps < 0) {
       return;
@@ -137,8 +172,13 @@ class GridCore extends VirtualLayout {
     _verticalGaps = verticalGaps;
   }
 
+  /// Get the row weights set by [setRowWeights], or null.
   String? getRowWeights() => _rowWeights;
 
+  /// Set the row weights: comma-separated numbers, one per row (such as
+  /// `1,2,1`), that share the grid's height between the rows. A list whose
+  /// length differs from the number of rows, or that does not parse, is
+  /// ignored.
   void setRowWeights(String rowWeights) {
     if (_rowWeights != null && _rowWeights == rowWeights) {
       return;
@@ -146,8 +186,13 @@ class GridCore extends VirtualLayout {
     _rowWeights = rowWeights;
   }
 
+  /// Get the column weights set by [setColumnWeights], or null.
   String? getColumnWeights() => _columnWeights;
 
+  /// Set the column weights: comma-separated numbers, one per column (such
+  /// as `1,2,1`), that share the grid's width between the columns. A list
+  /// whose length differs from the number of columns, or that does not
+  /// parse, is ignored.
   void setColumnWeights(String columnWeights) {
     if (_columnWeights != null && _columnWeights == columnWeights) {
       return;
@@ -155,8 +200,11 @@ class GridCore extends VirtualLayout {
     _columnWeights = columnWeights;
   }
 
+  /// Get the orientation: [HORIZONTAL] or [VERTICAL].
   int getOrientation() => _orientation;
 
+  /// Set the order the cells fill in: [HORIZONTAL] (row by row, the
+  /// default) or [VERTICAL] (column by column). Other values are ignored.
   void setOrientation(int orientation) {
     if (!(orientation == HORIZONTAL || orientation == VERTICAL)) {
       return;
@@ -167,6 +215,9 @@ class GridCore extends VirtualLayout {
     _orientation = orientation;
   }
 
+  /// Set the number of rows, from 1 to 50, or 0 to derive it from the
+  /// number of columns and of widgets (and when both counts are 0, the
+  /// grid is made about square). Other values are ignored.
   void setRows(int rows) {
     // 0 means "derive from the column count and the widget count"; anything
     // negative is nonsense and would size the matrices to a negative length.
@@ -181,6 +232,9 @@ class GridCore extends VirtualLayout {
     _initVariables();
   }
 
+  /// Set the number of columns, from 1 to 50, or 0 to derive it from the
+  /// number of rows and of widgets (see [setRows]). Other values are
+  /// ignored.
   void setColumns(int columns) {
     // See setRows: 0 derives, negative is rejected.
     if (columns < 0 || columns > _MAX_COLUMNS) {
@@ -194,8 +248,11 @@ class GridCore extends VirtualLayout {
     _initVariables();
   }
 
+  /// Get the flags set by [setFlags], or null.
   List<int>? getFlags() => _flags;
 
+  /// Set the flags of the grid: a list of [SUB_GRID_BY_COL_ROW] and
+  /// [SPANS_RESPECT_WIDGET_ORDER].
   void setFlags(List<int> flags) => _flags = flags;
 
   /// Handle the span use cases.
@@ -741,6 +798,11 @@ class GridCore extends VirtualLayout {
     }
   }
 
+  /// Build the grid: derive the numbers of rows and columns, apply the skips
+  /// and spans, and create the box widgets (adding them to the parent
+  /// container). The widgets are constrained to their cells when the grid is
+  /// added to the solver. Reports the given size on a
+  /// [BasicMeasure.EXACTLY] axis and the current size on the others.
   @override
   void measure(int widthMode, int widthSize, int heightMode, int heightSize) {
     super.measure(widthMode, widthSize, heightMode, heightSize);

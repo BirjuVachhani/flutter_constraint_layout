@@ -9,6 +9,7 @@
 import 'array_row.dart';
 import 'linear_system.dart';
 
+/// Type of variables.
 enum SolverVariableType {
   /// The variable can take negative or positive values.
   unrestricted,
@@ -29,16 +30,38 @@ enum SolverVariableType {
 /// Represents a given variable used in the [LinearSystem] linear expression
 /// solver.
 class SolverVariable implements Comparable<SolverVariable> {
+  // Strengths, weakest first. The solver minimizes the errors of a higher
+  // strength before any of a lower one.
+
+  /// The weakest strength.
   static const int STRENGTH_NONE = 0;
+
+  /// A strength above [STRENGTH_NONE].
   static const int STRENGTH_LOW = 1;
+
+  /// A strength above [STRENGTH_LOW].
   static const int STRENGTH_MEDIUM = 2;
+
+  /// A strength above [STRENGTH_MEDIUM].
   static const int STRENGTH_HIGH = 3;
+
+  /// A strength above [STRENGTH_HIGH].
   static const int STRENGTH_HIGHEST = 4;
+
+  /// A strength above [STRENGTH_HIGHEST].
   static const int STRENGTH_EQUALITY = 5;
+
+  /// A strength above [STRENGTH_EQUALITY].
   static const int STRENGTH_BARRIER = 6;
+
+  /// A strength above [STRENGTH_BARRIER].
   static const int STRENGTH_CENTERING = 7;
+
+  /// The strength of a required equation: the [LinearSystem] `add` methods
+  /// add no error variable for it.
   static const int STRENGTH_FIXED = 8;
 
+  /// The number of strengths, one more than [STRENGTH_FIXED].
   static const int MAX_STRENGTH = 9;
 
   /// Upstream increments a counter that only feeds debug variable naming

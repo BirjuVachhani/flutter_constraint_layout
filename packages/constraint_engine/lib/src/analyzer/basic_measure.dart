@@ -17,35 +17,122 @@ import '../virtual_layout.dart';
 /// The host callback used to measure intrinsic child sizes.
 /// In Flutter this is implemented by calling `RenderBox.layout`.
 abstract class Measurer {
+  /// Measure [widget] as [measure] requests, and write the result to its
+  /// outputs.
+  ///
+  /// Report the content's natural size on a [DimensionBehaviour.wrapContent]
+  /// axis (and on a [ConstraintWidget.MATCH_CONSTRAINT_WRAP] one), and the
+  /// proposed size on the others. Set [Measure.measuredWidth],
+  /// [Measure.measuredHeight], [Measure.measuredBaseline], and
+  /// [Measure.measuredHasBaseline] on every call: the engine reuses its
+  /// [Measure] objects, then copies the outputs onto [widget].
+  ///
+  /// A [VirtualLayout] arranges its widgets in its own
+  /// [VirtualLayout.measure], which only a measurer runs: call it and report
+  /// [VirtualLayout.getMeasuredWidth] and [VirtualLayout.getMeasuredHeight].
   void measure(ConstraintWidget widget, Measure measure);
+
+  /// Called after [BasicMeasure] has measured all the children of a
+  /// container, on the [ConstraintWidgetContainer.measure] path.
+  /// [ConstraintWidgetContainer.layout] never calls it.
   void didMeasures();
 }
 
+/// The request and the result of one [Measurer.measure] call.
+///
+/// The engine fills in the request ([horizontalBehavior],
+/// [verticalBehavior], [horizontalDimension], [verticalDimension], and
+/// [measureStrategy]), and the measurer writes the `measured` outputs.
 class Measure {
+  /// Measure strategy of a measure made before the solver has sized the
+  /// widget: a match-constraint axis is measured from its content.
   static const int SELF_DIMENSIONS = 0;
+
+  /// Measure strategy after a solver pass: a match-constraint axis should be
+  /// measured at the proposed size, unless the measurer has reason to
+  /// measure its content again (as Android's does for a
+  /// [ConstraintWidget.MATCH_CONSTRAINT_WRAP] axis whose other axis changed).
   static const int TRY_GIVEN_DIMENSIONS = 1;
+
+  /// Measure strategy that requires a match-constraint axis to be measured
+  /// at the proposed size, used for the last re-measure.
   static const int USE_GIVEN_DIMENSIONS = 2;
 
+  /// Request: how the width is measured. Usually the widget's own
+  /// behaviour, but the engine may pass another, such as
+  /// [DimensionBehaviour.fixed] for a match-constraint axis it has resolved.
   DimensionBehaviour? horizontalBehavior;
+
+  /// Request: how the height is measured. Usually the widget's own
+  /// behaviour, but the engine may pass another, such as
+  /// [DimensionBehaviour.fixed] for a match-constraint axis it has resolved.
   DimensionBehaviour? verticalBehavior;
+
+  /// Request: the width the engine proposes. On a wrap-content axis it is
+  /// not a limit: it holds the widget's stored width or 0.
   int horizontalDimension = 0;
+
+  /// Request: the height the engine proposes. On a wrap-content axis it is
+  /// not a limit: it holds the widget's stored height or 0.
   int verticalDimension = 0;
+
+  /// Result: the measured width.
   int measuredWidth = 0;
+
+  /// Result: the measured height.
   int measuredHeight = 0;
+
+  /// Result: the baseline's distance from the top of the measured widget, or
+  /// 0 for none.
   int measuredBaseline = 0;
+
+  /// Result: whether the widget has a baseline. Report it together with
+  /// [measuredBaseline]: the engine marks the widget as having a baseline
+  /// when [measuredBaseline] is positive (see
+  /// [ConstraintWidget.setBaselineDistance]).
   bool measuredHasBaseline = false;
+
+  /// Result: true to ask [BasicMeasure] for another solver pass, as
+  /// Android's measurer does when the measured size differs from the
+  /// proposed one. [BasicMeasure.measure] clears it before each call.
   bool measuredNeedsSolverPass = false;
+
+  /// Request: [SELF_DIMENSIONS], [TRY_GIVEN_DIMENSIONS], or
+  /// [USE_GIVEN_DIMENSIONS].
   int measureStrategy = 0;
 }
 
+/// Implements basic measure for linear resolution: the passes of
+/// [ConstraintWidgetContainer.measure], which measure the children through
+/// the container's [Measurer], solve the layout, and measure again the
+/// children whose size depends on the result.
 class BasicMeasure {
+  /// The bit shift of the mode in an Android `MeasureSpec`, used to build
+  /// [EXACTLY] and [AT_MOST].
   static const int MODE_SHIFT = 30;
+
+  /// Measure mode with no constraint on the size (Android's
+  /// `MeasureSpec.UNSPECIFIED`).
   static const int UNSPECIFIED = 0;
+
+  /// Measure mode where the size is exactly the given size (Android's
+  /// `MeasureSpec.EXACTLY`).
   static const int EXACTLY = 1 << MODE_SHIFT;
+
+  /// Measure mode where the size is at most the given size (Android's
+  /// `MeasureSpec.AT_MOST`).
   static const int AT_MOST = 2 << MODE_SHIFT;
 
+  /// Android's `LayoutParams.MATCH_PARENT` size. Kept from upstream; the
+  /// engine itself does not read it.
   static const int MATCH_PARENT = -1;
+
+  /// Android's `LayoutParams.WRAP_CONTENT` size. Kept from upstream; the
+  /// engine itself does not read it.
   static const int WRAP_CONTENT = -2;
+
+  /// The size value upstream uses for a fixed size. Kept from upstream; the
+  /// engine itself does not read it.
   static const int FIXED = -3;
 
   final List<ConstraintWidget> _variableDimensionsWidgets = [];
@@ -53,9 +140,14 @@ class BasicMeasure {
 
   final ConstraintWidgetContainer _constraintWidgetContainer;
 
+  /// Creates the measure passes of [constraintWidgetContainer], which
+  /// creates its own ([ConstraintWidgetContainer.mBasicMeasureSolver]).
   BasicMeasure(ConstraintWidgetContainer constraintWidgetContainer)
     : _constraintWidgetContainer = constraintWidgetContainer;
 
+  /// Record which children of [layout] have a match-constraint axis (they
+  /// are measured again after solving), and invalidate the layout's
+  /// dependency graph.
   void updateHierarchy(ConstraintWidgetContainer layout) {
     _variableDimensionsWidgets.clear();
     final childCount = layout.mChildren.length;
@@ -179,7 +271,8 @@ class BasicMeasure {
     _constraintWidgetContainer.mSkipFallbackRemeasure = false;
   }
 
-  /// Called by the host's onMeasure equivalent.
+  /// Called by the host's onMeasure equivalent, through
+  /// [ConstraintWidgetContainer.measure].
   void solverMeasure(
     ConstraintWidgetContainer layout,
     int optimizationLevel,

@@ -9,7 +9,14 @@ import 'constraint_widget_container.dart';
 
 /// Interface to virtual objects (helpers) such as Barrier.
 abstract class Helper {
+  /// Update the helper's constraints for [container]. A host calls it after
+  /// setting the referenced widgets ([add]), before layout; the engine does
+  /// not call it.
   void updateConstraints(ConstraintWidgetContainer container);
+
+  /// Reference [widget] from this helper.
   void add(ConstraintWidget widget);
+
+  /// Remove every referenced widget.
   void removeAllIds();
 }

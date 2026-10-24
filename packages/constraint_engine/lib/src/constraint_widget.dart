@@ -21,60 +21,171 @@ import 'solver_variable.dart';
 import 'virtual_layout.dart';
 
 /// How a widget resizes along an axis.
-enum DimensionBehaviour { fixed, wrapContent, matchConstraint, matchParent }
+enum DimensionBehaviour {
+  /// Keep the stored size (see [ConstraintWidget.setWidth] and
+  /// [ConstraintWidget.setHeight]). The default.
+  fixed,
 
-/// A constraint widget model supporting constraint relations to other widgets.
+  /// Size to the content: the size the [Measurer] reports or, for a
+  /// container, the size that wraps its children.
+  wrapContent,
+
+  /// Size from the constraints, according to the axis's match-constraint mode
+  /// (see [ConstraintWidget.setHorizontalMatchStyle]).
+  matchConstraint,
+
+  /// Fill the parent, minus this widget's margins on that axis.
+  matchParent,
+}
+
+/// Implements a constraint widget model supporting constraint relations
+/// between other widgets.
+///
+/// A widget is a rectangle with anchors for its sides ([mLeft], [mTop],
+/// [mRight], [mBottom]), its [mBaseline], and its center ([mCenterX],
+/// [mCenterY], [mCenter]). Connecting an anchor to an anchor of another
+/// widget with [connect] creates a constraint between the two. When both
+/// opposite anchors of an axis are connected, the widget is pulled toward
+/// both targets: a widget of fixed size is centered between them, or placed
+/// by its bias, and a [DimensionBehaviour.matchConstraint] widget stretches
+/// to fill the space between them.
+///
+/// Positions and sizes are integers. After a layout, read the result with
+/// [getX], [getY], [getWidth], and [getHeight], or with [getLeft], [getTop],
+/// [getRight], and [getBottom].
 class ConstraintWidget {
   // ---- match constraint types ----
+  /// Match-constraint mode that fills the space between the anchors. The
+  /// default.
   static const int MATCH_CONSTRAINT_SPREAD = 0;
+
+  /// Match-constraint mode that uses the content's size, capped at the space
+  /// between the anchors.
   static const int MATCH_CONSTRAINT_WRAP = 1;
+
+  /// Match-constraint mode that takes a fraction of the parent's size (see
+  /// [setHorizontalMatchStyle]).
   static const int MATCH_CONSTRAINT_PERCENT = 2;
+
+  /// Match-constraint mode the engine uses for an axis derived from the other
+  /// one through the dimension ratio: a spread axis switches to it when a
+  /// ratio is set.
   static const int MATCH_CONSTRAINT_RATIO = 3;
+
+  /// Match-constraint mode for a ratio-derived axis whose size the engine has
+  /// already computed from the other, non-match-constraint axis, so it is
+  /// treated as fixed.
   static const int MATCH_CONSTRAINT_RATIO_RESOLVED = 4;
 
+  /// Marker for an unset or unknown value, such as an unset ratio side or
+  /// chain weight.
   static const int UNKNOWN = -1;
+
+  /// The horizontal orientation (the x axis), also the index of horizontal
+  /// entries in per-axis lists such as [mListDimensionBehaviors].
   static const int HORIZONTAL = 0;
+
+  /// The vertical orientation (the y axis), also the index of vertical
+  /// entries in per-axis lists such as [mListDimensionBehaviors].
   static const int VERTICAL = 1;
+
+  /// Both orientations.
   static const int BOTH = 2;
 
+  /// Visibility of a visible widget. The default.
   static const int VISIBLE = 0;
+
+  /// Visibility of a widget that is hidden but keeps its space in the
+  /// layout.
   static const int INVISIBLE = 4;
+
+  /// Visibility of a widget that takes no space: it lays out as 0 x 0, its
+  /// own margins stop applying, and anchors connected to it use their gone
+  /// margin when one is set.
   static const int GONE = 8;
 
+  /// Chain style that spreads the widgets out, with equal gaps at both ends
+  /// and between the widgets. The default.
   static const int CHAIN_SPREAD = 0;
+
+  /// Chain style that puts the first and last widgets against the chain's
+  /// anchors and spreads the others between them.
   static const int CHAIN_SPREAD_INSIDE = 1;
+
+  /// Chain style that keeps the widgets together, placed by the chain head's
+  /// bias.
   static const int CHAIN_PACKED = 2;
 
+  /// Index of the left anchor in [mListAnchors].
   static const int ANCHOR_LEFT = 0;
+
+  /// Index of the right anchor in [mListAnchors].
   static const int ANCHOR_RIGHT = 1;
+
+  /// Index of the top anchor in [mListAnchors].
   static const int ANCHOR_TOP = 2;
+
+  /// Index of the bottom anchor in [mListAnchors].
   static const int ANCHOR_BOTTOM = 3;
+
+  /// Index of the baseline anchor in [mListAnchors].
   static const int ANCHOR_BASELINE = 4;
 
+  /// The default bias, 0.5: centered between two opposite constraints.
   static const double DEFAULT_BIAS = 0.5;
 
+  /// Java's `Integer.MAX_VALUE`, which the engine uses as the "no bound"
+  /// value of a maximum size.
   static const int intMaxValue = 0x7fffffff;
+
+  /// Java's `Integer.MIN_VALUE`. [updateFromRuns] and [updateFromSolver]
+  /// treat an edge at this value (or at [intMaxValue]) as unresolved.
   static const int intMinValue = -0x80000000;
 
   // ---- graph measurement fields ----
   bool measured = false;
   ChainRun? horizontalChainRun;
   ChainRun? verticalChainRun;
+
+  /// The dependency-graph run of the horizontal axis, created by
+  /// [ensureWidgetRuns].
   HorizontalWidgetRun? mHorizontalRun;
+
+  /// The dependency-graph run of the vertical axis, created by
+  /// [ensureWidgetRuns].
   VerticalWidgetRun? mVerticalRun;
   List<bool> isTerminalWidget = [true, true];
   bool mResolvedHasRatio = false;
   bool mMeasureRequested = true;
 
   // ---- match constraint config ----
+  /// The match-constraint mode of the width, one of the `MATCH_CONSTRAINT_`
+  /// constants; see [setHorizontalMatchStyle].
   int mMatchConstraintDefaultWidth = MATCH_CONSTRAINT_SPREAD;
+
+  /// The match-constraint mode of the height, one of the `MATCH_CONSTRAINT_`
+  /// constants; see [setVerticalMatchStyle].
   int mMatchConstraintDefaultHeight = MATCH_CONSTRAINT_SPREAD;
   List<int> mResolvedMatchConstraintDefault = [0, 0];
+
+  /// The minimum of a match-constraint width, or 0 for none.
   int mMatchConstraintMinWidth = 0;
+
+  /// The maximum of a match-constraint width, or 0 for none.
   int mMatchConstraintMaxWidth = 0;
+
+  /// The fraction of the parent's width that [MATCH_CONSTRAINT_PERCENT]
+  /// takes.
   double mMatchConstraintPercentWidth = 1;
+
+  /// The minimum of a match-constraint height, or 0 for none.
   int mMatchConstraintMinHeight = 0;
+
+  /// The maximum of a match-constraint height, or 0 for none.
   int mMatchConstraintMaxHeight = 0;
+
+  /// The fraction of the parent's height that [MATCH_CONSTRAINT_PERCENT]
+  /// takes.
   double mMatchConstraintPercentHeight = 1;
   bool mIsWidthWrapContent = false;
   bool mIsHeightWrapContent = false;
@@ -82,43 +193,63 @@ class ConstraintWidget {
   int mResolvedDimensionRatioSide = UNKNOWN;
   double mResolvedDimensionRatio = 1.0;
 
+  /// Whether the widget has a baseline; see [setBaselineDistance].
   bool mHasBaseline = false;
   bool mInVirtualLayout = false;
 
   // ---- anchors ----
+  /// The left edge's anchor.
   late final ConstraintAnchor mLeft = ConstraintAnchor(
     this,
     ConstraintAnchorType.left,
   );
+
+  /// The top edge's anchor.
   late final ConstraintAnchor mTop = ConstraintAnchor(
     this,
     ConstraintAnchorType.top,
   );
+
+  /// The right edge's anchor.
   late final ConstraintAnchor mRight = ConstraintAnchor(
     this,
     ConstraintAnchorType.right,
   );
+
+  /// The bottom edge's anchor.
   late final ConstraintAnchor mBottom = ConstraintAnchor(
     this,
     ConstraintAnchorType.bottom,
   );
+
+  /// The baseline's anchor.
   late final ConstraintAnchor mBaseline = ConstraintAnchor(
     this,
     ConstraintAnchorType.baseline,
   );
+
+  /// The horizontal center's anchor.
   late final ConstraintAnchor mCenterX = ConstraintAnchor(
     this,
     ConstraintAnchorType.centerX,
   );
+
+  /// The vertical center's anchor.
   late final ConstraintAnchor mCenterY = ConstraintAnchor(
     this,
     ConstraintAnchorType.centerY,
   );
+
+  /// The center point's anchor, used for circular positioning (see
+  /// [connectCircularConstraint]).
   late final ConstraintAnchor mCenter = ConstraintAnchor(
     this,
     ConstraintAnchorType.center,
   );
 
+  /// The left, right, top, bottom, baseline, and center anchors, in that
+  /// order, so the `ANCHOR_` constants index them. A [Guideline] points every
+  /// entry at its single anchor.
   late List<ConstraintAnchor> mListAnchors = [
     mLeft,
     mRight,
@@ -127,49 +258,100 @@ class ConstraintWidget {
     mBaseline,
     mCenter,
   ];
+
+  /// Every anchor of this widget; see [getAnchors].
   final List<ConstraintAnchor> mAnchors = [];
 
+  /// The dimension behaviour of each axis, indexed by [HORIZONTAL] and
+  /// [VERTICAL].
   List<DimensionBehaviour> mListDimensionBehaviors = [
     DimensionBehaviour.fixed,
     DimensionBehaviour.fixed,
   ];
 
+  /// The parent widget, or null for a root.
   ConstraintWidget? mParent;
 
+  /// The stored width. A layout writes the resolved width back here, and
+  /// [getWidth] reports 0 instead while the widget is [GONE].
   int mWidth = 0;
+
+  /// The stored height. A layout writes the resolved height back here, and
+  /// [getHeight] reports 0 instead while the widget is [GONE].
   int mHeight = 0;
+
+  /// The dimension ratio, or 0 for none; see [setDimensionRatio].
   double mDimensionRatio = 0;
+
+  /// The side the dimension ratio computes; see [setDimensionRatio].
   int mDimensionRatioSide = UNKNOWN;
 
+  /// The stored x position, without the parent's padding (see [getX]).
   int mX = 0;
+
+  /// The stored y position, without the parent's padding (see [getY]).
   int mY = 0;
   int mOffsetX = 0;
   int mOffsetY = 0;
 
+  /// The baseline's distance from the top edge; see [setBaselineDistance].
   int mBaselineDistance = 0;
 
+  /// The minimum width; see [setMinWidth].
   int mMinWidth = 0;
+
+  /// The minimum height; see [setMinHeight].
   int mMinHeight = 0;
 
+  /// The horizontal bias; see [setHorizontalBiasPercent].
   double mHorizontalBiasPercent = DEFAULT_BIAS;
+
+  /// The vertical bias; see [setVerticalBiasPercent].
   double mVerticalBiasPercent = DEFAULT_BIAS;
 
+  /// The visibility: [VISIBLE], [INVISIBLE], or [GONE].
   int mVisibility = VISIBLE;
+
+  /// The name used in debug output; see [setDebugName].
   String? mDebugName;
+
+  /// The type name that [toString] prints and [getType] returns, or null.
   String? mTypeName;
 
+  /// The style of the horizontal chain this widget heads; see
+  /// [setHorizontalChainStyle].
   int mHorizontalChainStyle = CHAIN_SPREAD;
+
+  /// The style of the vertical chain this widget heads; see
+  /// [setVerticalChainStyle].
   int mVerticalChainStyle = CHAIN_SPREAD;
 
+  /// The chain weights, indexed by [HORIZONTAL] and [VERTICAL], or [UNKNOWN]
+  /// (-1) when unset; see [setHorizontalWeight].
   List<double> mWeight = [UNKNOWN.toDouble(), UNKNOWN.toDouble()];
 
   // Solver integration state (see addToSolver).
+  /// Value of [mHorizontalResolution] or [mVerticalResolution] for an axis
+  /// resolved directly, whose constraints [addToSolver] then skips.
+  /// [Optimizer.checkMatchParent] sets it for match-parent axes.
   static const int DIRECT = 2;
   static const int _WRAP = -2;
   static const bool _USE_WRAP_DIMENSION_FOR_SPREAD = false;
+
+  /// Wrap behaviour of a widget that counts toward a wrap-content parent's
+  /// size on both axes. The default; see [setWrapBehaviorInParent].
   static const int WRAP_BEHAVIOR_INCLUDED = 0;
+
+  /// Wrap behaviour of a widget that counts toward a wrap-content parent's
+  /// width only.
   static const int WRAP_BEHAVIOR_HORIZONTAL_ONLY = 1;
+
+  /// Wrap behaviour of a widget that counts toward a wrap-content parent's
+  /// height only.
   static const int WRAP_BEHAVIOR_VERTICAL_ONLY = 2;
+
+  /// Wrap behaviour of a widget that does not count toward a wrap-content
+  /// parent's size.
   static const int WRAP_BEHAVIOR_SKIPPED = 3;
 
   int mHorizontalResolution = UNKNOWN;
@@ -196,11 +378,14 @@ class ConstraintWidget {
     _addAnchors();
   }
 
+  /// Creates a widget named [debugName] for debugging, at (0, 0) with a size
+  /// of 0 x 0.
   ConstraintWidget.named(String debugName) {
     _addAnchors();
     setDebugName(debugName);
   }
 
+  /// Creates a widget at ([x], [y]) with the given [width] and [height].
   ConstraintWidget.rect(int x, int y, int width, int height) {
     mX = x;
     mY = y;
@@ -209,6 +394,7 @@ class ConstraintWidget {
     _addAnchors();
   }
 
+  /// Creates a widget at (0, 0) with the given [width] and [height].
   ConstraintWidget.size(int width, int height) {
     mX = 0;
     mY = 0;
@@ -217,6 +403,8 @@ class ConstraintWidget {
     _addAnchors();
   }
 
+  /// Creates a widget at (0, 0) with the given [width] and [height], named
+  /// [debugName] for debugging.
   ConstraintWidget.sizeNamed(String debugName, int width, int height) {
     mX = 0;
     mY = 0;
@@ -237,11 +425,15 @@ class ConstraintWidget {
     mAnchors.add(mBaseline);
   }
 
+  /// Create this widget's dependency-graph runs ([mHorizontalRun] and
+  /// [mVerticalRun]) if they do not exist yet.
   void ensureWidgetRuns() {
     mHorizontalRun ??= HorizontalWidgetRun(this);
     mVerticalRun ??= VerticalWidgetRun(this);
   }
 
+  /// The dependency-graph run of [orientation] ([HORIZONTAL] or [VERTICAL]),
+  /// or null for another value or before [ensureWidgetRuns] created it.
   WidgetRun? getRun(int orientation) {
     if (orientation == HORIZONTAL) {
       return mHorizontalRun;
@@ -259,24 +451,52 @@ class ConstraintWidget {
   void setMaxWidth(int v) => mMaxDimension[HORIZONTAL] = v;
   void setMaxHeight(int v) => mMaxDimension[VERTICAL] = v;
 
+  /// Set whether this widget has a baseline. [setBaselineDistance] also sets
+  /// it, to whether the distance is positive.
   void setHasBaseline(bool v) => mHasBaseline = v;
+
+  /// Whether this widget has a baseline (same as [hasBaseline]).
   bool getHasBaseline() => mHasBaseline;
 
+  /// Set whether this widget needs to be measured again: a hint for
+  /// measurers that cache their results. [Flow] sets it when it changes a
+  /// widget's size, and a measurer typically clears it after measuring.
   void setMeasureRequested(bool v) => mMeasureRequested = v;
+
+  /// Whether a measure was requested ([setMeasureRequested]) and the widget
+  /// is not [GONE].
   bool isMeasureRequested() => mMeasureRequested && mVisibility != GONE;
 
+  /// Returns true if the widget is the root widget (it has no parent).
   bool isRoot() => mParent == null;
+
+  /// Returns the parent of this widget, or null for a root.
   ConstraintWidget? getParent() => mParent;
+
+  /// Set the parent of this widget. [WidgetContainer.add] and
+  /// [WidgetContainer.remove] set it.
   void setParent(ConstraintWidget? widget) => mParent = widget;
 
+  /// Set the visibility of this widget: [VISIBLE], [INVISIBLE], or [GONE].
   void setVisibility(int visibility) => mVisibility = visibility;
+
+  /// The visibility of this widget: [VISIBLE], [INVISIBLE], or [GONE].
   int getVisibility() => mVisibility;
 
+  /// The name of this widget used in debug output such as [toString], or
+  /// null.
   String? getDebugName() => mDebugName;
+
+  /// Set the name of this widget used in debug output.
   void setDebugName(String? name) => mDebugName = name;
 
+  /// The type name of this widget: [mTypeName], which is null unless set.
+  /// [Guideline] and [ConstraintWidgetContainer] return fixed names.
   String? getType() => mTypeName;
 
+  /// Return the x position of the widget, relative to its parent. When the
+  /// parent is a [ConstraintWidgetContainer], this includes the parent's left
+  /// padding.
   int getX() {
     final p = mParent;
     if (p is ConstraintWidgetContainer) {
@@ -285,6 +505,9 @@ class ConstraintWidget {
     return mX;
   }
 
+  /// Return the y position of the widget, relative to its parent. When the
+  /// parent is a [ConstraintWidgetContainer], this includes the parent's top
+  /// padding.
   int getY() {
     final p = mParent;
     if (p is ConstraintWidgetContainer) {
@@ -293,9 +516,14 @@ class ConstraintWidget {
     return mY;
   }
 
+  /// Return the width of the widget, or 0 when it is [GONE].
   int getWidth() => mVisibility == GONE ? 0 : mWidth;
+
+  /// Return the height of the widget, or 0 when it is [GONE].
   int getHeight() => mVisibility == GONE ? 0 : mHeight;
 
+  /// Get the dimension of the widget in [orientation]: [getWidth] for
+  /// [HORIZONTAL], [getHeight] for [VERTICAL], and 0 otherwise.
   int getLength(int orientation) {
     if (orientation == HORIZONTAL) {
       return getWidth();
@@ -305,17 +533,35 @@ class ConstraintWidget {
     return 0;
   }
 
+  /// Return the minimum width of the widget; see [setMinWidth].
   int getMinWidth() => mMinWidth;
+
+  /// Return the minimum height of the widget; see [setMinHeight].
   int getMinHeight() => mMinHeight;
 
+  /// Return the left position of the widget (same as [getX]).
   int getLeft() => getX();
+
+  /// Return the top position of the widget (same as [getY]).
   int getTop() => getY();
+
+  /// Return the right position of the widget: [getX] plus the stored width.
   int getRight() => getX() + mWidth;
+
+  /// Return the bottom position of the widget: [getY] plus the stored
+  /// height.
   int getBottom() => getY() + mHeight;
 
+  /// Return the horizontal bias, used when both horizontal sides are
+  /// constrained; see [setHorizontalBiasPercent].
   double getHorizontalBiasPercent() => mHorizontalBiasPercent;
+
+  /// Return the vertical bias, used when both vertical sides are constrained;
+  /// see [setVerticalBiasPercent].
   double getVerticalBiasPercent() => mVerticalBiasPercent;
 
+  /// Return the bias of [orientation] ([HORIZONTAL] or [VERTICAL]), or
+  /// [UNKNOWN] (-1) for another value.
   double getBiasPercent(int orientation) {
     if (orientation == HORIZONTAL) {
       return mHorizontalBiasPercent;
@@ -325,19 +571,33 @@ class ConstraintWidget {
     return UNKNOWN.toDouble();
   }
 
+  /// Return true if this widget has a baseline.
   bool hasBaseline() => mHasBaseline;
+
+  /// Return the baseline distance relative to the top of the widget.
   int getBaselineDistance() => mBaselineDistance;
 
+  /// Return the anchors of this widget ([mAnchors]). A [Guideline] has only
+  /// its single anchor.
   List<ConstraintAnchor> getAnchors() => mAnchors;
 
+  /// Set the x position of the widget, relative to its parent ([getX] adds a
+  /// container parent's left padding).
   void setX(int x) => mX = x;
+
+  /// Set the y position of the widget, relative to its parent ([getY] adds a
+  /// container parent's top padding).
   void setY(int y) => mY = y;
 
+  /// Set both the x and y positions of the widget (see [setX] and [setY]).
   void setOrigin(int x, int y) {
     mX = x;
     mY = y;
   }
 
+  /// Set the margin the [type] anchor uses when the widget it connects to is
+  /// [GONE]. Only the side and baseline anchors take one. Set it after
+  /// connecting the anchor: [connect] resets it.
   void setGoneMargin(ConstraintAnchorType type, int goneMargin) {
     switch (type) {
       case ConstraintAnchorType.left:
@@ -360,6 +620,7 @@ class ConstraintWidget {
     }
   }
 
+  /// Set the width of the widget, raised to [getMinWidth] if smaller.
   void setWidth(int w) {
     mWidth = w;
     if (mWidth < mMinWidth) {
@@ -367,6 +628,7 @@ class ConstraintWidget {
     }
   }
 
+  /// Set the height of the widget, raised to [getMinHeight] if smaller.
   void setHeight(int h) {
     mHeight = h;
     if (mHeight < mMinHeight) {
@@ -374,6 +636,8 @@ class ConstraintWidget {
     }
   }
 
+  /// Set the dimension of the widget in [orientation]: the width for
+  /// [HORIZONTAL] (as [setWidth] does) or the height for [VERTICAL].
   void setLength(int length, int orientation) {
     if (orientation == HORIZONTAL) {
       setWidth(length);
@@ -382,6 +646,14 @@ class ConstraintWidget {
     }
   }
 
+  /// Set how a [DimensionBehaviour.matchConstraint] width is sized.
+  ///
+  /// [horizontalMatchStyle] is [MATCH_CONSTRAINT_SPREAD],
+  /// [MATCH_CONSTRAINT_WRAP], or [MATCH_CONSTRAINT_PERCENT]. [min] and [max]
+  /// bound the width, where 0 means no bound (as does [intMaxValue] for
+  /// [max]). [percent] is the fraction (0 to 1) of the parent's width that
+  /// [MATCH_CONSTRAINT_PERCENT] takes; the spread style with a [percent]
+  /// strictly between 0 and 1 switches to [MATCH_CONSTRAINT_PERCENT].
   void setHorizontalMatchStyle(
     int horizontalMatchStyle,
     int min,
@@ -399,6 +671,14 @@ class ConstraintWidget {
     }
   }
 
+  /// Set how a [DimensionBehaviour.matchConstraint] height is sized.
+  ///
+  /// [verticalMatchStyle] is [MATCH_CONSTRAINT_SPREAD],
+  /// [MATCH_CONSTRAINT_WRAP], or [MATCH_CONSTRAINT_PERCENT]. [min] and [max]
+  /// bound the height, where 0 means no bound (as does [intMaxValue] for
+  /// [max]). [percent] is the fraction (0 to 1) of the parent's height that
+  /// [MATCH_CONSTRAINT_PERCENT] takes; the spread style with a [percent]
+  /// strictly between 0 and 1 switches to [MATCH_CONSTRAINT_PERCENT].
   void setVerticalMatchStyle(
     int verticalMatchStyle,
     int min,
@@ -416,6 +696,15 @@ class ConstraintWidget {
     }
   }
 
+  /// Set the dimension ratio from a string: `width:height` (such as `16:9`)
+  /// or a single number, optionally prefixed with the side to compute, `W,`
+  /// for the width or `H,` for the height (case-insensitive). A single number
+  /// is used as is, so it is width / height unless the `H,` prefix makes it
+  /// height / width.
+  ///
+  /// A null or empty [ratio] removes the ratio, and one that does not parse
+  /// to a positive value is ignored. The ratio applies when at least one
+  /// axis is [DimensionBehaviour.matchConstraint]; see [setDimensionRatio].
   void setDimensionRatioString(String? ratio) {
     if (ratio == null || ratio.isEmpty) {
       mDimensionRatio = 0;
@@ -469,20 +758,48 @@ class ConstraintWidget {
     }
   }
 
+  /// Set the ratio of the widget and the side it computes.
+  ///
+  /// The ratio applies when at least one axis is
+  /// [DimensionBehaviour.matchConstraint]: that dimension is derived from
+  /// the other one. [dimensionRatioSide] is [HORIZONTAL] (derive the width),
+  /// [VERTICAL] (derive the height), or [UNKNOWN] (let the engine pick).
+  /// [ratio] is width / height, except with [VERTICAL], where it is
+  /// height / width. A ratio of 0 removes it.
   void setDimensionRatio(double ratio, int dimensionRatioSide) {
     mDimensionRatio = ratio;
     mDimensionRatioSide = dimensionRatioSide;
   }
 
+  /// Return the current ratio of this widget, or 0 when none is set.
   double getDimensionRatio() => mDimensionRatio;
+
+  /// Return the side the ratio computes: [HORIZONTAL], [VERTICAL], or
+  /// [UNKNOWN].
   int getDimensionRatioSide() => mDimensionRatioSide;
 
+  /// Set the horizontal bias to apply when both horizontal sides are
+  /// constrained: 0 puts the widget against the left target, 1 against the
+  /// right one, and 0.5 (the default) centers it. The head of a packed chain
+  /// places the whole chain with it.
   void setHorizontalBiasPercent(double v) => mHorizontalBiasPercent = v;
+
+  /// Set the vertical bias to apply when both vertical sides are
+  /// constrained: 0 puts the widget against the top target, 1 against the
+  /// bottom one, and 0.5 (the default) centers it. The head of a packed
+  /// chain places the whole chain with it.
   void setVerticalBiasPercent(double v) => mVerticalBiasPercent = v;
 
+  /// Set the minimum width of the widget (a negative value becomes 0).
+  /// [setWidth] and the layout raise smaller widths to it.
   void setMinWidth(int w) => mMinWidth = w < 0 ? 0 : w;
+
+  /// Set the minimum height of the widget (a negative value becomes 0).
+  /// [setHeight] and the layout raise smaller heights to it.
   void setMinHeight(int h) => mMinHeight = h < 0 ? 0 : h;
 
+  /// Set both the width and the height of the widget, each raised to its
+  /// minimum if smaller.
   void setDimension(int w, int h) {
     mWidth = w;
     if (mWidth < mMinWidth) mWidth = mMinWidth;
@@ -490,6 +807,12 @@ class ConstraintWidget {
     if (mHeight < mMinHeight) mHeight = mMinHeight;
   }
 
+  /// Set the position and size of the widget from its [left], [top],
+  /// [right], and [bottom] edges.
+  ///
+  /// A [GONE] widget gets a size of 0 x 0. A fixed axis never shrinks below
+  /// its stored size, both sizes are raised to their minimums, and a
+  /// match-constraint axis is capped at its match-constraint maximum.
   void setFrame(int left, int top, int right, int bottom) {
     var w = right - left;
     var h = bottom - top;
@@ -528,42 +851,93 @@ class ConstraintWidget {
     }
   }
 
+  /// Set the horizontal position and the width only, from the [left] and
+  /// [right] edges (the width is raised to its minimum if smaller).
   void setHorizontalDimension(int left, int right) {
     mX = left;
     mWidth = right - left;
     if (mWidth < mMinWidth) mWidth = mMinWidth;
   }
 
+  /// Set the vertical position and the height only, from the [top] and
+  /// [bottom] edges (the height is raised to its minimum if smaller).
   void setVerticalDimension(int top, int bottom) {
     mY = top;
     mHeight = bottom - top;
     if (mHeight < mMinHeight) mHeight = mMinHeight;
   }
 
+  /// Set the baseline distance relative to the top of the widget. A positive
+  /// distance also marks the widget as having a baseline ([hasBaseline]),
+  /// and 0 or less clears it.
   void setBaselineDistance(int baseline) {
     mBaselineDistance = baseline;
     mHasBaseline = baseline > 0;
   }
 
+  /// Set the horizontal weight (only used in chains): the match-constraint
+  /// members of a chain share its leftover space in proportion to their
+  /// weights.
   void setHorizontalWeight(double horizontalWeight) =>
       mWeight[HORIZONTAL] = horizontalWeight;
+
+  /// Set the vertical weight (only used in chains): the match-constraint
+  /// members of a chain share its leftover space in proportion to their
+  /// weights.
   void setVerticalWeight(double verticalWeight) =>
       mWeight[VERTICAL] = verticalWeight;
 
+  /// Set the style of the horizontal chain this widget heads:
+  /// [CHAIN_SPREAD] (the default), [CHAIN_SPREAD_INSIDE], or [CHAIN_PACKED].
+  /// Only the chain head's style is used.
   void setHorizontalChainStyle(int v) => mHorizontalChainStyle = v;
+
+  /// Return the style of the horizontal chain this widget heads; see
+  /// [setHorizontalChainStyle].
   int getHorizontalChainStyle() => mHorizontalChainStyle;
+
+  /// Set the style of the vertical chain this widget heads: [CHAIN_SPREAD]
+  /// (the default), [CHAIN_SPREAD_INSIDE], or [CHAIN_PACKED]. Only the chain
+  /// head's style is used.
   void setVerticalChainStyle(int v) => mVerticalChainStyle = v;
+
+  /// Return the style of the vertical chain this widget heads; see
+  /// [setVerticalChainStyle].
   int getVerticalChainStyle() => mVerticalChainStyle;
 
+  /// Returns true if this widget should be used by a [Barrier] that does not
+  /// allow gone widgets (see [Barrier.setAllowsGoneWidget]): true unless the
+  /// widget is [GONE].
   bool allowedInBarrier() => mVisibility != GONE;
 
   // ---- connections ----
+  /// Connect the given anchors together, as [connect] does. [from] must be
+  /// an anchor of this widget; otherwise nothing happens.
   void connectAnchors(ConstraintAnchor from, ConstraintAnchor to, int margin) {
     if (from.getOwner() == this) {
       connect(from.getType(), to.getOwner(), to.getType(), margin);
     }
   }
 
+  /// Connect the [constraintFrom] anchor of this widget to the
+  /// [constraintTo] anchor of [target], keeping [margin] as a minimum
+  /// distance between the two.
+  ///
+  /// The margin is measured away from the target, so a margin on a right or
+  /// bottom anchor moves the widget left or up. An invalid pair, such as
+  /// left to top, is ignored (see [ConstraintAnchor.isValidConnection]).
+  /// Connecting a baseline drops the top and bottom connections, and
+  /// connecting a top or bottom drops the baseline connection.
+  ///
+  /// The center types connect pairs of sides, without a margin:
+  /// [ConstraintAnchorType.centerX] connects both left and right (to the
+  /// target's centerX, left, or right), and [ConstraintAnchorType.centerY]
+  /// both top and bottom. [ConstraintAnchorType.center] is meant for
+  /// [connectCircularConstraint]: connected to another center here, it
+  /// connects the sides of each axis that has no connection yet, and when
+  /// both axes are free it also connects the center anchor, which leaves the
+  /// widget uncentered without an angle. Use centerX and centerY to center a
+  /// widget.
   void connect(
     ConstraintAnchorType constraintFrom,
     ConstraintWidget target,
@@ -718,12 +1092,16 @@ class ConstraintWidget {
     }
   }
 
+  /// Reset all connections of this widget's anchors (see
+  /// [ConstraintAnchor.reset]).
   void resetAnchors() {
     for (final anchor in mAnchors) {
       anchor.reset();
     }
   }
 
+  /// Given a type of anchor, returns the corresponding anchor of this widget,
+  /// or null for [ConstraintAnchorType.none].
   ConstraintAnchor? getAnchor(ConstraintAnchorType anchorType) {
     switch (anchorType) {
       case ConstraintAnchorType.left:
@@ -747,11 +1125,18 @@ class ConstraintWidget {
     }
   }
 
+  /// Accessor for the horizontal dimension behaviour (how the width is
+  /// determined).
   DimensionBehaviour getHorizontalDimensionBehaviour() =>
       mListDimensionBehaviors[HORIZONTAL];
+
+  /// Accessor for the vertical dimension behaviour (how the height is
+  /// determined).
   DimensionBehaviour getVerticalDimensionBehaviour() =>
       mListDimensionBehaviors[VERTICAL];
 
+  /// Get the dimension behaviour of [orientation] ([HORIZONTAL] or
+  /// [VERTICAL]), or null for another value.
   DimensionBehaviour? getDimensionBehaviour(int orientation) {
     if (orientation == HORIZONTAL) {
       return getHorizontalDimensionBehaviour();
@@ -761,11 +1146,18 @@ class ConstraintWidget {
     return null;
   }
 
+  /// Set the widget's behaviour for the horizontal dimension: how its width
+  /// is determined (see [DimensionBehaviour]).
   void setHorizontalDimensionBehaviour(DimensionBehaviour behaviour) =>
       mListDimensionBehaviors[HORIZONTAL] = behaviour;
+
+  /// Set the widget's behaviour for the vertical dimension: how its height is
+  /// determined (see [DimensionBehaviour]).
   void setVerticalDimensionBehaviour(DimensionBehaviour behaviour) =>
       mListDimensionBehaviors[VERTICAL] = behaviour;
 
+  /// Returns true if this widget is in a horizontal chain: connected in both
+  /// directions to a neighbour on its left or right.
   bool isInHorizontalChain() {
     if ((mLeft.mTarget != null && mLeft.mTarget!.mTarget == mLeft) ||
         (mRight.mTarget != null && mRight.mTarget!.mTarget == mRight)) {
@@ -774,6 +1166,9 @@ class ConstraintWidget {
     return false;
   }
 
+  /// Return the previous member of this widget's chain along [orientation]
+  /// ([HORIZONTAL] or [VERTICAL]), or null if this widget is the first chain
+  /// element.
   ConstraintWidget? getPreviousChainMember(int orientation) {
     if (orientation == HORIZONTAL) {
       if (mLeft.mTarget != null && mLeft.mTarget!.mTarget == mLeft) {
@@ -787,6 +1182,9 @@ class ConstraintWidget {
     return null;
   }
 
+  /// Return the next member of this widget's chain along [orientation]
+  /// ([HORIZONTAL] or [VERTICAL]), or null if this widget is the last chain
+  /// element.
   ConstraintWidget? getNextChainMember(int orientation) {
     if (orientation == HORIZONTAL) {
       if (mRight.mTarget != null && mRight.mTarget!.mTarget == mRight) {
@@ -800,6 +1198,8 @@ class ConstraintWidget {
     return null;
   }
 
+  /// Returns true if this widget is in a vertical chain: connected in both
+  /// directions to a neighbour above or below it.
   bool isInVerticalChain() {
     if ((mTop.mTarget != null && mTop.mTarget!.mTarget == mTop) ||
         (mBottom.mTarget != null && mBottom.mTarget!.mTarget == mBottom)) {
@@ -808,6 +1208,13 @@ class ConstraintWidget {
     return false;
   }
 
+  /// Copy the positions and sizes the dependency graph resolved into this
+  /// widget, for the axes [updateHorizontal] and [updateVertical] select.
+  ///
+  /// An axis is only copied once its run is resolved. A fixed axis keeps a
+  /// larger stored size, sizes are raised to their minimums, and a [GONE]
+  /// widget gets a size of 0 x 0. Does nothing for a widget without runs
+  /// (see [ensureWidgetRuns]).
   void updateFromRuns(bool updateHorizontal, bool updateVertical) {
     if (mHorizontalRun == null || mVerticalRun == null) {
       // Widgets that never entered a dependency graph (children of a nested
@@ -887,12 +1294,20 @@ class ConstraintWidget {
     }
   }
 
+  /// Whether the horizontal position and width are already resolved: set by
+  /// [setFinalHorizontal], or final values on both the left and right
+  /// anchors.
   bool isResolvedHorizontally() =>
       mResolvedHorizontal || (mLeft.hasFinalValue() && mRight.hasFinalValue());
 
+  /// Whether the vertical position and height are already resolved: set by
+  /// [setFinalVertical], or final values on both the top and bottom anchors.
   bool isResolvedVertically() =>
       mResolvedVertical || (mTop.hasFinalValue() && mBottom.hasFinalValue());
 
+  /// Resolve the horizontal axis to the left edge [x1] and the right edge
+  /// [x2], as final values on the anchors. [addToSolver] then adds them as
+  /// constants. Ignored once the axis was resolved this way.
   void setFinalHorizontal(int x1, int x2) {
     if (mResolvedHorizontal) {
       return;
@@ -904,6 +1319,9 @@ class ConstraintWidget {
     mResolvedHorizontal = true;
   }
 
+  /// Resolve the vertical axis to the top edge [y1] and the bottom edge
+  /// [y2], as final values on the anchors. [addToSolver] then adds them as
+  /// constants. Ignored once the axis was resolved this way.
   void setFinalVertical(int y1, int y2) {
     if (mResolvedVertical) {
       return;
@@ -927,18 +1345,32 @@ class ConstraintWidget {
     mCenterY.resetSolverVariable(cache);
   }
 
+  /// Mark whether a [Barrier] along [orientation] ([HORIZONTAL] or
+  /// [VERTICAL]) references this widget. [Barrier.markWidgets] sets it
+  /// before solving.
   void setInBarrier(int orientation, bool value) {
     mIsInBarrier[orientation] = value;
   }
 
+  /// Whether a [Barrier] along [orientation] references this widget; see
+  /// [setInBarrier].
   bool isInBarrier(int orientation) => mIsInBarrier[orientation];
 
+  /// Set how this widget counts toward the size of a wrap-content parent:
+  /// [WRAP_BEHAVIOR_INCLUDED] (the default), [WRAP_BEHAVIOR_HORIZONTAL_ONLY],
+  /// [WRAP_BEHAVIOR_VERTICAL_ONLY], or [WRAP_BEHAVIOR_SKIPPED]. Other values
+  /// are ignored.
+  ///
+  /// Only the solver path ([addToSolver]) reads it: a layout the dependency
+  /// graph resolves counts the widget on both axes.
   void setWrapBehaviorInParent(int behavior) {
     if (behavior >= 0 && behavior <= WRAP_BEHAVIOR_SKIPPED) {
       mWrapBehaviorInParent = behavior;
     }
   }
 
+  /// Whether an anchor of another widget is connected to one of this
+  /// widget's anchors.
   bool hasDependencies() {
     for (final anchor in mAnchors) {
       if (anchor.hasDependents()) {
@@ -948,6 +1380,9 @@ class ConstraintWidget {
     return false;
   }
 
+  /// Whether a width or height override is pending ([mWidthOverride] or
+  /// [mHeightOverride] set), which makes the solver treat that size as fixed
+  /// on its next pass.
   bool hasDimensionOverride() => mWidthOverride != -1 || mHeightOverride != -1;
 
   /// Immediate connection to an anchor without any checks.

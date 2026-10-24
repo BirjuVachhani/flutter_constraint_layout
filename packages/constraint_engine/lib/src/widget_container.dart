@@ -8,14 +8,22 @@ import 'constraint_widget.dart';
 
 /// A container of [ConstraintWidget]s.
 class WidgetContainer extends ConstraintWidget {
+  /// The children, in the order they were added.
   final List<ConstraintWidget> mChildren = [];
 
+  /// Creates an empty container at (0, 0) with a size of 0 x 0.
   WidgetContainer() : super();
+
+  /// Creates an empty container at ([x], [y]) with the given [width] and
+  /// [height].
   WidgetContainer.rect(int x, int y, int width, int height)
     : super.rect(x, y, width, height);
+
+  /// Creates an empty container at (0, 0) with the given [width] and
+  /// [height].
   WidgetContainer.size(int width, int height) : super.size(width, height);
 
-  /// Add a child widget.
+  /// Add a child widget, removing it from the parent it had.
   void add(ConstraintWidget widget) {
     mChildren.add(widget);
     if (widget.getParent() != null) {
@@ -25,20 +33,23 @@ class WidgetContainer extends ConstraintWidget {
     widget.setParent(this);
   }
 
+  /// Add multiple child widgets, in order, as [add] does.
   void addAll(List<ConstraintWidget> widgets) {
     for (final w in widgets) {
       add(w);
     }
   }
 
-  /// Remove a child widget.
+  /// Remove a child widget and clear its parent.
   void remove(ConstraintWidget widget) {
     mChildren.remove(widget);
     widget.setParent(null);
   }
 
+  /// Access the children ([mChildren] itself, not a copy).
   List<ConstraintWidget> getChildren() => mChildren;
 
+  /// Remove all the children. Their parent references are left as they are.
   void removeAllChildren() {
     mChildren.clear();
   }
