@@ -447,7 +447,6 @@ class RenderConstraintLayout extends RenderBox
   /// Rebuilds the engine model from scratch: one `ConstraintWidget` per child,
   /// configured from its parent data.
   void _buildModel(BoxConstraints constraints, bool boundedW, bool boundedH) {
-    _needsModelRebuild = false;
     _modelChildren.clear();
     _modelChildData.clear();
     _modelWidgets.clear();
@@ -501,6 +500,13 @@ class RenderConstraintLayout extends RenderBox
 
     _measurer = _FlutterMeasurer(renderOf, _needsBaseline);
     container.setMeasurer(_measurer);
+
+    // Cleared only once the model is complete. Applying config can throw (an
+    // unresolvable link id reports through an assert), and clearing on entry
+    // would leave a half-built model that looks clean: every later layout
+    // would then skip the rebuild and fail on the null measurer instead of
+    // re-reporting the real problem.
+    _needsModelRebuild = false;
   }
 
   /// Applies the full `Constrained` config from [pd] to engine widget [w].
