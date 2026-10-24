@@ -871,6 +871,69 @@ void main() {
       expect(ro.debugModelBuilds, builds);
       await expectMatchesFresh(tester, () => children(38));
     });
+
+    testWidgets('constrainedWrap text follows its content past the cap and '
+        'back', (tester) async {
+      // 20px glyphs in a 400-wide layout, inset 16 on each side. A 5-letter
+      // word fits at 100 x 20. Four 9-letter words wrap two to a line at the
+      // full 400, but capped at 368 they wrap one to a line: 80 tall.
+      const size = Size(400, 600);
+      List<Widget> children(String text) => [
+            Constrained(
+              id: #t,
+              left: .leftOf(parent, margin: 16),
+              right: .rightOf(parent, margin: 16),
+              top: .topOf(parent),
+              width: .constrainedWrap(),
+              child: Text(text, style: const TextStyle(fontSize: 20)),
+            ),
+          ];
+      const short = 'Short';
+      const long = 'AAAAAAAAA BBBBBBBBB CCCCCCCCC DDDDDDDDD';
+      await tester.pumpWidget(host(children(short), size: size));
+      final ro = layoutOf(tester);
+      expect(geometryOf(tester)[1], [150.0, 0.0, 100.0, 20.0]);
+      final builds = ro.debugModelBuilds;
+      final applies = ro.debugConfigApplies;
+
+      // Only the text changes: no Constrained field differs, so this must
+      // reach the container through layout dirtiness alone.
+      await tester.pumpWidget(host(children(long), size: size));
+      expect(geometryOf(tester)[1], [16.0, 0.0, 368.0, 80.0],
+          reason: 'capped at 368, the text must be measured again there');
+
+      await tester.pumpWidget(host(children(short), size: size));
+      expect(geometryOf(tester)[1], [150.0, 0.0, 100.0, 20.0],
+          reason: 'a capped child must not become a relayout boundary');
+      expect(ro.debugModelBuilds, builds);
+      expect(ro.debugConfigApplies, applies);
+      await expectMatchesFresh(tester, () => children(short), size: size);
+    });
+
+    testWidgets('constrainedWrap on both axes keeps following content that '
+        'fits', (tester) async {
+      List<Widget> children(Size natural) => [
+            Constrained(
+              id: #a,
+              left: .leftOf(parent),
+              right: .rightOf(parent),
+              top: .topOf(parent),
+              bottom: .bottomOf(parent),
+              width: .constrainedWrap(),
+              height: .constrainedWrap(),
+              child: IntrinsicBox(natural),
+            ),
+          ];
+      await tester.pumpWidget(host(children(const Size(80, 40))));
+      expect(geometryOf(tester)[1], [360.0, 280.0, 80.0, 40.0]);
+
+      // The re-measure after the solve must not pin the child to the size it
+      // already has: that tight layout would make it a relayout boundary.
+      await tester.pumpWidget(host(children(const Size(120, 60))));
+      expect(geometryOf(tester)[1], [340.0, 270.0, 120.0, 60.0],
+          reason: 'content growth inside the caps must reach the container');
+      await expectMatchesFresh(tester, () => children(const Size(120, 60)));
+    });
   });
 
   group('paint-only changes', () {

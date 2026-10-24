@@ -49,6 +49,64 @@ class _TextLikeMeasurer implements Measurer {
   void didMeasures() {}
 }
 
+/// [_TextLikeMeasurer]'s content on widgets sized MATCH_CONSTRAINT_WRAP along
+/// their lines, measured the way a host measurer must measure that style:
+/// around the content when measured on its own (SELF_DIMENSIONS), and at the
+/// size the solver gave it when re-measured after a solve (TRY_GIVEN_DIMENSIONS
+/// and USE_GIVEN_DIMENSIONS), as Android's view measurer does once the other
+/// axis is stable. The lines run along the width, or along the height when
+/// [vertical] is set (text turned a quarter turn).
+class _WrapStyleMeasurer implements Measurer {
+  _WrapStyleMeasurer(this.length, {this.vertical = false});
+
+  /// Content length per widget, keyed by debug name.
+  final Map<String, int> length;
+
+  /// Whether the lines run along the height instead of the width.
+  final bool vertical;
+
+  /// Extent of one line across the line axis.
+  final int lineHeight = 20;
+
+  @override
+  void measure(ConstraintWidget widget, Measure measure) {
+    final len = length[widget.getDebugName()] ?? 0;
+    final lineBehavior = vertical
+        ? measure.verticalBehavior
+        : measure.horizontalBehavior;
+    final lineDefault = vertical
+        ? widget.mMatchConstraintDefaultHeight
+        : widget.mMatchConstraintDefaultWidth;
+    final aroundContent =
+        lineBehavior == DimensionBehaviour.wrapContent ||
+        (lineBehavior == DimensionBehaviour.matchConstraint &&
+            lineDefault == ConstraintWidget.MATCH_CONSTRAINT_WRAP &&
+            measure.measureStrategy == Measure.SELF_DIMENSIONS);
+    final line = aroundContent
+        ? len // natural single-line extent
+        : (vertical ? measure.verticalDimension : measure.horizontalDimension);
+
+    final int across;
+    if ((vertical ? measure.horizontalBehavior : measure.verticalBehavior) ==
+        DimensionBehaviour.wrapContent) {
+      final l = line <= 0 ? 1 : line;
+      final lines = (len + l - 1) ~/ l; // ceil(len / line)
+      across = (lines <= 0 ? 1 : lines) * lineHeight;
+    } else {
+      across = vertical ? measure.horizontalDimension : measure.verticalDimension;
+    }
+
+    measure.measuredWidth = vertical ? across : line;
+    measure.measuredHeight = vertical ? line : across;
+    measure.measuredHasBaseline = false;
+    measure.measuredBaseline = 0;
+    widget.setMeasureRequested(false);
+  }
+
+  @override
+  void didMeasures() {}
+}
+
 void main() {
   group('measure ordering: wrap size depends on resolved match size', () {
     test('matchConstraint width resolves before the wrapContent height is '
@@ -127,6 +185,108 @@ void main() {
       expect(b.getHeight(), 20);
       // Barrier and the follower below it sit at the tall column's height.
       expect(follower.getTop(), 40);
+    });
+  });
+
+  group('measure ordering: a capped MATCH_CONSTRAINT_WRAP axis is measured '
+      'again at its capped size', () {
+    // A MATCH_CONSTRAINT_WRAP axis is measured around its content, and only
+    // the solver caps it. Content whose other axis depends on it must then be
+    // measured again at the capped size, or it keeps the size it measured at
+    // its natural (uncapped) extent.
+    ConstraintWidget wrapStyled(
+      ConstraintWidgetContainer root, {
+      int min = 0,
+      int max = 0,
+      bool vertical = false,
+    }) {
+      final a = ConstraintWidget()..setDebugName('a');
+      root.add(a);
+      if (vertical) {
+        a.setVerticalDimensionBehaviour(DimensionBehaviour.matchConstraint);
+        a.setVerticalMatchStyle(
+            ConstraintWidget.MATCH_CONSTRAINT_WRAP, min, max, 1);
+        a.setHorizontalDimensionBehaviour(DimensionBehaviour.wrapContent);
+      } else {
+        a.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
+        a.setHorizontalMatchStyle(
+            ConstraintWidget.MATCH_CONSTRAINT_WRAP, min, max, 1);
+        a.setVerticalDimensionBehaviour(DimensionBehaviour.wrapContent);
+      }
+      return a;
+    }
+
+    test('a width capped by its anchors re-measures the wrapContent height '
+        'at the capped width', () {
+      final root = ConstraintWidgetContainer.rect(0, 0, 340, 600);
+      root.setMeasurer(_WrapStyleMeasurer({'a': 500}));
+      final a = wrapStyled(root);
+      a.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left, 20);
+      a.connect(ConstraintAnchorType.right, root, ConstraintAnchorType.right, 20);
+      a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+
+      root.layout();
+
+      // 500 of content capped to 340 - 20 - 20 = 300: two 20px lines, not the
+      // single line it measured at its natural width.
+      expect(a.getLeft(), 20);
+      expect(a.getWidth(), 300);
+      expect(a.getHeight(), 40, reason: 'ceil(500/300)=2 lines at 20px');
+    });
+
+    test('a width capped by its max re-measures the height at the max, with '
+        'one anchor or two', () {
+      for (final anchors in [1, 2]) {
+        final root = ConstraintWidgetContainer.rect(0, 0, 340, 600);
+        root.setMeasurer(_WrapStyleMeasurer({'a': 500}));
+        final a = wrapStyled(root, max: 200);
+        a.connect(
+            ConstraintAnchorType.left, root, ConstraintAnchorType.left, 20);
+        if (anchors == 2) {
+          a.connect(
+              ConstraintAnchorType.right, root, ConstraintAnchorType.right, 20);
+        }
+        a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+
+        root.layout();
+
+        expect(a.getWidth(), 200, reason: '$anchors anchor(s)');
+        expect(a.getHeight(), 60,
+            reason: '$anchors anchor(s): ceil(500/200)=3 lines at 20px');
+      }
+    });
+
+    test('content that fits keeps the size it measured', () {
+      final root = ConstraintWidgetContainer.rect(0, 0, 340, 600);
+      root.setMeasurer(_WrapStyleMeasurer({'a': 120}));
+      final a = wrapStyled(root, min: 100);
+      a.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left, 20);
+      a.connect(ConstraintAnchorType.right, root, ConstraintAnchorType.right, 20);
+      a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+
+      root.layout();
+
+      // Not spread: centered at its own 120 in the 300 between the anchors.
+      expect(a.getLeft(), 110);
+      expect(a.getWidth(), 120);
+      expect(a.getHeight(), 20);
+    });
+
+    test('a height capped by its anchors re-measures the wrapContent width '
+        'at the capped height', () {
+      final root = ConstraintWidgetContainer.rect(0, 0, 600, 340);
+      root.setMeasurer(_WrapStyleMeasurer({'a': 500}, vertical: true));
+      final a = wrapStyled(root, vertical: true);
+      a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top, 20);
+      a.connect(
+          ConstraintAnchorType.bottom, root, ConstraintAnchorType.bottom, 20);
+      a.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
+
+      root.layout();
+
+      expect(a.getTop(), 20);
+      expect(a.getHeight(), 300);
+      expect(a.getWidth(), 40, reason: 'ceil(500/300)=2 lines at 20px');
     });
   });
 }

@@ -15,6 +15,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// run under BOTH a bounded and an unbounded container height, and every
 /// expectation is an *oracle*: the same child laid out directly at the width the
 /// ConstraintLayout is expected to give it. No hand-computed pixels.
+///
+/// A `constrainedWrap` size sets the same trap from the other side: it is
+/// measured around its content and only then capped by the solver, so the other
+/// axis must be measured *again* at the capped size. Otherwise the child keeps
+/// the height its text took at the uncapped width, and the text is clipped.
 void main() {
   const style = TextStyle(fontSize: 14);
   const longText =
@@ -59,6 +64,20 @@ void main() {
             width: width,
             child: KeyedSubtree(key: const Key('oracle'), child: child),
           ),
+        ),
+      ),
+    );
+    return tester.getSize(find.byKey(const Key('oracle')));
+  }
+
+  /// Ground truth: the natural size of [child] under loose constraints.
+  Future<Size> naturalSize(WidgetTester tester, Widget child) async {
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: KeyedSubtree(key: const Key('oracle'), child: child),
         ),
       ),
     );
@@ -210,5 +229,265 @@ void main() {
       expect(ha, hb, reason: 'both surfaces stretch to the shared barrier');
       expect(ha, greaterThan(60), reason: 'measured at real width, not width 0');
     });
+
+    testWidgets('constrainedWrap width + wrapContent height measures wrapping '
+        'text again at the capped width ($label)', (tester) async {
+      // Measured on its own, the text wraps across the container's full 340;
+      // the links cap it at 340 - 60 - 60 = 220, where it needs more lines.
+      const containerWidth = 340.0;
+      const margin = 60.0;
+      const cappedWidth = containerWidth - 2 * margin;
+
+      final uncapped = await oracleSize(
+          tester, const Text(longText, style: style), containerWidth);
+      final oracle =
+          await oracleSize(tester, const Text(longText, style: style), cappedWidth);
+      expect(oracle.height, greaterThan(uncapped.height),
+          reason: 'precondition: the text needs more lines when capped');
+
+      await pump(
+        tester,
+        ConstraintLayout(
+          children: [
+            Constrained(
+              id: #t,
+              top: .topOf(parent),
+              left: .leftOf(parent, margin: margin),
+              right: .rightOf(parent, margin: margin),
+              width: .constrainedWrap(),
+              height: .wrapContent,
+              child: const Text(longText, key: Key('t'), style: style),
+            ),
+          ],
+        ),
+        width: containerWidth,
+        height: bounded ? 600 : null,
+      );
+
+      expect(tester.getSize(find.byKey(const Key('t'))), oracle,
+          reason: 'the height must follow the capped width, not stay at the '
+              'height the text took before the cap');
+    });
+
+    testWidgets('constrainedWrap(min:, max:) measures text at its bounded '
+        'width, with one link or two ($label)', (tester) async {
+      // Short text is widened to the min; the long text is capped at the max
+      // well inside the links, and wraps there.
+      const containerWidth = 340.0;
+      const margin = 20.0;
+      const min = 120.0;
+      const max = 200.0;
+
+      final shortOracle =
+          await oracleSize(tester, const Text('Short.', style: style), min);
+      final longOracle =
+          await oracleSize(tester, const Text(longText, style: style), max);
+      final uncapped = await oracleSize(
+          tester, const Text(longText, style: style), containerWidth);
+      expect(longOracle.height, greaterThan(uncapped.height),
+          reason: 'precondition: the text needs more lines at the max');
+
+      await pump(
+        tester,
+        ConstraintLayout(
+          children: [
+            Constrained(
+              id: #short,
+              top: .topOf(parent),
+              left: .leftOf(parent, margin: margin),
+              right: .rightOf(parent, margin: margin),
+              width: .constrainedWrap(min: min, max: max),
+              child: const Text('Short.', key: Key('short'), style: style),
+            ),
+            Constrained(
+              id: #two,
+              top: .bottomOf(#short),
+              left: .leftOf(parent, margin: margin),
+              right: .rightOf(parent, margin: margin),
+              width: .constrainedWrap(min: min, max: max),
+              child: const Text(longText, key: Key('two'), style: style),
+            ),
+            Constrained(
+              id: #one,
+              top: .bottomOf(#two),
+              left: .leftOf(parent, margin: margin),
+              width: .constrainedWrap(min: min, max: max),
+              child: const Text(longText, key: Key('one'), style: style),
+            ),
+          ],
+        ),
+        width: containerWidth,
+        height: bounded ? 2000 : null,
+      );
+
+      expect(tester.getSize(find.byKey(const Key('short'))), shortOracle);
+      expect(tester.getSize(find.byKey(const Key('two'))), longOracle,
+          reason: 'two links: the height must follow the max width');
+      expect(tester.getSize(find.byKey(const Key('one'))), longOracle,
+          reason: 'one link: the height must follow the max width');
+    });
+
+    testWidgets('constrainedWrap leaves single-line text at the size it takes '
+        'on its own ($label)', (tester) async {
+      // Text that fits keeps its natural size (it is not spread between the
+      // links), and a one-line caption that does not fit is capped and
+      // ellipsized, staying one line tall.
+      const containerWidth = 340.0;
+      const margin = 20.0;
+      const cappedWidth = containerWidth - 2 * margin;
+      const caption = Text(longText,
+          key: Key('caption'),
+          style: style,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis);
+
+      final natural =
+          await naturalSize(tester, const Text('Short.', style: style));
+      final captionOracle = await oracleSize(tester, caption, cappedWidth);
+
+      await pump(
+        tester,
+        ConstraintLayout(
+          children: [
+            Constrained(
+              id: #short,
+              top: .topOf(parent),
+              left: .leftOf(parent, margin: margin),
+              right: .rightOf(parent, margin: margin),
+              width: .constrainedWrap(),
+              child: const Text('Short.', key: Key('short'), style: style),
+            ),
+            Constrained(
+              id: #caption,
+              top: .bottomOf(#short),
+              left: .leftOf(parent, margin: margin),
+              right: .rightOf(parent, margin: margin),
+              width: .constrainedWrap(),
+              child: caption,
+            ),
+          ],
+        ),
+        width: containerWidth,
+        height: bounded ? 600 : null,
+      );
+
+      expect(tester.getSize(find.byKey(const Key('short'))), natural);
+      expect(tester.getTopLeft(find.byKey(const Key('short'))).dx,
+          margin + (cappedWidth - natural.width) / 2,
+          reason: 'centered between the links at its own width');
+      expect(tester.getSize(find.byKey(const Key('caption'))), captionOracle);
+    });
   }
+
+  testWidgets('constrainedWrap height + wrapContent width measures turned text '
+      'again at the capped height', (tester) async {
+    // A quarter turn swaps the axes: the box's width is the wrapped text's
+    // height, so capping the box's height must widen it.
+    const containerHeight = 340.0;
+    const margin = 60.0;
+    const cappedHeight = containerHeight - 2 * margin;
+
+    final uncapped = await oracleSize(
+        tester, const Text(longText, style: style), containerHeight);
+    final oracle =
+        await oracleSize(tester, const Text(longText, style: style), cappedHeight);
+    expect(oracle.height, greaterThan(uncapped.height),
+        reason: 'precondition: the text needs more lines when capped');
+
+    await pump(
+      tester,
+      ConstraintLayout(
+        children: [
+          Constrained(
+            id: #t,
+            left: .leftOf(parent),
+            top: .topOf(parent, margin: margin),
+            bottom: .bottomOf(parent, margin: margin),
+            width: .wrapContent,
+            height: .constrainedWrap(),
+            child: const RotatedBox(
+              key: Key('t'),
+              quarterTurns: 1,
+              child: Text(longText, style: style),
+            ),
+          ),
+        ],
+      ),
+      width: 600,
+      height: containerHeight,
+    );
+
+    expect(tester.getSize(find.byKey(const Key('t'))),
+        Size(oracle.height, oracle.width),
+        reason: 'the width must follow the capped height');
+  });
+
+  testWidgets('constrainedWrap on both axes measures wrapping text again at '
+      'the capped width', (tester) async {
+    const containerWidth = 340.0;
+    const margin = 60.0;
+    const cappedWidth = containerWidth - 2 * margin;
+
+    final uncapped = await oracleSize(
+        tester, const Text(longText, style: style), containerWidth);
+    final oracle =
+        await oracleSize(tester, const Text(longText, style: style), cappedWidth);
+    expect(oracle.height, greaterThan(uncapped.height),
+        reason: 'precondition: the text needs more lines when capped');
+
+    await pump(
+      tester,
+      ConstraintLayout(
+        children: [
+          Constrained(
+            id: #t,
+            top: .topOf(parent, margin: margin),
+            bottom: .bottomOf(parent, margin: margin),
+            left: .leftOf(parent, margin: margin),
+            right: .rightOf(parent, margin: margin),
+            width: .constrainedWrap(),
+            height: .constrainedWrap(),
+            child: const Text(longText, key: Key('t'), style: style),
+          ),
+        ],
+      ),
+      width: containerWidth,
+      height: 600,
+    );
+
+    expect(tester.getSize(find.byKey(const Key('t'))), oracle);
+  });
+
+  testWidgets('matchConstraint width + constrainedWrap height sizes the height '
+      'to the text wrapped at the resolved width', (tester) async {
+    const containerWidth = 340.0;
+    const margin = 20.0;
+    const resolvedWidth = containerWidth - 2 * margin;
+
+    final oracle = await oracleSize(
+        tester, const Text(longText, style: style), resolvedWidth);
+
+    await pump(
+      tester,
+      ConstraintLayout(
+        children: [
+          Constrained(
+            id: #t,
+            top: .topOf(parent, margin: margin),
+            bottom: .bottomOf(parent, margin: margin),
+            left: .leftOf(parent, margin: margin),
+            right: .rightOf(parent, margin: margin),
+            width: .matchConstraint,
+            height: .constrainedWrap(),
+            child: const Text(longText, key: Key('t'), style: style),
+          ),
+        ],
+      ),
+      width: containerWidth,
+      height: 600,
+    );
+
+    expect(tester.getSize(find.byKey(const Key('t'))), oracle,
+        reason: 'the text needs its wrapped height, not the whole span');
+  });
 }

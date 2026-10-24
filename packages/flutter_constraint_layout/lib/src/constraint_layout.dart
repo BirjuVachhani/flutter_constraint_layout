@@ -431,7 +431,7 @@ class RenderConstraintLayout extends RenderBox
       // child a non-boundary so a later content change propagates back here
       // and triggers re-resolution.
       final keepMeasuredLayout =
-          measurer.laidOut.contains(w) &&
+          measurer.laidOut.containsKey(w) &&
           (rb.size.width - ew).abs() < 1 &&
           (rb.size.height - eh).abs() < 1;
       if (!keepMeasuredLayout) {
@@ -1007,7 +1007,9 @@ class RenderConstraintLayout extends RenderBox
 /// Bridges the engine's intrinsic-measurement seam to Flutter: measures a child
 /// by laying out its [RenderBox]. Follows the same contract as the engine's
 /// default measurer (wrap axes report the child's natural size; fixed/match/
-/// match-parent axes echo the size the graph resolved).
+/// match-parent axes echo the size the graph resolved), except that a
+/// WRAP-styled match axis measured again after a solve is measured at the size
+/// the solver capped it to.
 class _FlutterMeasurer implements Measurer {
   _FlutterMeasurer(this._renderOf, this._needsBaseline);
 
@@ -1023,9 +1025,11 @@ class _FlutterMeasurer implements Measurer {
   BoxConstraints _rootConstraints = const BoxConstraints();
 
   /// Widgets whose RenderBox was laid out through this measurer during the
-  /// current engine pass. Placement uses this to keep the measure-pass layout
-  /// when it already matches the resolved size.
-  final Set<ConstraintWidget> laidOut = <ConstraintWidget>{};
+  /// current engine pass, with the constraints of the latest such layout.
+  /// Placement uses this to keep the measure-pass layout when it already
+  /// matches the resolved size.
+  final Map<ConstraintWidget, BoxConstraints> laidOut =
+      <ConstraintWidget, BoxConstraints>{};
 
   void beginPass(BoxConstraints rootConstraints) {
     _rootConstraints = rootConstraints;
@@ -1103,18 +1107,23 @@ class _FlutterMeasurer implements Measurer {
     }
 
     // A WRAP-styled matchConstraint axis sizes to content capped by the
-    // constraints, so its content must be measured like wrapContent; the
-    // engine then applies the cap (Android's view measurer does the same).
+    // constraints, so its content is measured like wrapContent and the engine
+    // then applies the cap. The re-measures that follow a solve measure it at
+    // the size the solver gave it instead, so content that reflows (wrapping
+    // text) sizes its other axis at the capped size. Android's view measurer
+    // does the same.
     final wrapW =
         measure.horizontalBehavior == DimensionBehaviour.wrapContent ||
         (measure.horizontalBehavior == DimensionBehaviour.matchConstraint &&
             widget.mMatchConstraintDefaultWidth ==
-                ConstraintWidget.MATCH_CONSTRAINT_WRAP);
+                ConstraintWidget.MATCH_CONSTRAINT_WRAP &&
+            !_measuresAtGivenSize(widget, measure, child, horizontal: true));
     final wrapH =
         measure.verticalBehavior == DimensionBehaviour.wrapContent ||
         (measure.verticalBehavior == DimensionBehaviour.matchConstraint &&
             widget.mMatchConstraintDefaultHeight ==
-                ConstraintWidget.MATCH_CONSTRAINT_WRAP);
+                ConstraintWidget.MATCH_CONSTRAINT_WRAP &&
+            !_measuresAtGivenSize(widget, measure, child, horizontal: false));
 
     final double minW, maxW, minH, maxH;
     if (wrapW) {
@@ -1129,17 +1138,28 @@ class _FlutterMeasurer implements Measurer {
     } else {
       minH = maxH = measure.verticalDimension.toDouble();
     }
-
-    child.layout(
-      BoxConstraints(
-        minWidth: minW,
-        maxWidth: maxW,
-        minHeight: minH,
-        maxHeight: maxH,
-      ),
-      parentUsesSize: true,
+    final constraints = BoxConstraints(
+      minWidth: minW,
+      maxWidth: maxW,
+      minHeight: minH,
+      maxHeight: maxH,
     );
-    laidOut.add(widget);
+
+    // A re-measure that only pins the child to the size it already took in
+    // this pass would lay it out again for the same result, and the tight
+    // layout would make it a relayout boundary, cutting its later content
+    // changes off from this container. Skip it, as Android's measure cache
+    // skips a similar measure spec.
+    final last = laidOut[widget];
+    final givenStrategy =
+        measure.measureStrategy == Measure.TRY_GIVEN_DIMENSIONS ||
+        measure.measureStrategy == Measure.USE_GIVEN_DIMENSIONS;
+    if (!givenStrategy ||
+        last == null ||
+        !_isSimilarLayout(last, child.size, constraints)) {
+      child.layout(constraints, parentUsesSize: true);
+      laidOut[widget] = constraints;
+    }
 
     measure.measuredWidth = wrapW
         ? child.size.width.round()
@@ -1162,6 +1182,69 @@ class _FlutterMeasurer implements Measurer {
     }
 
     widget.setMeasureRequested(false);
+  }
+
+  /// Whether a re-measure sizes a WRAP-styled matchConstraint axis at the size
+  /// the solver gave it rather than around its content.
+  ///
+  /// Mirrors Android's view measurer: always on USE_GIVEN_DIMENSIONS, and on
+  /// TRY_GIVEN_DIMENSIONS once the other axis is stable (the child's size on
+  /// it, from its layout earlier in this pass, is the one the solver kept) or
+  /// this axis is already resolved. While the other axis is still settling,
+  /// the content is measured again so that both sizes can follow it.
+  bool _measuresAtGivenSize(
+    ConstraintWidget widget,
+    Measure measure,
+    RenderBox child, {
+    required bool horizontal,
+  }) {
+    if (measure.measureStrategy == Measure.USE_GIVEN_DIMENSIONS) return true;
+    if (measure.measureStrategy != Measure.TRY_GIVEN_DIMENSIONS) return false;
+    // The child's size may only be read once this measurer has laid it out
+    // in this pass.
+    final otherDimensionStable =
+        laidOut.containsKey(widget) &&
+        (horizontal
+            ? child.size.height.round() == widget.getHeight()
+            : child.size.width.round() == widget.getWidth());
+    return otherDimensionStable ||
+        (horizontal
+            ? widget.isResolvedHorizontally()
+            : widget.isResolvedVertically());
+  }
+
+  /// Whether laying a child out under [next] repeats its layout under [last],
+  /// in which it took [size]: on each axis [next] either equals [last] or pins
+  /// the child to the size it already has. Android's `isSimilarSpec`, for box
+  /// constraints.
+  static bool _isSimilarLayout(
+    BoxConstraints last,
+    Size size,
+    BoxConstraints next,
+  ) {
+    bool similar(
+      double lastMin,
+      double lastMax,
+      double min,
+      double max,
+      double extent,
+    ) =>
+        (min == lastMin && max == lastMax) ||
+        (min == max && max == extent.roundToDouble());
+    return similar(
+          last.minWidth,
+          last.maxWidth,
+          next.minWidth,
+          next.maxWidth,
+          size.width,
+        ) &&
+        similar(
+          last.minHeight,
+          last.maxHeight,
+          next.minHeight,
+          next.maxHeight,
+          size.height,
+        );
   }
 
   @override

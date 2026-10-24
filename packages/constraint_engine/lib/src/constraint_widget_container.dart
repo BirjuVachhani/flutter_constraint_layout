@@ -512,9 +512,10 @@ class ConstraintWidgetContainer extends WidgetContainer {
 
       // Content whose measured size on a wrap axis depends on its resolved size
       // on a matchConstraint axis (wrapping text: height depends on width) was
-      // measured above at a not-yet-solved (zero) match size. Now that the
-      // solver has resolved the match axis, re-measure those children at the
-      // real size and re-solve if it moved anything. Mirrors the multi-pass
+      // measured above at a not-yet-solved (zero) match size, or, on a
+      // WRAP-styled axis, at its uncapped content size. Now that the solver
+      // has resolved the match axis, re-measure those children at the real
+      // size and re-solve if it moved anything. Mirrors the multi-pass
       // re-measure loop in BasicMeasure.solverMeasure, which the direct
       // layout() path would otherwise skip.
       if (!mSkipFallbackRemeasure && fallbackMeasurer != null) {
@@ -524,14 +525,20 @@ class ConstraintWidgetContainer extends WidgetContainer {
   }
 
   /// Re-measures children with one solver-resolved (matchConstraint) axis and
-  /// one wrapContent axis whose measured size depends on the resolved one (the
-  /// canonical case is wrapping text, whose height depends on its width).
+  /// one content-sized axis whose measured size depends on the resolved one
+  /// (the canonical case is wrapping text, whose height depends on its width).
   ///
   /// The fallback solver resolves match axes but does not measure them, and the
   /// pre-solve measure ran before those axes were known, so such children carry
-  /// a size measured at width/height zero. This re-measures them at the resolved
-  /// dimension and re-solves whenever a size actually changed, up to
-  /// [_maxRemeasurePasses] times; a pass that changes nothing stops early.
+  /// a size measured at width/height zero, or, when the solver capped a
+  /// MATCH_CONSTRAINT_WRAP axis, at the content's uncapped size. This
+  /// re-measures them at the resolved dimension and re-solves whenever a size
+  /// actually changed, up to [_maxRemeasurePasses] times; a pass that changes
+  /// nothing stops early. As in BasicMeasure.solverMeasure, the last pass
+  /// measures with USE_GIVEN_DIMENSIONS and the ones before it with
+  /// TRY_GIVEN_DIMENSIONS, which lets the measurer keep measuring a
+  /// MATCH_CONSTRAINT_WRAP axis around its content while its other axis is
+  /// still settling.
   void _remeasureSizeDependentChildren(Measurer measurer, int preW, int preH) {
     for (var pass = 0; pass < _maxRemeasurePasses; pass++) {
       var changed = false;
@@ -549,32 +556,45 @@ class ConstraintWidgetContainer extends WidgetContainer {
           continue;
         }
 
-        // An axis is "solver-resolved" when it is matchConstraint (spread, not
-        // the wrap-capped style) with both anchors present, so the solver sets
-        // its size directly. A wrapContent axis is instead measured from
-        // content, and only that combination can be mis-measured: one axis
-        // sized by the solver, the other wrapped around content that depends
-        // on it.
+        // An axis is "solver-resolved" when the solver sets its size: a
+        // matchConstraint axis with both anchors present, or one in the WRAP
+        // style, whose measured content size the solver caps by the space
+        // between its anchors and by its min/max. An axis is "content-sized"
+        // when its size is measured from content: wrapContent, or the WRAP
+        // style. Only that combination can be mis-measured: one axis sized by
+        // the solver, the other wrapped around content that depends on it.
+        final widthMatch =
+            widget.getHorizontalDimensionBehaviour() ==
+            DimensionBehaviour.matchConstraint;
+        final heightMatch =
+            widget.getVerticalDimensionBehaviour() ==
+            DimensionBehaviour.matchConstraint;
+        final widthMatchWrap =
+            widthMatch &&
+            widget.mMatchConstraintDefaultWidth ==
+                ConstraintWidget.MATCH_CONSTRAINT_WRAP;
+        final heightMatchWrap =
+            heightMatch &&
+            widget.mMatchConstraintDefaultHeight ==
+                ConstraintWidget.MATCH_CONSTRAINT_WRAP;
         final widthResolved =
-            widget.getHorizontalDimensionBehaviour() ==
-                DimensionBehaviour.matchConstraint &&
-            widget.mMatchConstraintDefaultWidth !=
-                ConstraintWidget.MATCH_CONSTRAINT_WRAP &&
-            widget.mLeft.mTarget != null &&
-            widget.mRight.mTarget != null;
+            widthMatchWrap ||
+            (widthMatch &&
+                widget.mLeft.mTarget != null &&
+                widget.mRight.mTarget != null);
         final heightResolved =
-            widget.getVerticalDimensionBehaviour() ==
-                DimensionBehaviour.matchConstraint &&
-            widget.mMatchConstraintDefaultHeight !=
-                ConstraintWidget.MATCH_CONSTRAINT_WRAP &&
-            widget.mTop.mTarget != null &&
-            widget.mBottom.mTarget != null;
+            heightMatchWrap ||
+            (heightMatch &&
+                widget.mTop.mTarget != null &&
+                widget.mBottom.mTarget != null);
         final widthWrap =
+            widthMatchWrap ||
             widget.getHorizontalDimensionBehaviour() ==
-            DimensionBehaviour.wrapContent;
+                DimensionBehaviour.wrapContent;
         final heightWrap =
+            heightMatchWrap ||
             widget.getVerticalDimensionBehaviour() ==
-            DimensionBehaviour.wrapContent;
+                DimensionBehaviour.wrapContent;
 
         if (!((widthResolved && heightWrap) || (heightResolved && widthWrap))) {
           continue;
@@ -582,12 +602,14 @@ class ConstraintWidgetContainer extends WidgetContainer {
 
         final preWidth = widget.getWidth();
         final preHeight = widget.getHeight();
-        // USE_GIVEN_DIMENSIONS feeds the solver-resolved size back as the fixed
-        // dimension so the wrap axis is measured against it.
+        // The given-dimension strategies feed the solver-resolved size back as
+        // the size to measure at, so the wrap axis is measured against it.
         mBasicMeasureSolver.measure(
           measurer,
           widget,
-          Measure.USE_GIVEN_DIMENSIONS,
+          pass == _maxRemeasurePasses - 1
+              ? Measure.USE_GIVEN_DIMENSIONS
+              : Measure.TRY_GIVEN_DIMENSIONS,
         );
         if (widget.getWidth() != preWidth || widget.getHeight() != preHeight) {
           changed = true;
