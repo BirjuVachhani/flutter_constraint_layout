@@ -125,6 +125,8 @@ class Constrained extends ParentDataWidget<ConstraintParentData> {
   final int? zIndex;
 
   /// Whether this child is laid out and drawn. See [ConstraintVisibility].
+  ///
+  /// A `ConstraintGroup` that references this child overrides it.
   final ConstraintVisibility visibility;
 
   @override

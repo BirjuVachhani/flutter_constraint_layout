@@ -184,14 +184,16 @@ void main(List<String> args) {
       final widgetCount = probeRoot.getChildren().length;
 
       // Verify the routing is what the label claims before timing anything:
-      // after a solver pass the LinearSystem holds the rows of the last solve,
-      // after a pure graph pass it was never touched.
+      // a solver pass creates the LinearSystem's variables, while a pure
+      // graph pass never touches it. (The row count is no probe: a solve
+      // whose equations all resolve directly ends with no rows.)
       probeRoot.layout();
+      final solverRan = probeRoot.mSystem.getNumVariables() > 0;
       final solverRows = probeRoot.mSystem.mNumRows;
-      if (solverRouted && solverRows == 0) {
+      if (solverRouted && !solverRan) {
         throw StateError('$name: expected solver fallback, graph resolved it');
       }
-      if (!solverRouted && solverRows != 0) {
+      if (!solverRouted && solverRan) {
         throw StateError('$name: expected pure graph, solver ran');
       }
 

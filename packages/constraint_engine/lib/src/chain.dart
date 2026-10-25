@@ -185,6 +185,10 @@ class Chain {
       } else {
         next = null;
       }
+      // Stop where ChainHead's walk stops (see _defineChainProperties).
+      if (identical(next, first)) {
+        next = null;
+      }
       if (next != null) {
         widget = next;
       } else {

@@ -88,17 +88,17 @@ class DemoBox extends StatelessWidget {
 
     // The box's own size is driven by the constraints the engine passes. A tight
     // axis (fixed / matchConstraint / matchParent) fills and centers the label;
-    // a loose axis (wrapContent) hugs the label. Per-axis Align factors express
-    // exactly that: `null` fills the axis, `1` shrink-wraps it.
+    // a loose axis (wrapContent) hugs the label. An Align factor of 1 expresses
+    // both: it shrink-wraps a loose axis, and a tight axis is forced to its
+    // size by the constraints, with the label centered. No LayoutBuilder: the
+    // examples sit in IntrinsicHeight rows, which ask for a dry layout.
     return DecoratedBox(
       decoration: decoration,
-      child: LayoutBuilder(
-        builder: (context, constraints) => Align(
-          alignment: Alignment.center,
-          widthFactor: constraints.hasTightWidth ? null : 1,
-          heightFactor: constraints.hasTightHeight ? null : 1,
-          child: labelWidget,
-        ),
+      child: Align(
+        alignment: Alignment.center,
+        widthFactor: 1,
+        heightFactor: 1,
+        child: labelWidget,
       ),
     );
   }

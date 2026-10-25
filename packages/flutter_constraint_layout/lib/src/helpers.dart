@@ -154,11 +154,21 @@ class Barrier extends ParentDataWidget<ConstraintParentData> {
   /// Ids of the widgets whose edges the barrier tracks.
   final List<Symbol> referenced;
 
-  /// Offset in logical pixels added to the barrier's position, so a positive
-  /// value moves it right or down in both text directions: past the tracked
-  /// edge of a right or bottom barrier, back over the referenced widgets for
-  /// a left or top one (`.start` in left-to-right text and `.end` in
-  /// right-to-left text track left edges).
+  /// Offset in logical pixels added to the barrier's position.
+  ///
+  /// For a `.left`, `.right`, `.top`, or `.bottom` barrier, a positive value
+  /// moves it right or down in both text directions: past the tracked edge of
+  /// a right or bottom barrier, back over the referenced widgets for a left
+  /// or top one.
+  ///
+  /// A `.start` or `.end` barrier applies the margin along the text
+  /// direction, like its edge: a positive value moves it toward the end,
+  /// which is right in left-to-right text and left in right-to-left text. So
+  /// a positive margin always moves an `.end` barrier past the referenced
+  /// widgets and a `.start` barrier back over them, and a right-to-left
+  /// layout is the exact mirror of its left-to-right twin. This is a
+  /// deliberate difference from Android, where a positive margin moves every
+  /// barrier right or down.
   final double margin;
 
   /// Whether gone widgets still contribute their (collapsed) position.
@@ -199,6 +209,86 @@ class Barrier extends ParentDataWidget<ConstraintParentData> {
     if (changed) {
       data.configDirty = true;
       data.structuralDirty = true;
+      final targetParent = renderObject.parent;
+      if (targetParent is RenderObject) {
+        targetParent.markNeedsLayout();
+      }
+    }
+  }
+
+  @override
+  Type get debugTypicalAncestorWidgetClass => ConstraintLayout;
+}
+
+/// Sets the visibility of the widgets in [referenced] all at once. Android's
+/// `Group`.
+///
+/// The group's [visibility] replaces the referenced children's own: a `.gone`
+/// group collapses every referenced child, even one declared `.visible`, and
+/// a `.visible` group shows them all. When several groups reference the same
+/// child, the group that comes last in the layout's children wins.
+///
+/// A group has no position or size and takes no part in the layout, so it
+/// cannot be the target of a link or the `referenced` entry of a barrier,
+/// flow, or grid. It can reference a `Constrained` child, a
+/// `ConstraintFlow`, or a `ConstraintGrid`. Guidelines and barriers have no
+/// visibility, so a group leaves them as they are.
+///
+/// ```dart
+/// ConstraintGroup(
+///   id: #details,
+///   referenced: [#address, #phone],
+///   visibility: showDetails ? .visible : .gone,
+/// ),
+/// ```
+class ConstraintGroup extends ParentDataWidget<ConstraintParentData> {
+  /// Creates a group that gives the widgets in [referenced] its [visibility].
+  const ConstraintGroup({
+    required this.id,
+    required this.referenced,
+    super.key,
+    this.visibility = .visible,
+  }) : super(child: const SizedBox.shrink());
+
+  /// Unique id for this group within its [ConstraintLayout].
+  final Symbol id;
+
+  /// Ids of the widgets whose visibility this group sets.
+  final List<Symbol> referenced;
+
+  /// The visibility given to every widget in [referenced], in place of its
+  /// own. See [ConstraintVisibility].
+  final ConstraintVisibility visibility;
+
+  @override
+  void applyParentData(RenderObject renderObject) {
+    final data = renderObject.parentData! as ConstraintParentData;
+    var structural = false;
+
+    if (data.id != id) {
+      data.id = id;
+      structural = true;
+    }
+    if (data.helperKind != HelperKind.group) {
+      data.helperKind = HelperKind.group;
+      structural = true;
+    }
+    if (!listEquals(data.groupReferenced, referenced)) {
+      data.groupReferenced = referenced;
+      structural = true;
+    }
+    // A visibility change alone is not structural: the layout passes it on to
+    // each referenced child as a change of that child's own visibility.
+    final visibilityChanged = data.groupVisibility != visibility;
+    if (visibilityChanged) {
+      data.groupVisibility = visibility;
+    }
+
+    if (structural || visibilityChanged) {
+      data.configDirty = true;
+      if (structural) {
+        data.structuralDirty = true;
+      }
       final targetParent = renderObject.parent;
       if (targetParent is RenderObject) {
         targetParent.markNeedsLayout();

@@ -374,14 +374,15 @@ void main() {
       a.setVerticalDimensionBehaviour(DimensionBehaviour.wrapContent);
       a.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
       a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
-      // An unrelated barrier routes the layout through the solver fallback.
+      // An unrelated circular constraint routes the layout through the
+      // solver fallback.
       final g = ConstraintWidget.size(10, 10)..setDebugName('g');
       root.add(g);
       g.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
       g.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
-      final barrier = Barrier()..setBarrierType(Barrier.right);
-      barrier.add(g);
-      root.add(barrier);
+      final h = ConstraintWidget.size(10, 10)..setDebugName('h');
+      root.add(h);
+      h.connectCircularConstraint(g, 90, 20);
       return a;
     }
 
@@ -415,5 +416,59 @@ void main() {
       expect(a.getWidth(), 200);
       expect(a.getHeight(), 60, reason: 'ceil(500/200)=3 lines at 20px');
     });
+  });
+
+  group('measure ordering: a one-link matchConstraint height is measured '
+      'around its content on the graph', () {
+    // Upstream's DependencyGraph measures a spread height that has a single
+    // link with the arguments of the width case (see UPSTREAM.md): the width
+    // as wrap content, which replaces a fixed width with the content's, and
+    // the height at its stored size. The expected values are Android's:
+    // upstream's Java engine at OPTIMIZATION_STANDARD, its solver path, with
+    // a port of the view layer's measurer and the same content gives
+    // x=10 y=5 w=100 h=100, while its own graph path gives w=500 h=20.
+    for (final solver in [false, true]) {
+      test('a fixed width is kept and the height wraps the content '
+          '(${solver ? 'solver' : 'graph'})', () {
+        final root = ConstraintWidgetContainer.rect(0, 0, 800, 600);
+        root.setMeasurer(_TextLikeMeasurer({'a': 500}));
+        final a = ConstraintWidget()..setDebugName('a');
+        root.add(a);
+        a.setHorizontalDimensionBehaviour(DimensionBehaviour.fixed);
+        a.setWidth(100);
+        a.setVerticalDimensionBehaviour(DimensionBehaviour.matchConstraint);
+        a.connect(
+          ConstraintAnchorType.left,
+          root,
+          ConstraintAnchorType.left,
+          10,
+        );
+        a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top, 5);
+        if (solver) {
+          // An unrelated circular constraint routes the layout through
+          // the solver fallback. (A barrier no longer does: the graph
+          // resolves barriers that sit on their widgets' outermost edge.)
+          final g = ConstraintWidget.size(10, 10)..setDebugName('g');
+          root.add(g);
+          g.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
+          g.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+          final h = ConstraintWidget.size(10, 10)..setDebugName('h');
+          root.add(h);
+          h.connectCircularConstraint(g, 90, 20);
+        }
+
+        root.layout();
+
+        // The solver creates variables; a graph-resolved layout never reaches
+        // it. (Its row count is no probe: a pass whose equations all resolve
+        // directly ends with no rows.)
+        expect(root.mSystem.getNumVariables() > 0, solver);
+        expect(
+          [a.getX(), a.getY(), a.getWidth(), a.getHeight()],
+          [10, 5, 100, 100],
+          reason: 'ceil(500/100)=5 lines at 20px',
+        );
+      });
+    }
   });
 }

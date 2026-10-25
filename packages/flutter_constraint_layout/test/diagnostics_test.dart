@@ -165,6 +165,89 @@ void main() {
       expect(errors, reportsError('ConstraintGrid references unknown id Symbol("missing")'));
     });
 
+    testWidgets('a group referencing a missing widget', (tester) async {
+      final errors = await layoutErrors(tester, [
+        Constrained(
+          id: #a,
+          width: .fixed(40),
+          height: .fixed(40),
+          child: const SizedBox(),
+        ),
+        const ConstraintGroup(id: #group, referenced: [#a, #missing]),
+      ]);
+      expect(
+        errors,
+        reportsError('ConstraintGroup references unknown id Symbol("missing")'),
+      );
+    });
+
+    // A group has no position or size, so it is not a target. The message
+    // says what the id is rather than calling it unknown.
+    testWidgets('a link to a group', (tester) async {
+      final errors = await layoutErrors(tester, [
+        Constrained(
+          id: #a,
+          width: .fixed(40),
+          height: .fixed(40),
+          child: const SizedBox(),
+        ),
+        Constrained(
+          id: #b,
+          top: .bottomOf(#group),
+          width: .fixed(40),
+          height: .fixed(40),
+          child: const SizedBox(),
+        ),
+        const ConstraintGroup(id: #group, referenced: [#a]),
+      ]);
+      expect(
+        errors,
+        reportsError(
+          'Constrained link targets Symbol("group"), which is a '
+          'ConstraintGroup. A group has no position or size',
+        ),
+      );
+    });
+
+    testWidgets('a barrier or another group referencing a group', (
+      tester,
+    ) async {
+      final barrierErrors = await layoutErrors(tester, [
+        Constrained(
+          id: #a,
+          width: .fixed(40),
+          height: .fixed(40),
+          child: const SizedBox(),
+        ),
+        const ConstraintGroup(id: #group, referenced: [#a]),
+        const Barrier(id: #bar, edge: .end, referenced: [#a, #group]),
+      ]);
+      expect(
+        barrierErrors,
+        reportsError(
+          'Barrier references Symbol("group"), which is a ConstraintGroup',
+        ),
+      );
+
+      final groupErrors = await layoutErrors(tester, [
+        Constrained(
+          id: #a,
+          width: .fixed(40),
+          height: .fixed(40),
+          child: const SizedBox(),
+        ),
+        const ConstraintGroup(id: #inner, referenced: [#a]),
+        const ConstraintGroup(id: #outer, referenced: [#inner]),
+      ]);
+      expect(
+        groupErrors,
+        reportsError(
+          'ConstraintGroup references Symbol("inner"), which is a '
+          'ConstraintGroup',
+        ),
+      );
+    });
+
     testWidgets('a bad id aborts the pass, and fixing it recovers', (
       tester,
     ) async {
@@ -367,5 +450,53 @@ void main() {
       expect(ro.childCount, 0);
       expect(ro.firstChild, isNull);
     });
+  });
+
+  testWidgets('an unknown id applied in place is reported again on the next '
+      'layout, not left half-applied', (tester) async {
+    List<Widget> children(Symbol target) => [
+      Constrained(
+        id: #a,
+        start: .startOf(parent, margin: 10),
+        top: .topOf(parent, margin: 10),
+        width: .fixed(50),
+        height: .fixed(50),
+        child: const SizedBox(),
+      ),
+      Constrained(
+        id: #b,
+        start: .endOf(target, margin: 5),
+        top: .bottomOf(#a, margin: 7),
+        width: .fixed(20),
+        height: .fixed(20),
+        child: const SizedBox(),
+      ),
+    ];
+    List<Rect> rects() => [
+      for (final child in roOf(tester).getChildrenAsList())
+        (child.parentData! as BoxParentData).offset & child.size,
+    ];
+    await tester.pumpWidget(host(children(#a)));
+    final ro = roOf(tester);
+    final good = rects();
+
+    final errors = <String>[];
+    final previous = FlutterError.onError;
+    FlutterError.onError = (details) => errors.add(details.exceptionAsString());
+    try {
+      await tester.pumpWidget(host(children(#nope)));
+      expect(errors, contains(contains('unknown id Symbol("nope")')));
+      errors.clear();
+      ro.markNeedsLayout();
+      await tester.pump();
+      expect(
+        errors,
+        contains(contains('unknown id Symbol("nope")')),
+        reason: 'the next layout reports it again',
+      );
+      expect(rects(), good, reason: 'no half-applied widget');
+    } finally {
+      FlutterError.onError = previous;
+    }
   });
 }

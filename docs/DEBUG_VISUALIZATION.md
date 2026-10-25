@@ -15,6 +15,14 @@
 >   for the current numbers.
 > - `playground/` was a local, git-ignored scratch app. It no longer exists;
 >   the Playground entry below says where its role lives now.
+> - The render object now keeps its engine model in one `_EngineModel`
+>   (`_model.container`, `_model.widgets`, `_model.childData`, and
+>   `_model.children`) in place of the `_container`, `_modelWidgets`,
+>   `_modelChildData`, and `_modelChildren` fields below.
+> - `HelperKind` has since gained `group`, for `ConstraintGroup`. The
+>   extractor draws nothing for a group, and painting, hit testing, and a
+>   box's `invisible` flag read a child's effective visibility (its group's,
+>   when a group references it) instead of `pd.visibility`.
 
 All phases below are complete. Final layout of the feature:
 

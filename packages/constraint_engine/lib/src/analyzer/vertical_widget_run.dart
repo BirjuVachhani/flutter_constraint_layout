@@ -42,6 +42,12 @@ class VerticalWidgetRun extends WidgetRun {
   @override
   void reset() {
     mResolved = false;
+    // Divergence from upstream, which keeps the run type of an earlier
+    // graph: apply() only sets it for a widget linked on both sides, so on a
+    // container laid out again a widget that lost one of those links since
+    // updates as centered and reads the missing target (a null check that
+    // throws out of layout()).
+    mRunType = RunType.none;
     start.clear();
     start.resolved = false;
     end.clear();
@@ -49,6 +55,13 @@ class VerticalWidgetRun extends WidgetRun {
     baseline.clear();
     baseline.resolved = false;
     mDimension.resolved = false;
+    // Divergence from upstream, which keeps the baseline dimension of an
+    // earlier graph: apply() only creates a new one while the height is
+    // unresolved, and the graph never measures a gone widget, so a widget
+    // that turned gone on a container laid out again kept the baseline of its
+    // last visible measure, and a widget on its baseline sat that far below
+    // where a fresh container (and Android) puts it. A fresh run has none.
+    mBaselineDimension = null;
   }
 
   @override
@@ -344,7 +357,11 @@ class VerticalWidgetRun extends WidgetRun {
           mWidget.mListAnchors[ConstraintWidget.ANCHOR_BASELINE],
         );
         if (target != null) {
-          addTarget(baseline, target, 0);
+          // Divergence from upstream, which links the baseline with no
+          // margin: Direct.verticalSolvingPass (setFinalBaseline) and
+          // ConstraintWidget.addToSolver both add the link's margin, so
+          // Android's default path does too. UPSTREAM.md.
+          addTarget(baseline, target, mWidget.mBaseline.getMargin());
           addTarget(start, baseline, -mWidget.getBaselineDistance());
           addTarget(end, start, mDimension.value);
         }
@@ -480,8 +497,15 @@ class VerticalWidgetRun extends WidgetRun {
         final target = getTarget(
           mWidget.mListAnchors[ConstraintWidget.ANCHOR_BASELINE],
         );
-        if (target != null) {
-          addTarget(baseline, target, 0);
+        // Divergence from upstream, which reads mBaselineDimension here
+        // unconditionally and throws (NullPointerException) for a widget
+        // that had no baseline when the graph was built: its top stays
+        // unresolved, and DependencyGraph.directMeasure declines the layout
+        // for the solver, which ignores the baseline link of a widget without
+        // a baseline as Android does. UPSTREAM.md.
+        if (target != null && mBaselineDimension != null) {
+          // The link's margin, as above (a divergence from upstream).
+          addTarget(baseline, target, mWidget.mBaseline.getMargin());
           addTargetDimension(start, baseline, -1, mBaselineDimension!);
           addTargetDimension(end, start, 1, mDimension);
         }

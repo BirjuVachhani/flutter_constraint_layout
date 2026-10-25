@@ -245,9 +245,9 @@ at 1.0.0. `website`, `site_kit`, and the storyboard are `publish_to: none`.
 
 `constraint_engine` is a port of `androidx.constraintlayout.core` pinned to one
 upstream commit. [UPSTREAM.md](packages/constraint_engine/UPSTREAM.md) records
-that commit, how the port compares with the released core versions (including
-the known `GridCore` gap), the ported scope, every intentional divergence, and
-which upstream tests are ported. To move the port forward:
+that commit, how the port compares with the released core versions, the
+ported scope, every intentional divergence, and which upstream tests are
+ported. To move the port forward:
 
 1. Diff the upstream sources between the pinned commit and the new revision,
    and apply the changes to the matching files under

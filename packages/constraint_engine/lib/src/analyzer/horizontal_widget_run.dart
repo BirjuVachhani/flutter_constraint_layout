@@ -35,6 +35,12 @@ class HorizontalWidgetRun extends WidgetRun {
   @override
   void reset() {
     mResolved = false;
+    // Divergence from upstream, which keeps the run type of an earlier
+    // graph: apply() only sets it for a widget linked on both sides, so on a
+    // container laid out again a widget that lost one of those links since
+    // updates as centered and reads the missing target (a null check that
+    // throws out of layout()).
+    mRunType = RunType.none;
     start.clear();
     start.resolved = false;
     end.clear();
@@ -662,6 +668,16 @@ class HorizontalWidgetRun extends WidgetRun {
     }
 
     if (!mDimension.resolved) {
+      return;
+    }
+    // Divergence from upstream, which centers unconditionally and throws
+    // here (IndexOutOfBoundsException) when an edge has no target: a chain
+    // member (whose run its ChainRun places, so its edges get no targets)
+    // with a percent width resolves its size through this update, which
+    // finds both edges ready. The vertical run has this guard upstream too.
+    // The edges stay unresolved, and DependencyGraph.directMeasure declines
+    // the layout unless the chain places them. UPSTREAM.md.
+    if (start.mTargets.isEmpty || end.mTargets.isEmpty) {
       return;
     }
     // centering

@@ -319,6 +319,96 @@ void main() {
       await tester.pumpWidget(bounded(true));
       expect(layoutOf(tester).size.height, 600);
     });
+
+    testWidgets('a flow re-laid out under new constraints matches a fresh one',
+        (tester) async {
+      // A match-constraint flow between the layout's edges, on an axis that
+      // wraps its content: the flow's width depends on where the chips it
+      // places sit, so the engine must not start from the positions the
+      // previous pass left behind.
+      List<Widget> children() => [
+            for (final (i, width) in const [91.0, 66.0, 66.0, 61.0].indexed)
+              Constrained(
+                id: Symbol('c$i'),
+                child: SizedBox(width: width, height: 35),
+              ),
+            ConstraintFlow(
+              id: #flow,
+              referenced: const [#c0, #c1, #c2, #c3],
+              start: .startOf(parent, margin: 12),
+              end: .endOf(parent, margin: 12),
+              top: .topOf(parent, margin: 12),
+              width: .matchConstraint,
+              wrap: .aligned,
+              horizontalGap: 8,
+              verticalGap: 8,
+              horizontalChainStyle: .packed,
+              contentHorizontalBias: 0,
+            ),
+          ];
+      Widget under(BoxConstraints constraints, {Key? key}) => Directionality(
+            textDirection: TextDirection.ltr,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: OverflowBox(
+                alignment: Alignment.topLeft,
+                minWidth: constraints.minWidth,
+                maxWidth: constraints.maxWidth,
+                minHeight: constraints.minHeight,
+                maxHeight: constraints.maxHeight,
+                child: ConstraintLayout(key: key, children: children()),
+              ),
+            ),
+          );
+
+      await tester.pumpWidget(under(const BoxConstraints(maxWidth: 332)));
+      const unboundedWidth = BoxConstraints.tightFor(height: 600);
+      await tester.pumpWidget(under(unboundedWidth));
+      expect(layoutOf(tester).debugModelBuilds, 1);
+      final persistent = geometryOf(tester);
+      await tester.pumpWidget(under(unboundedWidth, key: UniqueKey()));
+      expect(persistent, geometryOf(tester));
+    });
+
+    testWidgets('margins wider than the layout place a child at a size of 0',
+        (tester) async {
+      // 200 + 200 of margins in a 300-wide layout: the engine resolves both
+      // widths to -100.
+      Widget spread() => Constrained(
+            id: #spread,
+            start: .startOf(parent, margin: 200),
+            end: .endOf(parent, margin: 200),
+            top: .topOf(parent, margin: 50),
+            width: .matchConstraint,
+            height: .fixed(40),
+            child: const SizedBox(),
+          );
+      await tester.pumpWidget(host([
+        Constrained(
+          id: #capped,
+          start: .startOf(parent, margin: 200),
+          end: .endOf(parent, margin: 200),
+          top: .topOf(parent),
+          width: .constrainedWrap(),
+          height: .fixed(40),
+          child: const SizedBox(width: 700),
+        ),
+        spread(),
+      ], size: const Size(300, 100)));
+      expect(tester.takeException(), isNull);
+      expect(geometryOf(tester)[1][2], 0);
+      expect(geometryOf(tester)[2][2], 0);
+
+      // The fast path places the child from the stored geometry too.
+      await tester.pumpWidget(host([spread()], size: const Size(300, 100)));
+      final ro = layoutOf(tester);
+      final fastPasses = ro.debugFastPasses;
+      ro.markNeedsLayout();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(ro.debugFastPasses, fastPasses + 1);
+      expect(geometryOf(tester)[1][2], 0);
+    });
   });
 
   group('in-place config changes', () {
@@ -1110,6 +1200,244 @@ void main() {
     }
   });
 
+  group('groups', () {
+    // Two members, a sibling that depends on both, and a group. The oracle
+    // for every group change is the same layout with the members' own
+    // visibility changed instead; it keeps the group, referencing nothing,
+    // so both trees have the same children and their geometry lines up.
+    List<Widget> members({
+      ConstraintVisibility group = .visible,
+      ConstraintVisibility own = .visible,
+      List<Symbol> referenced = const [#a, #b],
+    }) =>
+        [
+          Constrained(
+            id: #a,
+            left: .leftOf(parent, margin: 10),
+            top: .topOf(parent, margin: 10),
+            width: .fixed(100),
+            height: .fixed(40),
+            visibility: own,
+            child: const SizedBox(),
+          ),
+          Constrained(
+            id: #b,
+            left: .rightOf(#a, margin: 8, goneMargin: 32),
+            top: .topOf(#a),
+            width: .fixed(60),
+            height: .fixed(20),
+            visibility: own,
+            child: const SizedBox(),
+          ),
+          Constrained(
+            id: #c,
+            left: .rightOf(#b, margin: 8, goneMargin: 24),
+            top: .bottomOf(#a, margin: 4, goneMargin: 12),
+            width: .fixed(50),
+            height: .fixed(30),
+            child: const SizedBox(),
+          ),
+          ConstraintGroup(id: #g, referenced: referenced, visibility: group),
+        ];
+
+    testWidgets(
+        'toggling a group updates its members in place, as their own '
+        'visibility would', (tester) async {
+      // Oracle first: each member's own visibility, toggled.
+      const ownKey = ValueKey('own');
+      await tester.pumpWidget(host(members(referenced: const []), key: ownKey));
+      var ro = layoutOf(tester);
+      var applies = ro.debugConfigApplies;
+      await tester.pumpWidget(
+          host(members(referenced: const [], own: .gone), key: ownKey));
+      expect(ro.debugModelBuilds, 1);
+      expect(ro.debugConfigApplies, applies + 2);
+      final ownGone = geometryOf(tester);
+      expect([ownGone[1][2], ownGone[2][2]], [0.0, 0.0],
+          reason: 'both members collapse');
+
+      // The group toggles the same members through the same tier.
+      const groupKey = ValueKey('group');
+      await tester.pumpWidget(host(members(), key: groupKey));
+      ro = layoutOf(tester);
+      final visible = geometryOf(tester);
+      applies = ro.debugConfigApplies;
+      await tester.pumpWidget(host(members(group: .gone), key: groupKey));
+      expect(ro.debugModelBuilds, 1,
+          reason: 'a group visibility change is not structural');
+      expect(ro.debugConfigApplies, applies + 2,
+          reason: 'one in-place apply per member, none for the group');
+      expect(geometryOf(tester), ownGone);
+
+      // Nothing is left dirty: an unchanged re-layout takes the fast path.
+      final fast = ro.debugFastPasses;
+      ro.markNeedsLayout();
+      ro.owner!.flushLayout();
+      expect(ro.debugFastPasses, fast + 1);
+
+      await tester.pumpWidget(host(members(), key: groupKey));
+      expect(ro.debugModelBuilds, 1);
+      expect(ro.debugConfigApplies, applies + 4);
+      expect(geometryOf(tester), visible);
+      await expectMatchesFresh(tester, () => members());
+    });
+
+    testWidgets('a group over members declared gone shows them in place',
+        (tester) async {
+      await tester.pumpWidget(host(members(own: .gone, group: .gone)));
+      final ro = layoutOf(tester);
+      final applies = ro.debugConfigApplies;
+      await tester.pumpWidget(host(members(own: .gone)));
+      expect(ro.debugModelBuilds, 1);
+      expect(ro.debugConfigApplies, applies + 2);
+      expect(geometryOf(tester)[1], [10.0, 10.0, 100.0, 40.0]);
+      expect(geometryOf(tester)[2], [118.0, 10.0, 60.0, 20.0]);
+      await expectMatchesFresh(tester, () => members(own: .gone));
+    });
+
+    testWidgets(
+        'a member\'s own visibility change under a group applies in place '
+        'and the group still wins', (tester) async {
+      await tester.pumpWidget(host(members()));
+      final ro = layoutOf(tester);
+      final before = geometryOf(tester);
+      final applies = ro.debugConfigApplies;
+      await tester.pumpWidget(host(members(own: .gone)));
+      expect(ro.debugModelBuilds, 1);
+      expect(ro.debugConfigApplies, applies + 2);
+      expect(geometryOf(tester), before,
+          reason: 'the visible group overrides the members\' own gone');
+    });
+
+    testWidgets(
+        'toggling a group that references a flow rebuilds, as the flow\'s '
+        'own visibility would', (tester) async {
+      List<Widget> withFlow({
+        ConstraintVisibility group = .visible,
+        ConstraintVisibility own = .visible,
+        List<Symbol> referenced = const [#flow],
+      }) =>
+          [
+            for (final id in const [#x, #y])
+              Constrained(
+                id: id,
+                width: .fixed(100),
+                height: .fixed(40),
+                child: const SizedBox(),
+              ),
+            ConstraintFlow(
+              id: #flow,
+              referenced: const [#x, #y],
+              left: .leftOf(parent, margin: 20),
+              top: .topOf(parent, margin: 20),
+              horizontalGap: 10,
+              visibility: own,
+            ),
+            Constrained(
+              id: #after,
+              left: .rightOf(#flow, margin: 10, goneMargin: 5),
+              top: .topOf(parent),
+              width: .fixed(30),
+              height: .fixed(30),
+              child: const SizedBox(),
+            ),
+            ConstraintGroup(id: #g, referenced: referenced, visibility: group),
+          ];
+
+      const ownKey = ValueKey('own');
+      await tester
+          .pumpWidget(host(withFlow(referenced: const []), key: ownKey));
+      var ro = layoutOf(tester);
+      await tester.pumpWidget(
+          host(withFlow(referenced: const [], own: .gone), key: ownKey));
+      expect(ro.debugModelBuilds, 2,
+          reason: 'a flow\'s own visibility change rebuilds the model');
+      final ownGone = geometryOf(tester);
+
+      const groupKey = ValueKey('group');
+      await tester.pumpWidget(host(withFlow(), key: groupKey));
+      ro = layoutOf(tester);
+      await tester.pumpWidget(host(withFlow(group: .gone), key: groupKey));
+      expect(ro.debugModelBuilds, 2,
+          reason: 'so a group\'s change of it rebuilds the model too');
+      expect(geometryOf(tester), ownGone);
+      await expectMatchesFresh(tester, () => withFlow(group: .gone));
+    });
+
+    testWidgets('an equal referenced list does not invalidate anything',
+        (tester) async {
+      await tester.pumpWidget(host(members(group: .gone)));
+      final ro = layoutOf(tester);
+      final passes = ro.debugLayoutPasses;
+      // A new list with the same ids, not the const instance.
+      await tester.pumpWidget(
+          host(members(group: .gone, referenced: List.of(const [#a, #b]))));
+      expect(ro.debugLayoutPasses, passes,
+          reason: 'referenced is compared by value, as for Barrier');
+    });
+
+    testWidgets('changing which children a group references rebuilds',
+        (tester) async {
+      await tester.pumpWidget(host(members(group: .gone)));
+      final ro = layoutOf(tester);
+      await tester
+          .pumpWidget(host(members(group: .gone, referenced: const [#b])));
+      expect(ro.debugModelBuilds, 2);
+      expect(geometryOf(tester)[1], [10.0, 10.0, 100.0, 40.0],
+          reason: '#a is no longer in the group, so it is visible again');
+      expect(geometryOf(tester)[2][2], 0.0);
+      await expectMatchesFresh(
+          tester, () => members(group: .gone, referenced: const [#b]));
+    });
+
+    testWidgets('removing a group gives the members their own visibility back',
+        (tester) async {
+      List<Widget> children({required bool withGroup}) => [
+            ...members(own: .gone).take(3),
+            if (withGroup)
+              const ConstraintGroup(id: #g, referenced: [#a, #b]),
+          ];
+      await tester.pumpWidget(host(children(withGroup: true)));
+      final ro = layoutOf(tester);
+      expect(geometryOf(tester)[1], [10.0, 10.0, 100.0, 40.0]);
+
+      await tester.pumpWidget(host(children(withGroup: false)));
+      expect(ro.debugModelBuilds, 2, reason: 'a removed child rebuilds');
+      expect(geometryOf(tester)[1][2], 0.0);
+      await expectMatchesFresh(tester, () => children(withGroup: false));
+    });
+
+    testWidgets('a group sequence matches fresh at every step',
+        (tester) async {
+      final steps = <(String, List<Widget> Function())>[
+        ('initial', () => members()),
+        ('group gone', () => members(group: .gone)),
+        ('group invisible', () => members(group: .invisible)),
+        ('own gone', () => members(group: .invisible, own: .gone)),
+        ('group visible', () => members(own: .gone)),
+        ('narrowed', () => members(own: .gone, referenced: const [#a])),
+        ('group gone again',
+            () => members(own: .gone, referenced: const [#a], group: .gone)),
+        ('restore', () => members()),
+      ];
+      final snapshots = <List<List<double>>>[];
+      for (final (name, children) in steps) {
+        await tester.pumpWidget(host(children()));
+        expect(tester.takeException(), isNull, reason: 'step $name');
+        snapshots.add(geometryOf(tester));
+      }
+      expect(layoutOf(tester).debugModelBuilds, 3,
+          reason: 'only the two referenced-list changes are structural');
+
+      for (var i = 0; i < steps.length; i++) {
+        final (name, children) = steps[i];
+        await tester.pumpWidget(host(children(), key: UniqueKey()));
+        expect(geometryOf(tester), snapshots[i],
+            reason: 'fresh replay of step "$name" diverged');
+      }
+    });
+  });
+
   group('paint-only changes', () {
     testWidgets('zIndex change reorders hit testing without re-layout',
         (tester) async {
@@ -1254,5 +1582,150 @@ void main() {
             reason: 'fresh replay of step "$name" diverged');
       }
     });
+  });
+
+  group('incoming links', () {
+    // Re-applying a widget in place connects its links again, and connecting
+    // a top or bottom resets the widget's baseline anchor (a baseline link
+    // resets its top and bottom). The links other widgets point at those
+    // anchors must survive that, as they do in a fresh build.
+    testWidgets('a gone widget whose only incoming link is a baseline stays '
+        'in the solver after an in-place change', (tester) async {
+      // On the solver path a gone widget that nothing links to is left out.
+      // The title turns gone in place, which re-applies it, and its top link
+      // resets its baseline anchor; the label's baseline link must still
+      // count, as in a fresh build.
+      List<Widget> children({required bool titleGone}) => [
+        Constrained(
+          id: #title,
+          start: .startOf(parent, margin: 8),
+          top: .topOf(parent, margin: 40),
+          visibility: titleGone ? .gone : .visible,
+          child: const Text('Title', style: TextStyle(fontSize: 24)),
+        ),
+        Constrained(
+          id: #label,
+          start: .startOf(parent, margin: 120),
+          baseline: .baselineOf(#title),
+          child: const Text('label', style: TextStyle(fontSize: 12)),
+        ),
+        // A circular link sends the layout to the solver.
+        Constrained(
+          id: #orbit,
+          circle: .around(#label, angle: 90, radius: 60),
+          width: .fixed(4),
+          height: .fixed(4),
+          child: const SizedBox(),
+        ),
+      ];
+
+      await tester.pumpWidget(host(children(titleGone: false)));
+      final ro = layoutOf(tester);
+      final builds = ro.debugModelBuilds;
+      await tester.pumpWidget(host(children(titleGone: true)));
+      expect(ro.debugModelBuilds, builds, reason: 'applied in place');
+      await expectMatchesFresh(tester, () => children(titleGone: true));
+    });
+
+    for (final solver in [false, true]) {
+      testWidgets('a baseline target re-applied in place keeps the link that '
+          'points at its baseline (${solver ? 'solver' : 'graph'})',
+          (tester) async {
+        // Two list rows: a value label on the title's baseline, a gone
+        // chevron centered on the title, and row barriers. The second title
+        // turns gone in place while the layout resizes.
+        List<Widget> children({required bool titleGone}) => [
+          const Barrier(
+            id: #rb0,
+            edge: .bottom,
+            referenced: [#t0, #val0],
+            margin: 16,
+          ),
+          const Barrier(
+            id: #tr1,
+            edge: .start,
+            referenced: [#val1, #ch1],
+            allowsGone: false,
+          ),
+          const Barrier(
+            id: #rb1,
+            edge: .bottom,
+            referenced: [#ic1, #t1, #val1],
+            margin: 4,
+          ),
+          Constrained(
+            id: #t0,
+            start: .startOf(parent, margin: 8),
+            top: .topOf(parent),
+            child: const Text('Title zero', style: TextStyle(fontSize: 18)),
+          ),
+          Constrained(
+            id: #val0,
+            end: .endOf(parent, margin: 8),
+            baseline: .baselineOf(#t0),
+            child: const Text('v0', style: TextStyle(fontSize: 14)),
+          ),
+          Constrained(
+            id: #ic1,
+            start: .startOf(parent, margin: 8),
+            top: .bottomOf(#rb0, margin: 8),
+            width: .fixed(24),
+            height: .fixed(24),
+            child: const SizedBox(),
+          ),
+          Constrained(
+            id: #t1,
+            start: .endOf(#ic1, margin: 16, goneMargin: 12),
+            end: .startOf(#tr1),
+            top: .bottomOf(#rb0, margin: 12),
+            width: .matchConstraint,
+            visibility: titleGone ? .gone : .visible,
+            child: const Text('Title one', style: TextStyle(fontSize: 22)),
+          ),
+          Constrained(
+            id: #val1,
+            end: .startOf(#ch1, margin: 8),
+            baseline: .baselineOf(#t1),
+            child: const Text('value one', style: TextStyle(fontSize: 20)),
+          ),
+          Constrained(
+            id: #ch1,
+            end: .endOf(parent, margin: 8),
+            top: .topOf(#t1),
+            bottom: .bottomOf(#t1),
+            width: .fixed(24),
+            height: .fixed(16),
+            visibility: .gone,
+            child: const SizedBox(),
+          ),
+          // A circular link is one thing the dependency graph never resolves,
+          // so this layout goes to the solver, which leaves out a gone widget
+          // that nothing links to.
+          if (solver)
+            Constrained(
+              id: #orbit,
+              circle: .around(#ic1, angle: 90, radius: 40),
+              width: .fixed(4),
+              height: .fixed(4),
+              child: const SizedBox(),
+            ),
+        ];
+
+        await tester.pumpWidget(
+          host(children(titleGone: false), size: const Size(320, 575)),
+        );
+        final ro = layoutOf(tester);
+        final builds = ro.debugModelBuilds;
+        await tester.pumpWidget(
+          host(children(titleGone: true), size: const Size(376, 679)),
+        );
+        expect(ro.debugModelBuilds, builds, reason: 'applied in place');
+        await expectMatchesFresh(
+          tester,
+          () => children(titleGone: true),
+          size: const Size(376, 679),
+        );
+      });
+    }
   });
 }

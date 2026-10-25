@@ -32,6 +32,12 @@ class Guideline {
   const Guideline({required this.id});
   final Symbol id;
 }
+
+class ConstraintGroup {
+  const ConstraintGroup({required this.id, required this.referenced});
+  final Symbol id;
+  final List<Symbol> referenced;
+}
 ''');
     super.setUp();
   }
@@ -99,6 +105,41 @@ Object f() => ConstraintLayout(
 );
 ''',
       [lint(170, 7)],
+    );
+  }
+
+  Future<void> test_duplicateId_groupAndChild() async {
+    // A group's id is an id of the layout like any other, even though a group
+    // takes no part in the layout itself.
+    await assertDiagnostics(
+      r'''
+import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
+
+Object f() => ConstraintLayout(
+  children: [
+    Constrained(id: #details, child: 'a'),
+    ConstraintGroup(id: #details, referenced: [#details]),
+  ],
+);
+''',
+      [lint(189, 8)],
+    );
+  }
+
+  Future<void> test_duplicateId_twoGroups() async {
+    await assertDiagnostics(
+      r'''
+import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
+
+Object f() => ConstraintLayout(
+  children: [
+    Constrained(id: #a, child: 'a'),
+    ConstraintGroup(id: #toggle, referenced: [#a]),
+    ConstraintGroup(id: #toggle, referenced: [#a]),
+  ],
+);
+''',
+      [lint(235, 7)],
     );
   }
 

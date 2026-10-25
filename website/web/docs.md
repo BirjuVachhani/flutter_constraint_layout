@@ -24,7 +24,7 @@ The rest of these docs walk the features one at a time, each with a live example
 
 ## Features
 
-Most of Android's ConstraintLayout is here, behind a single import and a Flutter-native API. MotionLayout, `ConstraintSet`, and the `Group`, `Layer`, and `Placeholder` helpers are not ported. At a glance, this is what you get:
+Most of Android's ConstraintLayout is here, behind a single import and a Flutter-native API. MotionLayout, `ConstraintSet`, and the `Layer` and `Placeholder` helpers are not ported. At a glance, this is what you get:
 
 ### Positioning
 
@@ -41,8 +41,9 @@ Most of Android's ConstraintLayout is here, behind a single import and a Flutter
 
 - **Chains with weights.** Widgets linked to each other share an axis like flexbox: `.spread`, `.spreadInside`, or `.packed`, splitting leftover space by per-child weight.
 - **Guidelines.** An invisible line at a fixed offset or a percent of the parent that many siblings can share.
-- **Barriers.** A line that tracks the furthest edge of a group, so content always clears the tallest or widest member.
+- **Barriers.** A line that tracks the furthest edge of a set of widgets, so content always clears the tallest or widest member.
 - **Visibility.** Every child is `visible`, `invisible` (holds its space), or `gone` (collapses, switching links to `goneMargin`).
+- **Groups.** A `ConstraintGroup` sets the visibility of several children at once, like Android's `Group`.
 
 ### Virtual layouts
 
@@ -141,6 +142,8 @@ In the example, B links to A rather than to the parent: `start: .endOf(#a)` plac
 
 Every link constructor except `.around` takes a `margin`, and a `goneMargin` used instead when the target is `gone` (see **Visibility**). A `top` or `bottom` link to `.baselineOf` is ignored; align baselines through `baseline`.
 
+Links must not loop back on themselves. Four kinds of loop leave none of their children a position to start from: two children whose matching edges link to each other (two tops, for example), an edge linked to itself, two children linked both ways on both sides, and a chain whose first child's start links one way to its last child while the last child's end links back to the first child. Debug builds report each of them with a `FlutterError`, as they report a link to an unknown id; baseline links are not followed, so two baselines linked to each other are not reported. Profile and release builds still lay the layout out. Android never finishes laying out a layout with the last kind, and lays out the others as this layout does: two children whose tops link to each other, for example, both sit at the top edge.
+
 > Build each id the same way everywhere it appears. For ids made in a loop with `Symbol('item$i')`, refer to them through the same call, for example a helper `Symbol item(int i) => Symbol('item$i');`, never through a literal such as `#item0` or a `const Symbol('item0')`. Release and profile WebAssembly builds, and builds compiled with `--obfuscate`, rename symbol literals, so there `#item0` is not equal to `Symbol('item0')` and a link that mixes the two forms is silently skipped. Debug builds treat them as equal, so the mistake does not show up while you develop.
 
 ### Right-to-left
@@ -151,7 +154,10 @@ Every link constructor except `.around` takes a `margin`, and a `goneMargin` use
 - Vertical guidelines: `begin` and `percent` are measured from the right and `end` from the left. Horizontal guidelines do not change.
 - `ConstraintFlow`: its rows start at the right edge, and `contentHorizontalBias` is measured from the start.
 
-Two things do not mirror: a barrier's `margin` always moves it right or down, and `ConstraintGrid` fills its cells from the left.
+Two more mirror here, unlike on Android, so that a layout written with `start` and `end` mirrors as a whole:
+
+- `ConstraintGrid`: its first column is the rightmost, so the cells fill from the right. Cell numbers in `spans` and `skips`, and the entries of `columnWeights`, still count from the first column. A tile's `horizontalBias` is measured from the start edge of its cell.
+- The `margin` of a `.start` or `.end` barrier: a positive value moves the barrier toward the end, which is left in right-to-left text. A `.left` or `.right` barrier keeps its margin as given.
 
 ## Centering & bias
 
@@ -224,7 +230,7 @@ ConstraintLayout(
 | `.spread(min: a, max: b)` | Like matchConstraint, but bounded. |
 | `.constrainedWrap(...)` | Content, capped by the constraints. |
 
-> `.matchConstraint` and `.spread` need **both** edges on the axis anchored, because they size to the space those edges define. `.percent` sizes to the parent instead, so one link is enough.
+> `.matchConstraint` and `.spread` need **both** edges on the axis anchored to fill the space between them. With only one link the child sizes to its own content instead, which `.spread` keeps between its `min` and `max` (the other dimension follows, so text wraps at a capped width). `.percent` sizes to the parent, so one link is enough.
 
 ## Aspect ratio
 
@@ -362,7 +368,9 @@ ConstraintLayout(
 
 *A barrier tracks the furthest edge of the widgets it references, so C clears whichever of A or B is wider, even as their content changes.*
 
-Pick the `edge` to track (`start`, `end`, `top`, `bottom`, and the absolute `left` / `right`) and list the widgets in `referenced`. A barrier has no size and draws nothing; it only reports a position. A layout that contains one is resolved by the Cassowary solver rather than the faster dependency graph (see **How the engine works**).
+Pick the `edge` to track (`start`, `end`, `top`, `bottom`, and the absolute `left` / `right`) and list the widgets in `referenced`. A barrier has no size and draws nothing; it only reports a position. Its own `margin` moves it: a positive value moves a `start` or `end` barrier toward the end, and a `left`, `right`, `top`, or `bottom` one right or down.
+
+In a layout bounded on both axes, a barrier resolves on the fast dependency graph when, by the engine's model of Android's layout pass, Android would lay the layout out the same way, with each barrier on the outermost edge of its widgets plus its `margin`. Android places a barrier there whenever it places all of its widgets without its solver; any other barrier is the solver's, which can settle it elsewhere. A layout that sizes to its content, such as a list item, takes the Cassowary solver instead, and so does one that Android would lay out differently, for example one where Android's solver settles a barrier elsewhere or Android centers a child a pixel away (see **How the engine works**).
 
 ## Circular positioning
 
@@ -437,11 +445,54 @@ ConstraintLayout(
 
 *A gone widget collapses to a point and links targeting it switch to their goneMargin, so C closes the gap B left behind.*
 
-`gone` removes a widget and reflows around it in one step, and `goneMargin` lets neighbors keep a sensible gap when they do. Because it is only a property, toggling it keeps the child mounted, so its state survives the round trip.
+`gone` removes a widget and reflows around it in one step, and `goneMargin` lets neighbors keep a sensible gap when they do. Because it is only a property, toggling it keeps the child mounted, so its state survives the round trip. Invisible and gone children are also left out of the semantics tree, so screen readers neither announce nor activate them, as on Android. To set the visibility of several children at once, use a group (below).
 
 ### Try it
 
 Flip B between the three states and watch C: `invisible` keeps B's space (C does not move), while `gone` collapses it and C slides in on its `goneMargin`.
+
+### Groups
+
+A `ConstraintGroup` sets the visibility of several children at once, like Android's `Group`. Its `visibility` replaces the `visibility` of every child listed in `referenced`, so one value from your state shows or hides a whole section of the layout:
+
+```dart
+bool expanded = false; // from your State
+
+ConstraintLayout(
+  children: [
+    Constrained(
+      id: #name,
+      start: .startOf(parent, margin: 16),
+      top: .topOf(parent, margin: 16),
+      child: DemoBox('Ada Lovelace'),
+    ),
+    Constrained(
+      id: #email,
+      start: .startOf(#name),
+      top: .bottomOf(#name, margin: 8),
+      child: DemoBox('ada@example.com'),
+    ),
+    Constrained(
+      id: #phone,
+      start: .startOf(#name),
+      top: .bottomOf(#email, margin: 8),
+      child: DemoBox('+44 20 7946 0000'),
+    ),
+    // Both detail rows take the group's visibility, whatever their own.
+    ConstraintGroup(
+      id: #details,
+      referenced: [#email, #phone],
+      visibility: expanded ? .visible : .gone,
+    ),
+  ],
+)
+```
+
+*With expanded set to false, the group makes both detail rows gone at once, so only the name shows. Set it to true and both rows come back.*
+
+- **The group wins.** A referenced child takes the group's visibility for layout, painting, hit testing, and semantics, whatever its own `visibility` says. When several groups reference the same child, the one that comes last in `children` wins.
+- **A group is not on screen.** It has no position or size, so no link can target it, and no barrier, flow, grid, or other group can reference it. It can reference `Constrained` children, flows, and grids; guidelines and barriers have no visibility, so it leaves them as they are.
+- **Changing its `visibility` costs what changing the children's would.** Each referenced child is updated exactly as if its own `visibility` had changed.
 
 ## Flow
 
@@ -494,7 +545,7 @@ Set `horizontalGap` and `verticalGap` for the spacing between items and runs, an
 
 `ConstraintGrid` is to `GridView` what `ConstraintFlow` is to `Wrap`: it places its `referenced` children into a fixed grid of `rows` by `columns` cells, in order. Unlike `GridView` it does not scroll and does not become their parent; it is **virtual**, so the tiles stay siblings in the single layer that other constraints can still target.
 
-Children fill the cells left to right, top to bottom. Give a tile `width: .matchConstraint` and `height: .matchConstraint` to fill its cell, or leave it to wrap its own content and sit within the cell.
+Children fill the cells row by row from the start edge: left to right, or right to left in right-to-left text. Give a tile `width: .matchConstraint` and `height: .matchConstraint` to fill its cell, or leave it to wrap its own content and sit within the cell.
 
 ```dart
 ConstraintLayout(
@@ -527,9 +578,9 @@ ConstraintLayout(
 
 ### Spans, skips, and weights
 
-- **Spans** let one tile cover several cells: `spans: '0:1x2'` makes the tile at cell 0 span one row and two columns, using Android's `index:RxC` syntax.
+- **Spans** let one tile cover several cells: `spans: '0:1x2'` makes the tile at cell 0 span one row and two columns, using Android's `index:RxC` syntax. The entries are sorted by cell index and go to the tiles in order: the lowest index to the first tile, the next to the second. Entries beyond the last tile are ignored.
 - **Skips** leave cells empty so the flow of tiles steps over them, with the same `index:RxC` syntax in `skips`.
-- **Weights** (`rowWeights`, `columnWeights`) hand out the grid's space unevenly, so a column can take twice the width of its neighbor.
+- **Weights** (`rowWeights`, `columnWeights`) hand out the grid's space unevenly, so a column can take twice the width of its neighbor. A list shorter than the number of rows or columns is padded with weights of 1, and a longer one is trimmed.
 
 Anchor the grid itself like any child (here all four edges to the parent), and it sizes and positions the whole set of tiles as a unit.
 
@@ -594,7 +645,7 @@ Most layouts are deterministic: once the parent size and a widget's anchors and 
 
 ### Cassowary solver (the fallback)
 
-Some layouts are outside what the graph resolves, and for those the engine falls back to a linear constraint solver, a port of Android's `LinearSystem`, which implements the **Cassowary** algorithm (the same family behind Apple's Auto Layout). A layout takes this path when it contains a barrier, a `circle` link, a `.constrainedWrap` size, a `ConstraintFlow` or `ConstraintGrid`, an `aspectRatio` child whose width and height are both `.matchConstraint`, or a chain with a `gone` or aspect-ratio member (or, in right-to-left text, with a margin). It also takes this path when the layout sizes to its content along an axis that has a chain, a child anchored on both sides, or a child extending outside the layout, and for anything else the graph cannot resolve directly.
+Some layouts are outside what the graph resolves, and for those the engine falls back to a linear constraint solver, a port of Android's `LinearSystem`, which implements the **Cassowary** algorithm (the same family behind Apple's Auto Layout). A layout takes this path when it contains a `circle` link, a `.constrainedWrap` size, a `ConstraintFlow` or `ConstraintGrid`, an `aspectRatio` child whose width and height are both `.matchConstraint`, a chain with a `gone`, aspect-ratio, or `.percent` member (or, in right-to-left text, with a margin), or a child that is not `gone` and has a `baseline` link but no baseline of its own, such as one without text. In a layout bounded on both axes, a barrier sends it there when Android's solver would settle the barrier away from the outermost edge of its widgets plus its margin, or when a chain, a baseline link, or an aspect ratio depends on a barrier that Android leaves to its solver. In a layout with a barrier, so does a child at a negative position or with a negative size, or a child that Android would place differently from the graph, such as one centered between pixels on a `.percent` size or a chain gap, or one centered with a bias other than 0, 0.5, and 1 that Android works out a pixel away. A layout that sizes to its content along an axis takes this path when it has a guideline, a barrier, a `.percent` size, or an aspect ratio anywhere, or along that axis a chain, a child anchored on both sides (a `gone` one too), a `.matchParent` child, or a child extending outside the layout. So does anything else the graph cannot resolve directly.
 
 ### Persistent, incremental model
 
@@ -608,6 +659,6 @@ The graph path resolves a 1200-widget screen in well under a millisecond; the so
 
 ## Relation to Android
 
-The engine is a line-faithful port of `constraintlayout-core`, pinned to a specific upstream revision. Its solver and widget classes are verified at parity with the released core 1.1.1 (only the Grid helper still follows the pinned revision), and nearly all of upstream's core test suite is ported and green, so a given layout resolves to the same result Android produces. Right-to-left text follows Android's rules too: the horizontal bias of a child linked with start or end mirrors, and so does the position of a vertical guideline (see **Anchors & links**).
+The engine is a line-faithful port of `constraintlayout-core`, pinned to a specific upstream revision. Its solver, widget classes, and Grid helper are verified at parity with the released core 1.1.1, and every upstream core test in its scope is ported and passing, so a layout resolves as it does on Android, apart from a few edge cases that the package README lists under its limitations. Right-to-left text follows Android's rules too: the horizontal bias of a child linked with start or end mirrors, and so does the position of a vertical guideline. `ConstraintGrid` and the margin of a start or end barrier mirror as well, which they do not on Android (see **Anchors & links**).
 
-The one structural departure is the entry path: Android runs the Cassowary solver by default with an optional graph optimization, whereas this port tries the dependency graph first and falls back to the solver (see **How the engine works**).
+The one structural departure is the entry path: by default Android places what it can with a `Direct` optimizer and solves the rest with the Cassowary solver, with an optional graph optimization. This port has no `Direct` optimizer: it tries the dependency graph first, which takes that role, and falls back to the solver (see **How the engine works**).

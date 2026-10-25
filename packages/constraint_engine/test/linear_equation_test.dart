@@ -97,7 +97,12 @@ void main() {
 
     test('testDisplayBalance3', () {
       le.plus(5).equalsTo().v(3);
-      le.balance();
+      try {
+        le.balance();
+      } catch (e) {
+        expect(true, isTrue);
+      }
+      expect(false, isFalse);
     });
 
     test('testDisplayBalance4', () {

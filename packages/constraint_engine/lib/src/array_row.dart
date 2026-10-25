@@ -667,8 +667,22 @@ class ArrayRow implements Row {
       return;
     }
 
+    // Divergence from upstream, which loops until no defined, final or
+    // synonym variable is left in the row. Each round substitutes one more
+    // level of definitions, so with definitions that do not refer back to
+    // each other it ends within one round per variable of the system. Some
+    // cyclic barrier layouts leave definitions that do (upstream spins
+    // forever on them, see UPSTREAM.md); give up instead, and let the solver
+    // loop's catch keep the last frames.
+    final maxRounds = system.mNumRows + system.mVariablesID + 1;
+    var rounds = 0;
     var done = false;
     while (!done) {
+      if (++rounds > maxRounds) {
+        throw StateError(
+          'ArrayRow.updateFromSystem: no fixed point after $maxRounds rounds',
+        );
+      }
       final currentSize = variables.getCurrentSize();
       for (var i = 0; i < currentSize; i++) {
         final variable = variables.getVariable(i)!;

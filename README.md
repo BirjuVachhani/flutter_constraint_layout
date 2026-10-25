@@ -90,7 +90,8 @@ see [example/main.dart](packages/flutter_constraint_layout/example/main.dart).
   chain, laid out as `spread`, `spreadInside`, or `packed`, with per-child
   weights.
 - **Guidelines and barriers**: anchor to an invisible line at a fixed offset or
-  a percent of the layout, or to whichever edge of a group sticks out furthest.
+  a percent of the layout, or to whichever edge of a set of widgets sticks out
+  furthest.
 - **Sizing and bias**: fixed, wrap-content, or match-constraint sizes. A
   match-constraint size can take min and max bounds, wrap its content without
   outgrowing its links, or be a percent of the parent. Aspect ratios derive one
@@ -100,7 +101,8 @@ see [example/main.dart](packages/flutter_constraint_layout/example/main.dart).
 - **Circular positioning**: place a child at an angle and a radius around
   another.
 - **Visibility**: `visible`, `invisible`, or `gone`, with a `goneMargin` for
-  links to a gone sibling.
+  links to a gone sibling, and `ConstraintGroup` to set it for several
+  children at once.
 - **Virtual layouts**: `ConstraintFlow` and `ConstraintGrid` arrange children
   that stay direct siblings, so other constraints can still target them.
 - **Debug overlay**: in debug builds, `debugShowChains` and
@@ -116,7 +118,7 @@ API.
 
 | Package | Path | pub.dev | What it is |
 | --- | --- | --- | --- |
-| `flutter_constraint_layout` | [packages/flutter_constraint_layout](packages/flutter_constraint_layout) | [flutter_constraint_layout](https://pub.dev/packages/flutter_constraint_layout) | The Flutter widgets: `ConstraintLayout`, `Constrained`, `Guideline`, `Barrier`, `ConstraintFlow`, `ConstraintGrid`, and the debug overlay. Start here. |
+| `flutter_constraint_layout` | [packages/flutter_constraint_layout](packages/flutter_constraint_layout) | [flutter_constraint_layout](https://pub.dev/packages/flutter_constraint_layout) | The Flutter widgets: `ConstraintLayout`, `Constrained`, `Guideline`, `Barrier`, `ConstraintFlow`, `ConstraintGrid`, `ConstraintGroup`, and the debug overlay. Start here. |
 | `constraint_engine` | [packages/constraint_engine](packages/constraint_engine) | [constraint_engine](https://pub.dev/packages/constraint_engine) | The layout engine: a line-faithful, pure-Dart port of `androidx.constraintlayout.core`, with a dependency-graph resolver and a Cassowary solver as its fallback. No Flutter dependency. |
 | `flutter_constraint_layout_lints` | [packages/flutter_constraint_layout_lints](packages/flutter_constraint_layout_lints) | [flutter_constraint_layout_lints](https://pub.dev/packages/flutter_constraint_layout_lints) | An analyzer plugin that warns about duplicate and undefined constraint ids while you edit. |
 | `flutter_constraint_layout_website` | [website](website) | Not published | The documentation site, [constraints.birju.dev](https://constraints.birju.dev). |

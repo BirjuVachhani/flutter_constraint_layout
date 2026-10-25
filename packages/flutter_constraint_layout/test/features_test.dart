@@ -37,6 +37,20 @@ Rect rectOf(WidgetTester tester, Symbol id, {Type of = SizedBox}) {
 
 Widget box(Symbol id) => SizedBox(key: ValueKey(id));
 
+/// Records [id] in [log] every time it paints.
+class _RecordingPainter extends CustomPainter {
+  _RecordingPainter(this.id, this.log);
+
+  final Symbol id;
+  final List<Symbol> log;
+
+  @override
+  void paint(Canvas canvas, Size size) => log.add(id);
+
+  @override
+  bool shouldRepaint(_RecordingPainter oldDelegate) => true;
+}
+
 void main() {
   group('dimensions', () {
     testWidgets('percent width sizes to a fraction of the parent',
@@ -129,6 +143,208 @@ void main() {
       expect(rectOf(tester, #big).width, 400);
       // 100 of content into 400 of space: stays at content size, not spread.
       expect(rectOf(tester, #small).width, 100);
+    });
+  });
+
+  // A match-constraint size with a min or a max resolves the same on both
+  // engine paths. The dependency graph measures an axis with a single link as
+  // wrap content and resolves it at the measured size, so the measurer keeps
+  // that size within the bounds, as Android's view measurer does; the solver
+  // applies the bounds itself. Each case is laid out alone, which the graph
+  // resolves, and next to an unrelated circular link, which sends the whole
+  // layout to the solver. Values marked as Android's were checked against
+  // upstream's Java engine at OPTIMIZATION_STANDARD (its default, solver
+  // path) with a port of the view layer's ConstraintLayout.Measurer.
+  group('bounded match-constraint sizes', () {
+    Widget sized(
+      Dimension width,
+      Dimension height, {
+      bool twoLinksH = false,
+      bool twoLinksV = false,
+      double inset = 10,
+      Size content = const Size(400, 40),
+      double? aspectRatio,
+    }) => Constrained(
+      id: #a,
+      start: .startOf(parent, margin: inset),
+      end: twoLinksH ? .endOf(parent, margin: inset) : null,
+      top: .topOf(parent, margin: 5),
+      bottom: twoLinksV ? .bottomOf(parent, margin: 5) : null,
+      width: width,
+      height: height,
+      aspectRatio: aspectRatio,
+      child: SizedBox(
+        key: const ValueKey(#a),
+        width: content.width,
+        height: content.height,
+      ),
+    );
+
+    /// Lays [children] out next to a fixed widget in the bottom-end corner,
+    /// plus a widget circling it when [solver] is set (the dependency graph
+    /// never resolves a circular link, so the layout goes to the solver; a
+    /// barrier no longer does), and returns whether the solver ran. Every
+    /// call changes the children, so the engine model is built afresh and
+    /// its solver has created variables only if this layout used it. (Its
+    /// row count is no proof: a solve whose equalities all resolve directly
+    /// ends with no rows.)
+    Future<bool> layOut(
+      WidgetTester tester,
+      List<Widget> children, {
+      required bool solver,
+    }) async {
+      await tester.pumpWidget(host([
+        ...children,
+        Constrained(
+          id: #other,
+          end: .endOf(parent),
+          bottom: .bottomOf(parent),
+          width: .fixed(10),
+          height: .fixed(10),
+          child: box(#other),
+        ),
+        if (solver)
+          Constrained(
+            id: #force,
+            circle: .around(#other, angle: 270, radius: 20),
+            width: .fixed(10),
+            height: .fixed(10),
+            child: box(#force),
+          ),
+      ]));
+      final ro = tester.renderObject<RenderConstraintLayout>(
+          find.byType(ConstraintLayout));
+      return ro.debugEngineContainer!.mSystem.getNumVariables() > 0;
+    }
+
+    // (case, child, the rect both paths give, whether the graph resolves it)
+    final cases = <(String, Widget, Rect, bool)>[
+      // Android's: x=10 w=300.
+      ('one-link spread max', sized(.spread(max: 300), .fixed(40)),
+          const Rect.fromLTWH(10, 5, 300, 40), true),
+      // Android's: x=10 w=500.
+      ('one-link spread min', sized(.spread(min: 500), .fixed(40)),
+          const Rect.fromLTWH(10, 5, 500, 40), true),
+      ('one-link spread with the content inside its bounds',
+          sized(.spread(min: 100, max: 500), .fixed(40)),
+          const Rect.fromLTWH(10, 5, 400, 40), true),
+      ('two-link spread max', sized(.spread(max: 300), .fixed(40),
+          twoLinksH: true), const Rect.fromLTWH(250, 5, 300, 40), true),
+      // 200 between the links. Android's: w=300 (at x=251, a pixel of float
+      // rounding away).
+      ('two-link spread min above the space, with a max',
+          sized(.spread(min: 300, max: 400), .fixed(40),
+              twoLinksH: true, inset: 300),
+          const Rect.fromLTWH(250, 5, 300, 40), true),
+      // Android's: w=300 and w=200 with one link, x=250 w=300 with two. Not
+      // here: a min above the percent with two links, where the graph keeps
+      // the documented min (UPSTREAM.md, the percent clamp) but the solver,
+      // like Android's (x=10 w=780), fills the space between the links.
+      ('one-link percent max', sized(.percent(0.9, max: 300), .fixed(40)),
+          const Rect.fromLTWH(10, 5, 300, 40), true),
+      ('one-link percent min', sized(.percent(0.1, min: 200), .fixed(40)),
+          const Rect.fromLTWH(10, 5, 200, 40), true),
+      ('two-link percent max', sized(.percent(0.9, max: 300), .fixed(40),
+          twoLinksH: true), const Rect.fromLTWH(250, 5, 300, 40), true),
+      ('one-link constrainedWrap max',
+          sized(.constrainedWrap(max: 300), .fixed(40)),
+          const Rect.fromLTWH(10, 5, 300, 40), false),
+      ('two-link constrainedWrap min',
+          sized(.constrainedWrap(min: 500), .fixed(40), twoLinksH: true),
+          const Rect.fromLTWH(150, 5, 500, 40), false),
+      // The same on the vertical axis, under a fixed width wider than the
+      // content, which must be kept. Android's: w=100 h=30, and w=100 h=400
+      // without bounds.
+      ('one-link spread min and max height',
+          sized(.fixed(100), .spread(min: 10, max: 30),
+              content: const Size(40, 400)),
+          const Rect.fromLTWH(10, 5, 100, 30), true),
+      ('one-link spread min height',
+          sized(.fixed(100), .spread(min: 500), content: const Size(40, 400)),
+          const Rect.fromLTWH(10, 5, 100, 500), true),
+      ('one-link match-constraint height',
+          sized(.fixed(100), .matchConstraint, content: const Size(40, 400)),
+          const Rect.fromLTWH(10, 5, 100, 400), true),
+      ('two-link spread max height',
+          sized(.fixed(100), .spread(max: 100),
+              twoLinksV: true, content: const Size(40, 400)),
+          const Rect.fromLTWH(10, 250, 100, 100), true),
+      ('two-link percent max height',
+          sized(.fixed(100), .percent(0.5, max: 200),
+              twoLinksV: true, content: const Size(40, 400)),
+          const Rect.fromLTWH(10, 200, 100, 200), true),
+      ('one-link constrainedWrap max height',
+          sized(.fixed(100), .constrainedWrap(max: 30),
+              content: const Size(40, 400)),
+          const Rect.fromLTWH(10, 5, 100, 30), false),
+    ];
+
+    for (final (name, child, expected, onGraph) in cases) {
+      testWidgets('$name: both paths agree', (tester) async {
+        final graphUsedSolver = await layOut(tester, [child], solver: false);
+        expect(graphUsedSolver, !onGraph);
+        final graph = rectOf(tester, #a);
+
+        expect(await layOut(tester, [child], solver: true), isTrue);
+        final solver = rectOf(tester, #a);
+
+        expect(graph, expected, reason: 'graph');
+        expect(solver, expected, reason: 'solver');
+      });
+    }
+
+    testWidgets('text capped by a one-link max wraps at the capped width on '
+        'both paths', (tester) async {
+      // 20 px glyphs: the 780 px line wraps to one 180 px word per line at
+      // 300. Android's: w=300 h=60 for content that wraps to 3 lines there.
+      List<Widget> children() => [
+            Constrained(
+              id: #t,
+              start: .startOf(parent, margin: 10),
+              top: .topOf(parent),
+              width: .spread(max: 300),
+              child: const Text(
+                'AAAAAAAAA BBBBBBBBB CCCCCCCCC DDDDDDDDD',
+                key: ValueKey(#t),
+                style: TextStyle(fontSize: 20),
+              ),
+            ),
+            Constrained(
+              id: #below,
+              start: .startOf(parent),
+              top: .bottomOf(#t),
+              width: .fixed(10),
+              height: .fixed(10),
+              child: box(#below),
+            ),
+          ];
+      for (final solver in [false, true]) {
+        expect(await layOut(tester, children(), solver: solver), solver);
+        expect(rectOf(tester, #t), const Rect.fromLTWH(10, 0, 300, 80),
+            reason: solver ? 'solver' : 'graph');
+        expect(rectOf(tester, #below).top, 80,
+            reason: 'the sibling below follows the wrapped height');
+      }
+    });
+
+    testWidgets('a ratio-derived width is capped by its max on both paths',
+        (tester) async {
+      // The ratio gives 160 from the fixed 80 height; the max caps it at 100,
+      // centered between the links. Android's: x=350 w=100 h=80. The solver
+      // path caps the width in setFrame, which records the capped size as an
+      // override and solves again, so the width is centered at its capped
+      // size there too.
+      for (final solver in [false, true]) {
+        expect(
+          await layOut(tester, [
+            sized(.spread(max: 100), .fixed(80),
+                twoLinksH: true, aspectRatio: 2),
+          ], solver: solver),
+          solver,
+        );
+        expect(rectOf(tester, #a), const Rect.fromLTWH(350, 5, 100, 80),
+            reason: solver ? 'solver' : 'graph');
+      }
     });
   });
 
@@ -261,6 +477,232 @@ void main() {
     });
   });
 
+  // Android's Group: the group's visibility is set on every referenced view,
+  // replacing the view's own, and the group declared last has the last word.
+  group('groups', () {
+    // #c follows #b, which follows #a, so collapsing a member moves #c.
+    List<Widget> row({
+      ConstraintVisibility a = .visible,
+      ConstraintVisibility b = .visible,
+      List<Widget> groups = const [],
+    }) => [
+      Constrained(
+        id: #a,
+        start: .startOf(parent, margin: 10),
+        top: .topOf(parent, margin: 10),
+        width: .fixed(100),
+        height: .fixed(50),
+        visibility: a,
+        child: box(#a),
+      ),
+      Constrained(
+        id: #b,
+        start: .endOf(#a, margin: 10, goneMargin: 40),
+        top: .topOf(#a),
+        width: .fixed(100),
+        height: .fixed(50),
+        visibility: b,
+        child: box(#b),
+      ),
+      Constrained(
+        id: #c,
+        start: .endOf(#b, margin: 10, goneMargin: 20),
+        top: .topOf(#a),
+        width: .fixed(100),
+        height: .fixed(50),
+        child: box(#c),
+      ),
+      ...groups,
+    ];
+
+    List<Rect> rects(WidgetTester tester) => [
+      for (final id in const [#a, #b, #c]) rectOf(tester, id),
+    ];
+
+    testWidgets('a gone group lays out its members as gone', (tester) async {
+      await tester.pumpWidget(host(row(b: .gone)));
+      final ownGone = rects(tester);
+      expect(ownGone[1].size, Size.zero);
+      expect(ownGone[2].left, 130, reason: '#b is gone: 10 + 100 + 20');
+
+      await tester.pumpWidget(host(row(
+        groups: const [
+          ConstraintGroup(id: #g, referenced: [#b], visibility: .gone),
+        ],
+      )));
+      expect(rects(tester), ownGone);
+    });
+
+    testWidgets('a group overrides the visibility its members declare',
+        (tester) async {
+      // Both members declare gone, and a visible group shows them anyway.
+      await tester.pumpWidget(host(row(
+        a: .gone,
+        b: .gone,
+        groups: const [ConstraintGroup(id: #g, referenced: [#a, #b])],
+      )));
+      expect(rects(tester), const [
+        Rect.fromLTWH(10, 10, 100, 50),
+        Rect.fromLTWH(120, 10, 100, 50),
+        Rect.fromLTWH(230, 10, 100, 50),
+      ]);
+    });
+
+    testWidgets('a group declared before its members still applies',
+        (tester) async {
+      await tester.pumpWidget(host([
+        const ConstraintGroup(id: #g, referenced: [#b], visibility: .gone),
+        ...row(),
+      ]));
+      expect(rectOf(tester, #b).size, Size.zero);
+      expect(rectOf(tester, #c).left, 130, reason: '10 + 100 + goneMargin 20');
+    });
+
+    testWidgets('the last group in child order wins', (tester) async {
+      List<Widget> twoGroups(ConstraintVisibility first,
+              ConstraintVisibility second) =>
+          row(groups: [
+            ConstraintGroup(id: #g1, referenced: const [#b], visibility: first),
+            ConstraintGroup(
+                id: #g2, referenced: const [#a, #b], visibility: second),
+          ]);
+      await tester.pumpWidget(host(twoGroups(.gone, .visible)));
+      expect(rectOf(tester, #b).size, const Size(100, 50));
+
+      await tester.pumpWidget(host(twoGroups(.visible, .gone)));
+      expect(rectOf(tester, #a).size, Size.zero);
+      expect(rectOf(tester, #b).size, Size.zero);
+    });
+
+    testWidgets(
+        'an invisible group keeps its members in place but stops painting '
+        'and hit testing them', (tester) async {
+      final painted = <Symbol>[];
+      final tapped = <Symbol>[];
+      Widget member(Symbol id, HorizontalLink start) => Constrained(
+            id: id,
+            start: start,
+            top: .topOf(parent),
+            width: .fixed(100),
+            height: .fixed(50),
+            child: GestureDetector(
+              key: ValueKey(id),
+              onTap: () => tapped.add(id),
+              child: CustomPaint(painter: _RecordingPainter(id, painted)),
+            ),
+          );
+      List<Widget> children(ConstraintVisibility group) => [
+            member(#a, .startOf(parent)),
+            member(#b, .endOf(#a, margin: 10)),
+            ConstraintGroup(id: #g, referenced: const [#a], visibility: group),
+          ];
+
+      await tester.pumpWidget(host(children(.visible)));
+      expect(painted, containsAll([#a, #b]));
+      await tester.tapAt(const Offset(50, 25));
+      expect(tapped, [#a]);
+
+      painted.clear();
+      tapped.clear();
+      await tester.pumpWidget(host(children(.invisible)));
+      expect(painted, [#b]);
+      await tester.tapAt(const Offset(50, 25));
+      expect(tapped, isEmpty);
+      // Laid out as before, so #b does not move.
+      expect(rectOf(tester, #a), const Rect.fromLTWH(0, 0, 100, 50));
+      expect(rectOf(tester, #b).left, 110);
+    });
+
+    testWidgets('a group sets the visibility of a flow as its own would',
+        (tester) async {
+      List<Widget> flowRow({
+        ConstraintVisibility own = .visible,
+        ConstraintVisibility? group,
+      }) => [
+        for (final id in const [#x, #y])
+          Constrained(
+            id: id,
+            width: .fixed(100),
+            height: .fixed(40),
+            child: box(id),
+          ),
+        ConstraintFlow(
+          id: #flow,
+          referenced: const [#x, #y],
+          start: .startOf(parent, margin: 20),
+          top: .topOf(parent, margin: 20),
+          horizontalGap: 10,
+          visibility: own,
+        ),
+        Constrained(
+          id: #after,
+          start: .endOf(#flow, margin: 10, goneMargin: 5),
+          top: .topOf(parent),
+          width: .fixed(30),
+          height: .fixed(30),
+          child: box(#after),
+        ),
+        if (group != null)
+          ConstraintGroup(id: #g, referenced: const [#flow], visibility: group),
+      ];
+      List<Rect> flowRects() => [
+        for (final id in const [#x, #y, #after]) rectOf(tester, id),
+      ];
+
+      await tester.pumpWidget(host(flowRow()));
+      final shown = flowRects();
+      expect(shown[2].left, 240, reason: 'after the 210-wide flow at 20');
+
+      await tester.pumpWidget(host(flowRow(own: .gone)));
+      final ownGone = flowRects();
+      expect(ownGone, isNot(shown));
+
+      await tester.pumpWidget(host(flowRow(group: .gone)));
+      expect(flowRects(), ownGone);
+      await tester.pumpWidget(host(flowRow(own: .gone, group: .visible)));
+      expect(flowRects(), shown);
+    });
+
+    testWidgets('a group leaves guidelines and barriers as they are',
+        (tester) async {
+      await tester.pumpWidget(host([
+        const Guideline.vertical(id: #guide, begin: 200),
+        Constrained(
+          id: #a,
+          start: .startOf(parent),
+          top: .topOf(parent),
+          width: .fixed(300),
+          height: .fixed(20),
+          child: box(#a),
+        ),
+        const Barrier(id: #bar, edge: .end, referenced: [#a]),
+        Constrained(
+          id: #onGuide,
+          start: .endOf(#guide),
+          top: .topOf(parent, margin: 50),
+          width: .fixed(10),
+          height: .fixed(10),
+          child: box(#onGuide),
+        ),
+        Constrained(
+          id: #onBarrier,
+          start: .endOf(#bar),
+          top: .topOf(parent, margin: 100),
+          width: .fixed(10),
+          height: .fixed(10),
+          child: box(#onBarrier),
+        ),
+        const ConstraintGroup(
+          id: #g,
+          referenced: [#guide, #bar],
+          visibility: .gone,
+        ),
+      ]));
+      expect(rectOf(tester, #onGuide).left, 200);
+      expect(rectOf(tester, #onBarrier).left, 300);
+    });
+  });
+
   group('circular positioning', () {
     testWidgets('places the satellite at angle and radius from the hub center',
         (tester) async {
@@ -333,6 +775,22 @@ void main() {
       final r = rectOf(tester, #a);
       expect(r.left, 150);
       expect(r.bottom, 500);
+    });
+
+    testWidgets('a guideline later in the child list anchors siblings',
+        (tester) async {
+      await tester.pumpWidget(host([
+        Constrained(
+          id: #a,
+          start: .rightOf(#g, margin: 8),
+          top: .topOf(parent),
+          width: .fixed(100),
+          height: .fixed(50),
+          child: box(#a),
+        ),
+        const Guideline.vertical(id: #g, begin: 120),
+      ]));
+      expect(rectOf(tester, #a).left, 128);
     });
 
     testWidgets('guideline percent change moves anchored siblings',
@@ -905,8 +1363,9 @@ void main() {
       expect(flow.localToGlobal(Offset.zero, ancestor: ro).dx, 375);
     });
 
-    // What the docs say does not change with the direction: a flow mirrors its
-    // own arrangement, a grid does not, and a barrier margin moves it right.
+    // What the docs say about the direction: a flow and a grid mirror their
+    // own arrangement, and a barrier margin mirrors for start and end
+    // barriers only.
     testWidgets('a flow starts its rows at the right edge', (tester) async {
       await tester.pumpWidget(host([
         for (final id in const [#a, #b, #c])
@@ -933,7 +1392,7 @@ void main() {
       expect(rectOf(tester, #c).left, 500);
     });
 
-    testWidgets('a grid fills its cells from the left', (tester) async {
+    testWidgets('a grid fills its cells from the right', (tester) async {
       await tester.pumpWidget(host([
         for (final id in const [#a, #b])
           Constrained(
@@ -953,37 +1412,284 @@ void main() {
           bottom: .bottomOf(parent),
         ),
       ], direction: rtl));
-      expect(rectOf(tester, #a), const Rect.fromLTWH(0, 0, 400, 600));
-      expect(rectOf(tester, #b), const Rect.fromLTWH(400, 0, 400, 600));
+      // The first cell is the start-most: the right half.
+      expect(rectOf(tester, #a), const Rect.fromLTWH(400, 0, 400, 600));
+      expect(rectOf(tester, #b), const Rect.fromLTWH(0, 0, 400, 600));
     });
 
-    testWidgets('a barrier margin moves it right', (tester) async {
-      await tester.pumpWidget(host([
-        Constrained(
-          id: #label,
-          start: .startOf(parent, margin: 100),
-          top: .topOf(parent),
-          width: .fixed(100),
-          height: .fixed(30),
-          child: box(#label),
-        ),
-        // .end tracks left edges in right-to-left text: #label's is at 600.
-        const Barrier(
-          id: #labelEnd,
-          edge: .end,
-          referenced: [#label],
-          margin: 10,
-        ),
-        Constrained(
-          id: #marker,
-          left: .leftOf(#labelEnd),
-          top: .bottomOf(#label),
-          width: .fixed(10),
-          height: .fixed(10),
-          child: box(#marker),
-        ),
-      ], direction: rtl));
-      expect(rectOf(tester, #marker).left, 610);
+    // Six tiles in three weighted columns with gaps, a span, and a skip. Every
+    // track divides evenly, so every edge is a whole pixel.
+    List<Widget> tiles({required bool directional, List<Widget> extra = const []}) => [
+          for (var i = 0; i < 6; i++)
+            Constrained(
+              id: Symbol('t$i'),
+              width: .matchConstraint,
+              height: .matchConstraint,
+              child: box(Symbol('t$i')),
+            ),
+          ConstraintGrid(
+            id: #grid,
+            referenced: const [#t0, #t1, #t2, #t3, #t4, #t5],
+            rows: 3,
+            columns: 3,
+            columnWeights: const [2, 1, 1],
+            horizontalGap: 12,
+            verticalGap: 8,
+            spans: '0:1x2', // #t0 covers the first two columns of row 0
+            skips: '5:1x1',
+            // 16 px from the start (or left), 24 px from the end (or right):
+            // 760 px wide, columns of 368, 184, and 184 between the gaps,
+            // and rows of 184.
+            start: directional ? .startOf(parent, margin: 16) : null,
+            end: directional ? .endOf(parent, margin: 24) : null,
+            left: directional ? null : .leftOf(parent, margin: 16),
+            right: directional ? null : .rightOf(parent, margin: 24),
+            top: .topOf(parent, margin: 16),
+            bottom: .bottomOf(parent, margin: 16),
+          ),
+          ...extra,
+        ];
+
+    const tileIds = [#t0, #t1, #t2, #t3, #t4, #t5];
+
+    testWidgets('a start/end-linked grid mirrors with the layout',
+        (tester) async {
+      await tester.pumpWidget(host(tiles(directional: true)));
+      final ltr = [for (final id in tileIds) rectOf(tester, id)];
+      expect(ltr.first, const Rect.fromLTWH(16, 16, 564, 184));
+      await tester.pumpWidget(host(tiles(directional: true), direction: rtl));
+      // The grid trades its margins, and its cells fill from the right: the
+      // whole arrangement is the mirror image.
+      for (var i = 0; i < tileIds.length; i++) {
+        final r = ltr[i];
+        expect(rectOf(tester, tileIds[i]),
+            Rect.fromLTWH(800 - r.right, r.top, r.width, r.height),
+            reason: '${tileIds[i]}');
+      }
+    });
+
+    testWidgets('a left/right-linked grid mirrors its cells in place',
+        (tester) async {
+      await tester.pumpWidget(host(tiles(directional: false)));
+      final ltr = [for (final id in tileIds) rectOf(tester, id)];
+      await tester.pumpWidget(host(tiles(directional: false), direction: rtl));
+      // The grid keeps its absolute position, from x = 16 to x = 776, and
+      // mirrors its cells within it.
+      for (var i = 0; i < tileIds.length; i++) {
+        final r = ltr[i];
+        expect(rectOf(tester, tileIds[i]),
+            Rect.fromLTWH(16 + 776 - r.right, r.top, r.width, r.height),
+            reason: '${tileIds[i]}');
+      }
+    });
+
+    testWidgets('a widget linked to a grid member follows it', (tester) async {
+      // Centered under #t1, in cell 2: the end of the first row.
+      final badge = Constrained(
+        id: #badge,
+        start: .startOf(#t1),
+        end: .endOf(#t1),
+        top: .bottomOf(#t1, margin: 4),
+        width: .fixed(20),
+        height: .fixed(10),
+        child: box(#badge),
+      );
+      await tester.pumpWidget(host(tiles(directional: true, extra: [badge])));
+      final ltrBadge = rectOf(tester, #badge);
+      expect(ltrBadge.center.dx, rectOf(tester, #t1).center.dx);
+      await tester.pumpWidget(host(tiles(directional: true, extra: [badge]),
+          direction: rtl));
+      // #t1 is now the leftmost cell of the first row, after the grid's
+      // 24 px end margin, and the badge moved with it.
+      final t1 = rectOf(tester, #t1);
+      expect(t1, const Rect.fromLTWH(24, 16, 184, 184));
+      expect(rectOf(tester, #badge),
+          Rect.fromLTWH(t1.center.dx - 10, t1.bottom + 4, 20, 10));
+      expect(rectOf(tester, #badge).left, 800 - ltrBadge.right);
+    });
+
+    testWidgets('a tile smaller than its cell keeps its bias from the start',
+        (tester) async {
+      // horizontalBias 0 puts each tile against the start of its cell, so
+      // the right-to-left grid is the mirror image of the left-to-right one.
+      List<Widget> biased() => [
+            for (final id in const [#a, #b])
+              Constrained(
+                id: id,
+                width: .fixed(40),
+                height: .fixed(40),
+                horizontalBias: 0,
+                child: box(id),
+              ),
+            ConstraintGrid(
+              id: #grid,
+              referenced: const [#a, #b],
+              rows: 1,
+              columns: 2,
+              start: .startOf(parent),
+              end: .endOf(parent),
+              top: .topOf(parent),
+              bottom: .bottomOf(parent),
+            ),
+          ];
+      await tester.pumpWidget(host(biased()));
+      expect(rectOf(tester, #a), const Rect.fromLTWH(0, 280, 40, 40));
+      expect(rectOf(tester, #b), const Rect.fromLTWH(400, 280, 40, 40));
+      await tester.pumpWidget(host(biased(), direction: rtl));
+      expect(rectOf(tester, #a), const Rect.fromLTWH(760, 280, 40, 40));
+      expect(rectOf(tester, #b), const Rect.fromLTWH(360, 280, 40, 40));
+    });
+
+    // Two labels of different widths with an end barrier past them, and two
+    // icons with a start barrier back over them; every other widget hangs
+    // off a barrier through start/end links, so the layout as a whole can
+    // mirror. A negative margin is in there too.
+    const barrierIds = [
+      #name, #email, #value, #icon, #badge, #marker, #after,
+    ];
+    List<Widget> barriered() => [
+          Constrained(
+            id: #name,
+            start: .startOf(parent, margin: 16),
+            top: .topOf(parent, margin: 16),
+            width: .fixed(80),
+            height: .fixed(30),
+            child: box(#name),
+          ),
+          Constrained(
+            id: #email,
+            start: .startOf(parent, margin: 16),
+            top: .bottomOf(#name, margin: 8),
+            width: .fixed(120),
+            height: .fixed(30),
+            child: box(#email),
+          ),
+          const Barrier(
+            id: #labelsEnd,
+            edge: .end,
+            referenced: [#name, #email],
+            margin: 12,
+          ),
+          Constrained(
+            id: #value,
+            start: .endOf(#labelsEnd),
+            top: .topOf(#name),
+            width: .fixed(100),
+            height: .fixed(30),
+            child: box(#value),
+          ),
+          Constrained(
+            id: #icon,
+            start: .startOf(parent, margin: 300),
+            top: .bottomOf(#email, margin: 20),
+            width: .fixed(60),
+            height: .fixed(40),
+            child: box(#icon),
+          ),
+          Constrained(
+            id: #badge,
+            start: .startOf(parent, margin: 330),
+            top: .topOf(#icon),
+            width: .fixed(90),
+            height: .fixed(20),
+            child: box(#badge),
+          ),
+          const Barrier(
+            id: #iconsStart,
+            edge: .start,
+            referenced: [#icon, #badge],
+            margin: 10,
+          ),
+          Constrained(
+            id: #marker,
+            end: .startOf(#iconsStart),
+            top: .bottomOf(#icon),
+            width: .fixed(20),
+            height: .fixed(20),
+            child: box(#marker),
+          ),
+          const Barrier(
+            id: #valueEnd,
+            edge: .end,
+            referenced: [#value],
+            margin: -6,
+          ),
+          Constrained(
+            id: #after,
+            start: .endOf(#valueEnd),
+            top: .bottomOf(#value),
+            width: .fixed(40),
+            height: .fixed(10),
+            child: box(#after),
+          ),
+        ];
+
+    testWidgets('start and end barriers with margins mirror exactly',
+        (tester) async {
+      await tester.pumpWidget(host(barriered()));
+      final ltr = {for (final id in barrierIds) id: rectOf(tester, id)};
+      // The end barrier sits 12 past the wider label, the start barrier 10
+      // back over the icons, and the negative margin pulls 6 back over #value.
+      expect(ltr[#value]!.left, 16 + 120 + 12);
+      expect(ltr[#marker]!.right, 300 + 10);
+      expect(ltr[#after]!.left, ltr[#value]!.right - 6);
+
+      await tester.pumpWidget(host(barriered(), direction: rtl));
+      for (final id in barrierIds) {
+        final l = ltr[id]!;
+        expect(
+          rectOf(tester, id),
+          Rect.fromLTWH(800 - l.left - l.width, l.top, l.width, l.height),
+          reason: '$id must sit at the mirror of its left-to-right position',
+        );
+      }
+    });
+
+    testWidgets('left and right barriers keep their margin in right-to-left '
+        'text', (tester) async {
+      List<Widget> absolute() => [
+            Constrained(
+              id: #label,
+              start: .startOf(parent, margin: 100),
+              top: .topOf(parent),
+              width: .fixed(100),
+              height: .fixed(30),
+              child: box(#label),
+            ),
+            const Barrier(
+              id: #leftEdge,
+              edge: .left,
+              referenced: [#label],
+              margin: 10,
+            ),
+            const Barrier(
+              id: #rightEdge,
+              edge: .right,
+              referenced: [#label],
+              margin: 10,
+            ),
+            for (final (id, barrier, top) in const [
+              (#onLeft, #leftEdge, 40.0),
+              (#onRight, #rightEdge, 60.0),
+            ])
+              Constrained(
+                id: id,
+                left: .leftOf(barrier),
+                top: .topOf(parent, margin: top),
+                width: .fixed(10),
+                height: .fixed(10),
+                child: box(id),
+              ),
+          ];
+      // #label spans 600 to 700 in right-to-left text: a positive margin
+      // still moves both barriers right.
+      await tester.pumpWidget(host(absolute(), direction: rtl));
+      expect(rectOf(tester, #onLeft).left, 610);
+      expect(rectOf(tester, #onRight).left, 710);
+
+      await tester.pumpWidget(host(absolute()));
+      expect(rectOf(tester, #onLeft).left, 110);
+      expect(rectOf(tester, #onRight).left, 210);
     });
 
     // Three 24-wide members between 24-px outer margins.

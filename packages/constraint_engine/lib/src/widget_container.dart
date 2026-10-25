@@ -40,9 +40,17 @@ class WidgetContainer extends ConstraintWidget {
     }
   }
 
-  /// Remove a child widget and clear its parent.
+  /// Remove a child widget and clear its parent. The widget keeps the rest of
+  /// its configuration.
   void remove(ConstraintWidget widget) {
     mChildren.remove(widget);
+    // Upstream resets the widget here instead (ConstraintWidget.reset(), not
+    // ported), clearing its connections, size, and other attributes, and so
+    // does [add] when it re-adds a widget that already has a parent. GridCore
+    // re-adds its box widgets on every measure, as upstream does, and this
+    // engine measures virtual layouts again in layout()'s solver fallback, so
+    // a reset would wipe the boxes' setup. Upstream's own grid collapses the
+    // second time it is measured, for the same reason.
     widget.setParent(null);
   }
 

@@ -35,8 +35,9 @@ sealed class Dimension {
 
   /// Fill the space between the two opposing anchors. Android `0dp`.
   ///
-  /// Requires both opposing anchors on the axis (start and end, or top and
-  /// bottom).
+  /// Needs both opposing anchors on the axis (start and end, or top and
+  /// bottom) to fill anything: with only one of them, the child sizes to its
+  /// content.
   static const MatchConstraintDimension matchConstraint =
       MatchConstraintDimension._();
 
@@ -47,7 +48,10 @@ sealed class Dimension {
   ///
   /// The same as [matchConstraint] with an optional [min] and [max] size in
   /// logical pixels. Android `0dp` with `layout_constraintWidth_min` /
-  /// `layout_constraintWidth_max`.
+  /// `layout_constraintWidth_max`. With only one anchor on the axis, the
+  /// child's content size is kept between [min] and [max], and when a bound
+  /// changes it the child is measured again at the bounded size, so its other
+  /// dimension follows.
   const factory Dimension.spread({double? min, double? max}) =
       MatchConstraintDimension.spread;
 

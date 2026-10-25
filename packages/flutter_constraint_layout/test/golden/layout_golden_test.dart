@@ -756,31 +756,46 @@ void main() {
       ]);
     });
 
-    testWidgets('golden: grid with spans and skips', (tester) async {
-      await expectLayoutGolden(tester, 'grid_spans_skips', [
-        for (var i = 0; i < 4; i++)
-          Constrained(
-            id: Symbol('g$i'),
-            width: .matchConstraint,
-            height: .matchConstraint,
-            child: fill(Symbol('g$i'), kPalette[i % kPalette.length]),
-          ),
-        ConstraintGrid(
-          id: #grid,
-          referenced: const [#g0, #g1, #g2, #g3],
-          rows: 3,
-          columns: 3,
-          // The first cell covers a 1x2 block; cell 4 is left empty.
-          spans: '0:1x2',
-          skips: '4:1x1',
-          start: .startOf(parent, margin: 16),
-          end: .endOf(parent, margin: 16),
-          top: .topOf(parent, margin: 16),
-          bottom: .bottomOf(parent, margin: 16),
-          horizontalGap: 6,
-          verticalGap: 6,
+    List<Widget> spansAndSkips() => [
+      for (var i = 0; i < 4; i++)
+        Constrained(
+          id: Symbol('g$i'),
+          width: .matchConstraint,
+          height: .matchConstraint,
+          child: fill(Symbol('g$i'), kPalette[i % kPalette.length]),
         ),
-      ]);
+      ConstraintGrid(
+        id: #grid,
+        referenced: const [#g0, #g1, #g2, #g3],
+        rows: 3,
+        columns: 3,
+        // The first cell covers a 1x2 block; cell 4 is left empty.
+        spans: '0:1x2',
+        skips: '4:1x1',
+        start: .startOf(parent, margin: 16),
+        end: .endOf(parent, margin: 16),
+        top: .topOf(parent, margin: 16),
+        bottom: .bottomOf(parent, margin: 16),
+        horizontalGap: 6,
+        verticalGap: 6,
+      ),
+    ];
+
+    testWidgets('golden: grid with spans and skips', (tester) async {
+      await expectLayoutGolden(tester, 'grid_spans_skips', spansAndSkips());
+    });
+
+    testWidgets('golden: grid with spans and skips mirrors in RTL', (
+      tester,
+    ) async {
+      // The mirror image of grid_spans_skips: cells fill from the right, and
+      // the span and the skip keep their cell numbers.
+      await expectLayoutGolden(
+        tester,
+        'grid_spans_skips_rtl',
+        spansAndSkips(),
+        direction: TextDirection.rtl,
+      );
     });
 
     testWidgets('golden: grid with uneven row and column weights', (

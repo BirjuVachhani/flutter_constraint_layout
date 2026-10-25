@@ -94,10 +94,24 @@ class GuidelineReference extends WidgetRun {
   @override
   void applyToWidget() {
     final guideline = mWidget as Guideline;
+    // Divergence from upstream, which only sets the position: the frame is
+    // set as Guideline.updateFromSolver sets it on the solver path, a line
+    // across the whole container, so both paths report the same geometry.
+    final parent = mWidget.getParent();
     if (guideline.getOrientation() == ConstraintWidget.VERTICAL) {
       mWidget.setX(start.value);
+      if (parent != null) {
+        mWidget.setY(0);
+        mWidget.setHeight(parent.getHeight());
+        mWidget.setWidth(0);
+      }
     } else {
       mWidget.setY(start.value);
+      if (parent != null) {
+        mWidget.setX(0);
+        mWidget.setWidth(parent.getWidth());
+        mWidget.setHeight(0);
+      }
     }
   }
 }

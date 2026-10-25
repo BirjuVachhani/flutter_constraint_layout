@@ -19,17 +19,20 @@ enum ChainStyle {
 
 /// Whether a `Constrained` child is laid out, and whether it is drawn.
 ///
-/// Android `View.VISIBLE` / `INVISIBLE` / `GONE`.
+/// Android `View.VISIBLE` / `INVISIBLE` / `GONE`. A `ConstraintGroup` that
+/// references a child replaces the child's own visibility with its own.
 enum ConstraintVisibility {
   /// Laid out and drawn. The default.
   visible,
 
   /// Laid out at its normal size and position (siblings constrain against it
-  /// exactly as if visible), but not drawn and not hit-testable.
+  /// exactly as if visible), but not drawn, not hit-testable, and left out of
+  /// the semantics tree.
   invisible,
 
   /// Collapses to a zero-size point; margins of links targeting it are
-  /// replaced by their `goneMargin`. Not drawn and not hit-testable.
+  /// replaced by their `goneMargin`. Not drawn, not hit-testable, and left out
+  /// of the semantics tree.
   gone,
 }
 
@@ -57,7 +60,7 @@ enum BarrierEdge {
 /// What kind of engine object a child of `ConstraintLayout` maps to.
 ///
 /// Stored in `ConstraintParentData`; set by `Constrained`, `Guideline`,
-/// `Barrier`, and `ConstraintFlow`.
+/// `Barrier`, `ConstraintFlow`, `ConstraintGrid`, and `ConstraintGroup`.
 enum HelperKind {
   /// A regular constrained child.
   none,
@@ -75,6 +78,10 @@ enum HelperKind {
   /// A grid: a virtual layout arranging referenced widgets in rows and
   /// columns.
   grid,
+
+  /// A group: sets the visibility of referenced widgets. It has no position
+  /// or size and takes no part in the layout.
+  group,
 }
 
 /// How a `ConstraintFlow` handles running out of space on its main axis.

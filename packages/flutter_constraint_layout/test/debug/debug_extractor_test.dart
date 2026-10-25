@@ -491,6 +491,37 @@ void main() {
       expect(scene.boxes.single.invisible, isTrue);
     });
 
+    testWidgets('a group draws nothing; its members show its visibility',
+        (tester) async {
+      Widget member(Symbol id, double top) => Constrained(
+            id: id,
+            start: .startOf(parent),
+            top: .topOf(parent, margin: top),
+            width: .fixed(100),
+            height: .fixed(50),
+            child: box(id),
+          );
+      await tester.pumpWidget(host([
+        member(#hidden, 0),
+        member(#ghost, 60),
+        member(#plain, 120),
+        const ConstraintGroup(
+            id: #goneGroup, referenced: [#hidden], visibility: .gone),
+        const ConstraintGroup(
+            id: #invisibleGroup, referenced: [#ghost], visibility: .invisible),
+      ]));
+      final scene = sceneOf(tester);
+      // No box, line, or connection for either group, and none for the
+      // member the gone group collapsed.
+      expect([for (final b in scene.boxes) b.idLabel], ['ghost', 'plain']);
+      expect(scene.boxes.first.invisible, isTrue);
+      expect(scene.boxes.last.invisible, isFalse);
+      expect(scene.guidelines, isEmpty);
+      expect(scene.barriers, isEmpty);
+      expect(scene.connections, hasLength(4),
+          reason: 'start and top links of #ghost and #plain only');
+    });
+
     testWidgets('boxes carry the Symbol id and the user-facing widget type',
         (tester) async {
       await tester.pumpWidget(host([

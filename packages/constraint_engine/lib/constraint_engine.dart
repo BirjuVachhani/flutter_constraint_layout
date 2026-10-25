@@ -51,6 +51,7 @@ export 'src/constraint_widget_container.dart';
 export 'src/flow.dart';
 export 'src/goal_row.dart';
 export 'src/grid_core.dart';
+export 'src/grid_engine.dart';
 export 'src/guideline.dart';
 export 'src/helper.dart';
 export 'src/helper_widget.dart';

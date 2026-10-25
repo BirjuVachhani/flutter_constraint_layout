@@ -42,9 +42,30 @@ class RunGroup {
     mLastRun = run;
   }
 
+  /// Whether the last [computeWrapSize] reached a node it was already inside
+  /// of. Upstream's traversals recurse until the stack overflows on such a
+  /// loop, which runs that depend on each other form (for example a widget
+  /// centered between the parent's left and a sibling's right, whose left is
+  /// linked to the widget's right). Once set, the traversals stop at once.
+  bool _cycle = false;
+
+  /// Starts visiting [node]: false, and the traversal must stop, when the
+  /// traversal is already inside [node] or found a loop before.
+  bool _enter(DependencyNode node) {
+    if (_cycle || node.traversing) {
+      _cycle = true;
+      return false;
+    }
+    node.traversing = true;
+    return true;
+  }
+
   int _traverseStart(DependencyNode node, int startPosition) {
     final run = node.mRun;
     if (run is HelperReferences) {
+      return startPosition;
+    }
+    if (!_enter(node)) {
       return startPosition;
     }
     var position = startPosition;
@@ -73,12 +94,16 @@ class RunGroup {
       position = _max(position, startPosition + dimension - run.end.mMargin);
     }
 
+    node.traversing = false;
     return position;
   }
 
   int _traverseEnd(DependencyNode node, int startPosition) {
     final run = node.mRun;
     if (run is HelperReferences) {
+      return startPosition;
+    }
+    if (!_enter(node)) {
       return startPosition;
     }
     var position = startPosition;
@@ -107,10 +132,15 @@ class RunGroup {
       position = _min(position, startPosition - dimension - run.start.mMargin);
     }
 
+    node.traversing = false;
     return position;
   }
 
-  int computeWrapSize(ConstraintWidgetContainer container, int orientation) {
+  /// The size this group needs along [orientation] in a wrap-content
+  /// [container], or null when its runs depend on each other in a loop (see
+  /// [_cycle]), which the graph cannot resolve.
+  int? computeWrapSize(ConstraintWidgetContainer container, int orientation) {
+    _cycle = false;
     final first = mFirstRun!;
     if (first is ChainRun) {
       if (first.orientation != orientation) {
@@ -154,11 +184,14 @@ class RunGroup {
       final bias = first.mWidget.getBiasPercent(orientation);
       var gap = 0;
       if (bias > 0) {
-        gap = ((startGap / bias) + (endGap / (1 - bias))).toInt();
+        // A bias of exactly 1 divides by zero here: NaN when the end gap is
+        // 0, infinite otherwise. Upstream's (long) casts turn those into 0
+        // and a saturated value; Dart's toInt() would throw.
+        gap = _toJavaLong((startGap / bias) + (endGap / (1 - bias)));
       }
 
-      startGap = (0.5 + gap * bias).toInt();
-      endGap = (0.5 + gap * (1 - bias)).toInt();
+      startGap = _toJavaLong(0.5 + gap * bias);
+      endGap = _toJavaLong(0.5 + gap * (1 - bias));
 
       final runDimension = startGap + dimension + endGap;
       dimension = first.start.mMargin + runDimension - first.end.mMargin;
@@ -175,7 +208,7 @@ class RunGroup {
           first.start.mMargin + first.getWrapDimension() - first.end.mMargin;
     }
 
-    return dimension;
+    return _cycle ? null : dimension;
   }
 
   bool _defineTerminalWidget(WidgetRun run, int orientation) {
@@ -237,4 +270,18 @@ class RunGroup {
 
   static int _max(int a, int b) => a > b ? a : b;
   static int _min(int a, int b) => a < b ? a : b;
+
+  /// Java's narrowing conversion of a floating-point value to `long` (JLS
+  /// 5.1.3), which upstream's `(long)` casts rely on: NaN converts to 0 and
+  /// an infinite value saturates, where Dart's toInt() throws for both.
+  /// Finite values convert as toInt() does, toward zero.
+  static int _toJavaLong(double value) {
+    if (value.isNaN) return 0;
+    if (value.isInfinite) {
+      // On the VM, toInt() saturates a finite value at the 64-bit bounds,
+      // which are Java's Long.MIN_VALUE and Long.MAX_VALUE.
+      return (value > 0 ? double.maxFinite : -double.maxFinite).toInt();
+    }
+    return value.toInt();
+  }
 }

@@ -223,7 +223,8 @@ class _FeaturesOverview extends StatelessWidget {
       Icons.done_all_rounded,
       'The full layout toolkit',
       'Anchors, chains, barriers, guidelines, circular placement, flow, grid, '
-          'and visibility, ported faithfully from Android ConstraintLayout.',
+          'visibility, and groups, ported faithfully from Android '
+          'ConstraintLayout.',
     ),
     (
       Icons.code_rounded,
@@ -253,7 +254,7 @@ class _FeaturesOverview extends StatelessWidget {
       Icons.straighten_rounded,
       'Guidelines and barriers',
       'Anchor to a shared percentage line, or to a barrier that tracks the '
-          'furthest edge of a group so content always clears it.',
+          'furthest edge of a set of widgets so content always clears it.',
     ),
     (
       Icons.grid_view_rounded,
@@ -647,7 +648,8 @@ class _HelpersFeature extends StatelessWidget {
       subtitle:
           'Guidelines, barriers, chains, and circular positioning handle the '
           'arrangements that usually mean extra wrapper widgets. A barrier '
-          'tracks the furthest edge of a group, so content clears it every time.',
+          'tracks the furthest edge of a set of widgets, so content clears it '
+          'every time.',
       child: docExamples['barriers']!.capped(_kHomeCodeCap),
     );
   }
@@ -729,11 +731,13 @@ class _EngineFeature extends StatelessWidget {
       tag: 'Fallback',
       title: 'Cassowary solver',
       body:
-          'Some layouts go beyond what the graph resolves: barriers, circular '
-          'links, Flow and Grid, a chain with a gone or aspect-ratio member, or '
-          'a chain along an axis that sizes to its content. For those the '
-          'engine falls back to a linear constraint solver, the same Cassowary '
-          'algorithm behind Apple\'s Auto Layout.',
+          'Some layouts go beyond what the graph resolves: circular links, Flow '
+          'and Grid, a chain with a gone, aspect-ratio, or percent member, a '
+          'barrier layout that Android would lay out differently from the '
+          'graph, or a layout that sizes to its content and holds a guideline, '
+          'a barrier, or a chain along that axis. For those the engine falls '
+          'back to a linear constraint solver, the same Cassowary algorithm '
+          'behind Apple\'s Auto Layout.',
     );
 
     final cards = compact

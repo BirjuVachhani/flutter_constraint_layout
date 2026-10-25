@@ -8,13 +8,19 @@ import 'link.dart';
 import 'types.dart';
 
 /// A virtual layout inside a [ConstraintLayout] that arranges the widgets in
-/// [referenced] in a grid of [rows] x [columns]. Android's `Grid` helper.
+/// [referenced] in a grid of [rows] x [columns]: the counterpart of Android's
+/// `Grid` helper, following the core grid that Jetpack Compose's
+/// ConstraintLayout uses (`GridCore` of constraintlayout-core 1.1.1).
 ///
 /// The grid itself is positioned and sized like a `Constrained` child (links,
 /// [width], [height]); the referenced widgets remain siblings and are placed
 /// into the grid's cells in order. [spans] and [skips] use Android's
 /// `"index:RxC"` format (for example `spans: '0:1x2'` makes the first cell
 /// span two columns).
+///
+/// The cells fill from the start edge. In a right-to-left layout the columns
+/// mirror: the first column is the rightmost, while cell numbers in [spans]
+/// and [skips] and the entries of [columnWeights] still count from it.
 ///
 /// ```dart
 /// ConstraintGrid(
@@ -71,7 +77,7 @@ class ConstraintGrid extends ParentDataWidget<ConstraintParentData> {
   final int? columns;
 
   /// The axis along which widgets fill the cells (horizontal fills row by
-  /// row).
+  /// row, from the start edge).
   final Axis orientation;
 
   /// Positions this grid's left edge (absolute).
@@ -112,20 +118,28 @@ class ConstraintGrid extends ParentDataWidget<ConstraintParentData> {
   /// Gap in logical pixels between rows.
   final double verticalGap;
 
-  /// Relative row heights (one entry per row), or null for equal rows.
+  /// Relative row heights (one entry per row), or null for equal rows. A
+  /// shorter list is padded with weights of 1 and a longer one is trimmed to
+  /// the number of rows.
   final List<double>? rowWeights;
 
-  /// Relative column widths (one entry per column), or null for equal
-  /// columns.
+  /// Relative column widths (one entry per column, from the start column), or
+  /// null for equal columns. A shorter list is padded with weights of 1 and a
+  /// longer one is trimmed to the number of columns.
   final List<double>? columnWeights;
 
-  /// Spans in Android's `index:RxC` format (`'0:2x1, 4:1x2'`), or null.
+  /// Spans in Android's `index:RxC` format (`'0:2x1, 4:1x2'`), or null. The
+  /// entries are sorted by cell index, then given to the [referenced]
+  /// widgets in order: the lowest index to the first widget, and so on.
   final String? spans;
 
-  /// Skipped cells in Android's `index:RxC` format, or null.
+  /// Skipped cells in Android's `index:RxC` format, or null. The entries are
+  /// applied in order of cell index.
   final String? skips;
 
   /// Whether this grid (and its arrangement) is laid out and drawn.
+  ///
+  /// A `ConstraintGroup` that references this grid overrides it.
   final ConstraintVisibility visibility;
 
   @override

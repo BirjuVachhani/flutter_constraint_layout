@@ -214,7 +214,14 @@ class GoalVariableAccessor {
     for (var i = SolverVariable.MAX_STRENGTH - 1; i >= 0; i--) {
       final comparedValue = other.mGoalStrengthVector[i];
       final value = mVariable.mGoalStrengthVector[i];
-      if (value == comparedValue) {
+      // Divergence from upstream, which compares exactly: strengths within
+      // epsilon of each other are a tie, so the candidate found first keeps
+      // the pivot. Upstream computes in 32-bit float and this port in double,
+      // so an exact tie carries different rounding noise in each, and the
+      // exact comparison broke it differently: in a weighted chain whose
+      // content does not fit a track (a grid tile as tall as its row), the
+      // two picks reached solutions tens of pixels apart. See UPSTREAM.md.
+      if ((value - comparedValue).abs() < PriorityGoalRow._epsilon) {
         continue;
       }
       return value < comparedValue;

@@ -30,8 +30,8 @@ const linkParameters = {
   'circle',
 };
 
-/// The parameter through which `Barrier`, `ConstraintFlow`, and `ConstraintGrid`
-/// name the children they act on.
+/// The parameter through which `Barrier`, `ConstraintFlow`, `ConstraintGrid`,
+/// and `ConstraintGroup` name the children they act on.
 const referencedParameter = 'referenced';
 
 /// Whether [element] is declared by the `flutter_constraint_layout` package.

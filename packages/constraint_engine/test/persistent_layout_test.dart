@@ -204,6 +204,147 @@ void main() {
       expect(geometryOf(root), geometryOf(build(gone: true)..layout()));
     });
 
+    test('a centered widget that loses a link lays out again', () {
+      // A match-constraint width is measured after the graph is built, so
+      // the vertical run is set up as centered; then the bottom link goes.
+      ConstraintWidgetContainer build({required bool centered}) {
+        final root = ConstraintWidgetContainer.rect(0, 0, 400, 300);
+        final t = ConstraintWidget.size(100, 20);
+        root.add(t);
+        t.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
+        t.setVerticalDimensionBehaviour(DimensionBehaviour.wrapContent);
+        t.connect(
+          ConstraintAnchorType.left,
+          root,
+          ConstraintAnchorType.left,
+          10,
+        );
+        t.connect(
+          ConstraintAnchorType.right,
+          root,
+          ConstraintAnchorType.right,
+          10,
+        );
+        t.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+        if (centered) {
+          t.connect(
+            ConstraintAnchorType.bottom,
+            root,
+            ConstraintAnchorType.bottom,
+          );
+        }
+        return root;
+      }
+
+      final root = build(centered: true);
+      root.layout();
+      expect(geometryOf(root)[1], [10, 140, 380, 20]);
+      root.getChildren().single.getAnchor(ConstraintAnchorType.bottom)!.reset();
+      root.layout();
+      expect(geometryOf(root), geometryOf(build(centered: false)..layout()));
+      expect(geometryOf(root)[1], [10, 0, 380, 20]);
+    });
+
+    test('a widget on the baseline of a sibling that turns gone lays out '
+        'again as a fresh container does', () {
+      // t fills between two anchors, so the graph wires its baseline through
+      // its baseline dimension (17 from its measure). When t turns gone the
+      // graph no longer measures it, and its baseline node must not keep
+      // computing its margin from that earlier dimension.
+      ConstraintWidgetContainer build({required bool gone}) {
+        final root = ConstraintWidgetContainer.rect(0, 0, 400, 300);
+        final t = ConstraintWidget.size(100, 22);
+        root.add(t);
+        final v = ConstraintWidget.size(60, 20);
+        root.add(v);
+        t.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
+        t.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left, 40);
+        t.connect(
+          ConstraintAnchorType.right,
+          root,
+          ConstraintAnchorType.right,
+          140,
+        );
+        t.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top, 30);
+        t.setBaselineDistance(gone ? 0 : 17);
+        // The Flutter adapter flags both ends of a baseline link, measured
+        // baseline or not.
+        t.setHasBaseline(true);
+        if (gone) t.setVisibility(ConstraintWidget.GONE);
+        v.setBaselineDistance(15);
+        v.connect(
+          ConstraintAnchorType.right,
+          root,
+          ConstraintAnchorType.right,
+          8,
+        );
+        v.connect(
+          ConstraintAnchorType.baseline,
+          t,
+          ConstraintAnchorType.baseline,
+        );
+        return root;
+      }
+
+      final root = build(gone: false);
+      root.layout();
+      expect(geometryOf(root)[2], [332, 32, 60, 20]);
+      final t = root.getChildren()[0];
+      // What the Flutter adapter does when a child turns gone in place: the
+      // widget keeps its baseline flag but no longer has a measured baseline.
+      t.setVisibility(ConstraintWidget.GONE);
+      t.setBaselineDistance(0);
+      t.setHasBaseline(true);
+      root.layout();
+      expect(geometryOf(root), geometryOf(build(gone: true)..layout()));
+    });
+
+    test('a barrier that counts no reference stays put', () {
+      // A right barrier whose only reference is gone, without
+      // allowsGoneWidget, holds no reference: Barrier.allSolved puts it at
+      // its margin, -8, which the solver reports as -7. Android (Direct
+      // resets it on every measure) and a fresh container keep it there.
+      ConstraintWidgetContainer build() {
+        final root = ConstraintWidgetContainer.rect(0, 0, 300, 200);
+        root.setRtl(true);
+        final b = Barrier()
+          ..setBarrierType(Barrier.right)
+          ..setAllowsGoneWidget(false)
+          ..setMargin(-8);
+        root.add(b);
+        final v = ConstraintWidget.size(40, 20);
+        root.add(v);
+        final t = ConstraintWidget.size(100, 20);
+        root.add(t);
+        b.add(v);
+        v.setVisibility(ConstraintWidget.GONE);
+        v.connect(
+          ConstraintAnchorType.left,
+          root,
+          ConstraintAnchorType.left,
+          16,
+        );
+        t.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
+        t.connect(ConstraintAnchorType.left, b, ConstraintAnchorType.right);
+        t.connect(
+          ConstraintAnchorType.right,
+          root,
+          ConstraintAnchorType.right,
+          12,
+        );
+        t.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top, 10);
+        return root;
+      }
+
+      final root = build();
+      final fresh = geometryOf(build()..layout());
+      expect(fresh[3], [-7, 10, 295, 20]);
+      for (var i = 0; i < 4; i++) {
+        root.layout();
+        expect(geometryOf(root), fresh, reason: 'layout ${i + 1}');
+      }
+    });
+
     test('wrap-content root re-layout keeps its size', () {
       ConstraintWidgetContainer build() {
         final root = ConstraintWidgetContainer.rect(0, 0, 800, 0);

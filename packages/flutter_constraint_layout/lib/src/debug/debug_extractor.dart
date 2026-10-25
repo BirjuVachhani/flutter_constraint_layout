@@ -60,6 +60,10 @@ class _SceneExtractor {
           _addGuideline(i);
         case HelperKind.barrier:
           _addBarrier(w as Barrier);
+        // A group has no geometry to draw; its visibility already shows on
+        // the boxes of the children it references.
+        case HelperKind.group:
+          break;
       }
     }
     return DebugScene(
@@ -96,7 +100,7 @@ class _SceneExtractor {
         rect: rect,
         idLabel: _idLabel(pd.id),
         typeLabel: virtual ? null : _typeLabel(children[i]),
-        invisible: pd.visibility == ConstraintVisibility.invisible,
+        invisible: pd.effectiveVisibility == ConstraintVisibility.invisible,
         virtual: virtual,
         baselineY: baselineUsed ? rect.top + w.getBaselineDistance() : null,
         connectedEdges: {

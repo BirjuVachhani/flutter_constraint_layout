@@ -2,8 +2,9 @@
 // Modifications copyright (C) 2026 Birju Vachhani
 // SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 //
-// Ported from androidx.constraintlayout.core.utils.GridCore
-// (upstream pinned in UPSTREAM.md).
+// Ported from androidx.constraintlayout.core.utils.GridCore as released in
+// constraintlayout-core 1.1.0 and 1.1.1, which changed it after the pinned
+// upstream commit (see UPSTREAM.md).
 
 import 'dart:math' as math;
 
@@ -24,7 +25,16 @@ import 'virtual_layout.dart';
 /// [setSpans] lets a widget cover several cells. Like every
 /// [VirtualLayout], it needs a [Measurer] that calls [measure], which
 /// builds the grid.
+///
+/// In a right-to-left container ([ConstraintWidgetContainer.setRtl]) the
+/// columns mirror: the first column is the rightmost, so the cells fill from
+/// the right edge, while cell positions (in spans and skips) and column
+/// weights still count from the first column. Upstream leaves right-to-left
+/// as a TODO; see UPSTREAM.md.
 class GridCore extends VirtualLayout {
+  // TODO: Handle padding from VirtualLayout. It should represent the padding
+  //  applied around the Grid itself. Usually decreasing its size.
+
   /// Orientation that fills the grid row by row. The default; see
   /// [setOrientation].
   static const int HORIZONTAL = 0;
@@ -32,14 +42,17 @@ class GridCore extends VirtualLayout {
   /// Orientation that fills the grid column by column.
   static const int VERTICAL = 1;
 
-  /// Flag (see [setFlags]) that reads a span's size as columns x rows
-  /// instead of rows x columns.
-  static const int SUB_GRID_BY_COL_ROW = 0;
+  // Flags using incremental bit positions
 
-  /// Flag (see [setFlags]) that places the widgets strictly in order and
+  /// Flag bit (see [setFlags]) that reads the size of a span or a skip as
+  /// columns x rows instead of rows x columns: `1:3x2` is read as `1:2x3`.
+  static const int SUB_GRID_BY_COL_ROW = 1;
+
+  /// Flag bit (see [setFlags]) that places the widgets strictly in order and
   /// gives a span to the widget that lands on its position. Without it, the
-  /// spans go to the first widgets, in the order the spans are listed.
-  static const int SPANS_RESPECT_WIDGET_ORDER = 1;
+  /// spans go to the first widgets, in order of position.
+  static const int SPANS_RESPECT_WIDGET_ORDER = 2;
+
   static const int _DEFAULT_SIZE = 3;
   static const int _MAX_ROWS = 50;
   static const int _MAX_COLUMNS = 50;
@@ -80,16 +93,14 @@ class GridCore extends VirtualLayout {
   /// Positions each widget constrains to: [left, top, right, bottom].
   List<List<int>>? _constraintMatrix;
 
-  List<int>? _flags;
+  /// An int value containing flag information.
+  int _flags = 0;
 
   /// Span-related information: [position, rowSpan, colSpan].
   List<List<int>>? _spanMatrix;
 
   /// Next span to be handled.
   int _spanIndex = 0;
-
-  bool _spansRespectWidgetOrder = false;
-  bool _subGridByColRow = false;
 
   /// Creates a grid whose numbers of rows and columns are derived from the
   /// number of widgets (see [setRows]).
@@ -123,9 +134,10 @@ class GridCore extends VirtualLayout {
 
   /// Set the spans: comma-separated `position:rowsxcolumns` entries (such as
   /// `0:2x2`), each making a widget cover that many rows and columns from
-  /// the cell at `position` (see [SPANS_RESPECT_WIDGET_ORDER] for which
-  /// widget). In a grid of one row or one column, an entry is
-  /// `position:span`.
+  /// the cell at `position`. The entries are sorted by position, and the
+  /// first widgets take them in that order (see [SPANS_RESPECT_WIDGET_ORDER]
+  /// for the other way to assign them). In a grid of one row or one column,
+  /// an entry is `position:span`.
   void setSpans(String spans) {
     if (_spans != null && _spans == spans) {
       return;
@@ -135,7 +147,8 @@ class GridCore extends VirtualLayout {
   }
 
   /// Set the cells to leave empty: comma-separated `position:rowsxcolumns`
-  /// entries (`position:count` in a grid of one row or one column).
+  /// entries (`position:count` in a grid of one row or one column), applied
+  /// in order of position.
   void setSkips(String skips) {
     if (_skips != null && _skips == skips) {
       return;
@@ -176,9 +189,9 @@ class GridCore extends VirtualLayout {
   String? getRowWeights() => _rowWeights;
 
   /// Set the row weights: comma-separated numbers, one per row (such as
-  /// `1,2,1`), that share the grid's height between the rows. A list whose
-  /// length differs from the number of rows, or that does not parse, is
-  /// ignored.
+  /// `1,2,1`), that share the grid's height between the rows. A shorter list
+  /// is padded with weights of 1, a longer one is trimmed to the number of
+  /// rows, and an entry that does not parse reads as 1.
   void setRowWeights(String rowWeights) {
     if (_rowWeights != null && _rowWeights == rowWeights) {
       return;
@@ -190,9 +203,9 @@ class GridCore extends VirtualLayout {
   String? getColumnWeights() => _columnWeights;
 
   /// Set the column weights: comma-separated numbers, one per column (such
-  /// as `1,2,1`), that share the grid's width between the columns. A list
-  /// whose length differs from the number of columns, or that does not
-  /// parse, is ignored.
+  /// as `1,2,1`), that share the grid's width between the columns. A shorter
+  /// list is padded with weights of 1, a longer one is trimmed to the number
+  /// of columns, and an entry that does not parse reads as 1.
   void setColumnWeights(String columnWeights) {
     if (_columnWeights != null && _columnWeights == columnWeights) {
       return;
@@ -248,19 +261,25 @@ class GridCore extends VirtualLayout {
     _initVariables();
   }
 
-  /// Get the flags set by [setFlags], or null.
-  List<int>? getFlags() => _flags;
+  /// Get the flags set by [setFlags]: an int value containing flag
+  /// information, 0 when no flag is set.
+  int getFlags() => _flags;
 
-  /// Set the flags of the grid: a list of [SUB_GRID_BY_COL_ROW] and
-  /// [SPANS_RESPECT_WIDGET_ORDER].
-  void setFlags(List<int> flags) => _flags = flags;
+  /// Set the flags of the grid: an int value containing flag information,
+  /// the bitwise or of [SUB_GRID_BY_COL_ROW] and [SPANS_RESPECT_WIDGET_ORDER]
+  /// (0 for none). It replaces the flags set before.
+  void setFlags(int flags) => _flags = flags;
 
   /// Handle the span use cases.
   void _handleSpans(List<List<int>> spansMatrix) {
-    if (_spansRespectWidgetOrder) {
+    if (_isSpansRespectWidgetOrder()) {
       return;
     }
-    for (var i = 0; i < spansMatrix.length; i++) {
+    // Divergence from upstream, which reads a widget for every span entry
+    // and throws once the entries outnumber the widgets: the entries past
+    // the last widget have no widget to place, so they are ignored.
+    final count = math.min(spansMatrix.length, mWidgetsCount);
+    for (var i = 0; i < count; i++) {
       final row = _getRowByIndex(spansMatrix[i][0]);
       final col = _getColByIndex(spansMatrix[i][0]);
       if (!_invalidatePositions(
@@ -286,7 +305,8 @@ class GridCore extends VirtualLayout {
   void _arrangeWidgets() {
     int position;
 
-    // @TODO handle RTL
+    // @TODO handle RTL (upstream; this port mirrors the columns in
+    // _connectWidget)
     for (var i = 0; i < mWidgetsCount; i++) {
       if (_spanIds.contains(mWidgets[i])) {
         // skip the widget that's already handled by handleSpans
@@ -302,7 +322,7 @@ class GridCore extends VirtualLayout {
       }
 
       final spanMatrix = _spanMatrix;
-      if (_spansRespectWidgetOrder && spanMatrix != null) {
+      if (_isSpansRespectWidgetOrder() && spanMatrix != null) {
         if (_spanIndex < spanMatrix.length &&
             spanMatrix[_spanIndex][0] == position) {
           // when invoke getNextPosition this position would be set to false
@@ -337,8 +357,6 @@ class GridCore extends VirtualLayout {
       return;
     }
 
-    _handleFlags();
-
     if (isUpdate) {
       final positionMatrix = _positionMatrix!;
       for (var i = 0; i < positionMatrix.length; i++) {
@@ -347,6 +365,9 @@ class GridCore extends VirtualLayout {
         }
       }
       _spanIds.clear();
+      // Not in upstream, which never updates a grid (see _addConstraints):
+      // SPANS_RESPECT_WIDGET_ORDER hands the spans out again from the first.
+      _spanIndex = 0;
     }
 
     _nextAvailableIndex = 0;
@@ -422,22 +443,34 @@ class GridCore extends VirtualLayout {
     return true;
   }
 
-  /// Parse the weights/pads in the string format into a list.
+  /// Parse the weights/pads in the string format into a list. Note that
+  /// weights are normally expected to match the size. But in case they
+  /// don't, we trim or pad the weights with trailing 1 to match the expected
+  /// size.
   List<double>? _parseWeights(int size, String? str) {
     if (str == null || str.trim().isEmpty) {
       return null;
     }
-    final values = str.split(',');
-    if (values.length != size) {
-      return null;
-    }
+
+    final values = _splitLikeJava(str, ',');
+
+    // Return array must be of the expected size, effectively trimming excess
+    // weights
     final arr = List<double>.filled(size, 0);
     for (var i = 0; i < arr.length; i++) {
-      final parsed = double.tryParse(values[i].trim());
-      if (parsed == null) {
-        return null;
+      if (i < values.length) {
+        // Like Java's Float.parseFloat, double.tryParse ignores surrounding
+        // whitespace. Upstream also prints the parse error to System.err,
+        // which the port leaves out. Java's parser additionally accepts a
+        // trailing f or d and hexadecimal floats ("2f", "0x1p3"), which
+        // read as 1 here.
+        final parsed = double.tryParse(values[i]);
+        // Fallback to 1.
+        arr[i] = parsed ?? 1;
+      } else {
+        // Fill in missing weights with 1
+        arr[i] = 1;
       }
-      arr[i] = parsed;
     }
     return arr;
   }
@@ -506,11 +539,28 @@ class GridCore extends VirtualLayout {
     int columnSpan,
   ) {
     final boxWidgets = _boxWidgets!;
+    // Divergence from upstream, which does not handle right-to-left: in a
+    // right-to-left container the columns count from the right edge. The box
+    // chain still runs left to right, so logical column c is box
+    // _columns - 1 - c, and columns c to c + columnSpan - 1 start at box
+    // _columns - c - columnSpan. Mirroring the column weights to match (see
+    // _setBoxWidgetHorizontalChains) makes the result the mirror image of the
+    // left-to-right grid.
+    final leftColumn = _isInRtl() ? _columns - column - columnSpan : column;
     // Connect the 4 sides
-    widget.mLeft.connect(boxWidgets[column].mLeft, 0);
+    widget.mLeft.connect(boxWidgets[leftColumn].mLeft, 0);
     widget.mTop.connect(boxWidgets[row].mTop, 0);
-    widget.mRight.connect(boxWidgets[column + columnSpan - 1].mRight, 0);
+    widget.mRight.connect(boxWidgets[leftColumn + columnSpan - 1].mRight, 0);
     widget.mBottom.connect(boxWidgets[row + rowSpan - 1].mBottom, 0);
+  }
+
+  /// Whether the container lays out right to left
+  /// ([ConstraintWidgetContainer.isRtl]), which mirrors the columns. Read on
+  /// every solve, as Flow reads it, so a change of direction takes effect at
+  /// the next layout.
+  bool _isInRtl() {
+    final parent = getParent();
+    return parent is ConstraintWidgetContainer && parent.isRtl();
   }
 
   /// Set chain between box widgets horizontally.
@@ -520,6 +570,9 @@ class GridCore extends VirtualLayout {
 
     var widget = boxWidgets[0];
     final columnWeights = _parseWeights(_columns, _columnWeights);
+    // Box i holds logical column _columns - 1 - i in a right-to-left
+    // container (see _connectWidget).
+    final isInRtl = _isInRtl();
     // chain all the widgets on the longer side (either horizontal or vertical)
     if (_columns == 1) {
       _clearHorizontalAttributes(widget);
@@ -533,7 +586,9 @@ class GridCore extends VirtualLayout {
       widget = boxWidgets[i];
       _clearHorizontalAttributes(widget);
       if (columnWeights != null) {
-        widget.setHorizontalWeight(columnWeights[i]);
+        widget.setHorizontalWeight(
+          columnWeights[isInRtl ? _columns - 1 - i : i],
+        );
       }
       if (i > 0) {
         widget.mLeft.connect(boxWidgets[i - 1].mRight, 0);
@@ -608,6 +663,14 @@ class GridCore extends VirtualLayout {
 
   /// Chain the box widgets and add constraints to the widgets.
   void _addConstraints() {
+    // Divergence from upstream, which arranges the widgets here on top of the
+    // cells and the span cursor the previous solve left taken: a layout can
+    // solve several times, and a later layout of the same grid solves again,
+    // so each further solve moved the widgets on into the cells still free
+    // (and kept the last ones once none was left). Placing them from scratch
+    // on every solve, with setupGrid's update path, which upstream never
+    // calls, gives every solve the placement the first one made.
+    _setupGrid(true);
     _setBoxWidgetVerticalChains();
     _setBoxWidgetHorizontalChains();
     _arrangeWidgets();
@@ -667,12 +730,13 @@ class GridCore extends VirtualLayout {
   }
 
   /// Parse the skips/spans string ("index:RxC" or "index:N", comma separated)
-  /// into a matrix of [index, rowSpan, colSpan] rows.
+  /// into a matrix of [index, rowSpan, colSpan] rows, sorted by index.
   List<List<int>>? _parseSpans(String str, bool isSpans) {
     try {
       var extraRows = 0;
       var extraColumns = 0;
-      final spans = str.split(',');
+      // Sort the spans by the position
+      final spans = _sortedByPosition(_splitLikeJava(str, ','));
       final spanMatrix = List<List<int>>.generate(
         spans.length,
         (_) => List<int>.filled(3, 0),
@@ -714,7 +778,7 @@ class GridCore extends VirtualLayout {
           indexAndSpan = spans[i].trim().split(':');
           rowAndCol = indexAndSpan[1].split('x');
           spanMatrix[i][0] = int.parse(indexAndSpan[0]);
-          if (_subGridByColRow) {
+          if (_isSubGridByColRow()) {
             spanMatrix[i][1] = int.parse(rowAndCol[1]);
             spanMatrix[i][2] = int.parse(rowAndCol[0]);
           } else {
@@ -727,6 +791,48 @@ class GridCore extends VirtualLayout {
     } catch (e) {
       return null;
     }
+  }
+
+  /// The entries of a spans/skips string, sorted by position. Upstream sorts
+  /// them in place with `Arrays.sort`, comparing
+  /// `Integer.parseInt(span.split(":")[0])`.
+  ///
+  /// Java's object sort is stable, so entries at the same position keep the
+  /// order they are listed in; Dart's [List.sort] is not, so the listed index
+  /// breaks ties here. Like the comparator, this throws (and [_parseSpans]
+  /// then returns null) when a position does not parse.
+  ///
+  /// Divergence from upstream: Java's Integer.parseInt rejects surrounding
+  /// whitespace, so upstream's comparator throws on a string with a space
+  /// after a comma (`'0:2x1, 4:1x2'`) and the whole string is ignored. Dart's
+  /// int.parse ignores that whitespace, as every other parse in this class
+  /// already did before the sort was added, so here such a string sorts and
+  /// parses.
+  static List<String> _sortedByPosition(List<String> spans) {
+    final positions = [for (final span in spans) int.parse(span.split(':')[0])];
+    final order = List<int>.generate(spans.length, (i) => i)
+      ..sort((a, b) {
+        final byPosition = positions[a] - positions[b];
+        return byPosition != 0 ? byPosition : a - b;
+      });
+    return [for (final i in order) spans[i]];
+  }
+
+  /// Splits [str] at [separator] as Java's `String.split` does, which
+  /// upstream's parsers rely on: trailing empty strings are dropped, so
+  /// `'0:1x2,'` is one entry and `','` none, while a string without the
+  /// separator comes back whole. Dart's [String.split] keeps the trailing
+  /// empty strings, so a list ending in a comma failed to parse.
+  static List<String> _splitLikeJava(String str, String separator) {
+    final parts = str.split(separator);
+    if (parts.length == 1) {
+      return parts;
+    }
+    var end = parts.length;
+    while (end > 0 && parts[end - 1].isEmpty) {
+      end--;
+    }
+    return parts.sublist(0, end);
   }
 
   /// Fill the constraint matrix based on the input attributes.
@@ -780,23 +886,13 @@ class GridCore extends VirtualLayout {
     _fillConstraintMatrix(isUpdate);
   }
 
-  /// If flags are given, set the values of the corresponding variables.
-  void _handleFlags() {
-    final flags = _flags;
-    if (flags == null) {
-      return;
-    }
-    for (final flag in flags) {
-      switch (flag) {
-        case SPANS_RESPECT_WIDGET_ORDER:
-          _spansRespectWidgetOrder = true;
-          break;
-        case SUB_GRID_BY_COL_ROW:
-          _subGridByColRow = true;
-          break;
-      }
-    }
-  }
+  /// Flag to implicitly reverse the order of width/height specified in spans
+  /// & skips. E.g.: 1:3x2 is read as 1:2x3
+  bool _isSubGridByColRow() => (_flags & SUB_GRID_BY_COL_ROW) > 0;
+
+  /// Flag to respect the order of the Widgets when arranging for spans.
+  bool _isSpansRespectWidgetOrder() =>
+      (_flags & SPANS_RESPECT_WIDGET_ORDER) > 0;
 
   /// Build the grid: derive the numbers of rows and columns, apply the skips
   /// and spans, and create the box widgets (adding them to the parent
@@ -853,6 +949,15 @@ class GridCore extends VirtualLayout {
   @override
   void addToSolver(LinearSystem system, bool optimize) {
     super.addToSolver(system, optimize);
+    // Divergence from upstream, which dereferences the box widgets
+    // unconditionally: with nothing to place (no widgets, so a derived track
+    // count of 0, or no measure pass at all) there are no boxes. Upstream then
+    // throws here, and ConstraintWidgetContainer.layout catches the exception
+    // and abandons that whole solve, leaving every other widget unplaced too.
+    // The grid itself is still constrained by the call above.
+    if (_boxWidgets == null) {
+      return;
+    }
     _addConstraints();
   }
 }

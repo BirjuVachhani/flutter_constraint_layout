@@ -4,8 +4,9 @@ import 'dimension.dart';
 import 'link.dart';
 import 'types.dart';
 
-/// Per-child layout data attached by `Constrained`, `Guideline`, or `Barrier`
-/// and consumed by `RenderConstraintLayout`.
+/// Per-child layout data attached by `Constrained`, `Guideline`, `Barrier`,
+/// `ConstraintFlow`, `ConstraintGrid`, or `ConstraintGroup` and consumed by
+/// `RenderConstraintLayout`.
 ///
 /// Holds the full constraint configuration copied from the parent-data widget,
 /// plus the linked-list pointers and resolved [offset] provided by
@@ -14,8 +15,9 @@ class ConstraintParentData extends ContainerBoxParentData<RenderBox> {
   /// The id assigned to this child.
   Symbol? id;
 
-  /// What kind of engine object this child maps to. Guideline and barrier
-  /// children use the `guideline*` / `barrier*` fields and ignore the rest.
+  /// What kind of engine object this child maps to. Guideline, barrier, and
+  /// group children use the `guideline*` / `barrier*` / `group*` fields and
+  /// ignore the rest.
   HelperKind helperKind = HelperKind.none;
 
   /// This widget's left edge, positioned against a target edge. Absolute.
@@ -74,8 +76,21 @@ class ConstraintParentData extends ContainerBoxParentData<RenderBox> {
   /// Paint order override; higher paints on top. Null means child order.
   int? zIndex;
 
-  /// Whether this child is laid out and drawn.
+  /// Whether this child is laid out and drawn, as configured on the child
+  /// itself. A `ConstraintGroup` can override it; see [effectiveVisibility].
   ConstraintVisibility visibility = ConstraintVisibility.visible;
+
+  /// The visibility of the last `ConstraintGroup`, in child order, that
+  /// references this child, or null when no group references it.
+  ///
+  /// Derived state: `RenderConstraintLayout` recomputes it for every child
+  /// whenever it applies configuration changes.
+  ConstraintVisibility? groupOverride;
+
+  /// The visibility this child is laid out, painted, hit-tested, and given
+  /// semantics with: [groupOverride] when a group references it, otherwise
+  /// [visibility].
+  ConstraintVisibility get effectiveVisibility => groupOverride ?? visibility;
 
   /// Guideline: the axis of the line itself (a vertical guideline positions
   /// widgets horizontally).
@@ -100,8 +115,9 @@ class ConstraintParentData extends ContainerBoxParentData<RenderBox> {
   /// Barrier: ids of the widgets whose edges the barrier tracks.
   List<Symbol> barrierReferenced = const <Symbol>[];
 
-  /// Barrier: offset in logical pixels added to the barrier's position (a
-  /// positive value moves it right or down).
+  /// Barrier: offset in logical pixels added to the barrier's position. A
+  /// positive value moves it right or down, except that a `start` or `end`
+  /// barrier in a right-to-left layout applies it with the opposite sign.
   double barrierMargin = 0;
 
   /// Barrier: whether gone widgets still contribute their (collapsed)
@@ -177,14 +193,21 @@ class ConstraintParentData extends ContainerBoxParentData<RenderBox> {
   /// Grid: skipped cells in Android's `index:RxC` format, or null.
   String? gridSkips;
 
+  /// Group: ids of the widgets whose visibility this group sets.
+  List<Symbol> groupReferenced = const <Symbol>[];
+
+  /// Group: the visibility applied to every widget in [groupReferenced].
+  ConstraintVisibility groupVisibility = ConstraintVisibility.visible;
+
   /// Set by the parent-data widget when a layout-affecting field changed;
   /// cleared by `RenderConstraintLayout` once the change is applied to its
   /// persistent engine model.
   bool configDirty = false;
 
-  /// Set when [id], [helperKind], or any guideline/barrier field changed. An
-  /// id rename can re-point links on any sibling, and helper configuration is
-  /// applied at model-build time, so these force a full engine-model rebuild
-  /// rather than an in-place update of this child alone.
+  /// Set when [id], [helperKind], or any guideline, barrier, flow, grid, or
+  /// group field other than [groupVisibility] changed. An id rename can
+  /// re-point links on any sibling, and helper configuration is applied at
+  /// model-build time, so these force a full engine-model rebuild rather than
+  /// an in-place update of this child alone.
   bool structuralDirty = false;
 }

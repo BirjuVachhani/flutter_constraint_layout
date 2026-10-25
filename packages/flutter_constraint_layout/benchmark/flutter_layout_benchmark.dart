@@ -228,14 +228,18 @@ void main() {
         _print('fast (no change)', fast, frame120, frame60);
         _print('resolve (resize)', resolve, frame120, frame60);
         _print('full (all dirty)', full, frame120, frame60);
-        // Verify the routing matches the label: the LinearSystem holds rows
-        // only after a solver pass.
+        // Verify the routing matches the label: the LinearSystem has
+        // variables only once a solver pass ran, and every pass of this
+        // layout routes the same way. (The row count is no probe: a solve
+        // whose equations all resolve directly ends with no rows.)
         // ignore: invalid_use_of_visible_for_testing_member
-        final solverRows = ro.debugEngineContainer!.mSystem.mNumRows;
-        if (solverRouted && solverRows == 0) {
+        final system = ro.debugEngineContainer!.mSystem;
+        final solverRan = system.getNumVariables() > 0;
+        final solverRows = system.mNumRows;
+        if (solverRouted && !solverRan) {
           fail('$name: expected solver fallback, graph resolved it');
         }
-        if (!solverRouted && solverRows != 0) {
+        if (!solverRouted && solverRan) {
           fail('$name: expected pure graph, solver ran');
         }
 

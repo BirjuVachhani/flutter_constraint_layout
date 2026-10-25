@@ -29,6 +29,8 @@ Test framework: `package:test/test.dart`.
 - `new ConstraintWidget("name")` -> `ConstraintWidget.named("name")`
 - `new ConstraintWidget()` -> `ConstraintWidget()`
 - `new Guideline()` -> `Guideline()`;  `new Barrier()` -> `Barrier()`
+- `new GridEngine(rows, columns)` -> `GridEngine.sized(rows, columns)`
+- `new GridEngine(rows, columns, numWidgets)` -> `GridEngine.sizedWithWidgets(rows, columns, numWidgets)`
 
 ## Enums / constants
 - `ConstraintAnchor.Type.LEFT|RIGHT|TOP|BOTTOM|BASELINE|CENTER|CENTER_X|CENTER_Y`
@@ -60,8 +62,12 @@ Test framework: `package:test/test.dart`.
 - `root.updateHierarchy()` -> unchanged
 - getters `getWidth/getHeight/getLeft/getTop/getRight/getBottom/getX/getY/getDebugName/getBaselineDistance` -> unchanged
 - `getGuidelineAnchor()`/no-arg guideline `getAnchor()` -> `guideline.getGuidelineAnchor()`
-- `widget.setDebugSolverName(system, "name")` -> `widget.setDebugName('name')` (upstream's
-  version also names the widget's solver variables, which only matters for debug output)
+- `widget.setDebugSolverName(system, "name")` -> `widget.setDebugName('name')`. Upstream's
+  version also creates the widget's left, top, right, bottom, and baseline variables in
+  `system` and names them. Before `layout()` that only matters for debug output, since
+  `layout()` resets the system. A test that fills a `LinearSystem` itself keeps the
+  variable creation too: `widgets_positioning_test.dart` has a `setDebugSolverName`
+  helper that reproduces upstream's method.
 
 ## Solver classes
 - `SolverVariable.Type.UNRESTRICTED|CONSTANT|SLACK|ERROR|UNKNOWN`
@@ -125,7 +131,8 @@ final _Measurer sMeasurer = _Measurer();
 The solver is ported, so tests that call solver APIs (`getSystem()`, `addToSolver(...)`,
 `updateFromSolver(...)`, `resetSolverVariables(...)`, `getCache()`, `minimize()`) or use
 circular positioning (`connectCircularConstraint`) are ported and run like any other.
-`../UPSTREAM.md` lists three ported tests that still leave those solver runs out.
+Port those solver runs with the rest of the body: every ported test runs its full
+upstream body.
 
 - Keep every run when a test repeats a layout under several optimization levels
   (`OPTIMIZATION_NONE`, `OPTIMIZATION_STANDARD`, `OPTIMIZATION_GRAPH`, ...): port each
@@ -138,8 +145,16 @@ circular positioning (`connectCircularConstraint`) are ported and run like any o
   `NestedLayout.testNestedLayout`, or leave it out, as with `WidgetsPositioningTest`'s
   `testAddingWidgets` and `testWidgetStrengthPositioning`.
   Example: `test('name', () { ... }, skip: 'disabled upstream too (@Test is commented out)');`
-- A test that needs an unported module (`state/`, `parser/`, `motion/`, `dsl/`, `scout/`,
-  `utils/GridEngine`) is not ported at all; list it in UPSTREAM.md with the reason.
+- A test that builds its layout through the `state/` API (`State`, `ConstraintReference`,
+  `Dimension`) can be ported by making the widget calls that `State.apply()` makes, in the
+  same order, as `compose_layouts_test.dart` does; explain the mapping in the file's
+  header. A test that needs another unported module (`parser/`, `motion/`, `dsl/`,
+  `scout/`) is not ported at all; list it in UPSTREAM.md with the reason.
+- When upstream asserts nothing (the test only prints, or asserts `assertTrue(true)`),
+  port the body as it is, and you may also check the values upstream prints or computes.
+  Take them from upstream's Java engine at the pinned commit, run on the same input, and
+  mark those checks as not upstream's, as `layout_test.dart` and
+  `array_linked_variables_test.dart` do.
 - Never skip a test to hide a failure. A wrong coordinate is either an engine bug or a
   conversion error, and either one needs fixing.
 

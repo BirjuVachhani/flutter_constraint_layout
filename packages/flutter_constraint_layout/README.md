@@ -50,7 +50,7 @@ Full documentation with live examples:
   [centering and bias](#centering-and-bias), [dimensions](#dimensions),
   [aspect ratio](#aspect-ratio), [chains](#chains), [guidelines](#guidelines),
   [barriers](#barriers), [circular positioning](#circular-positioning),
-  [visibility](#visibility), [flow](#flow), [grid](#grid),
+  [visibility](#visibility), [groups](#groups), [flow](#flow), [grid](#grid),
   [z-order](#z-order), [right-to-left](#right-to-left)
 - [A complete example](#a-complete-example)
 - [Sizing and scrolling](#sizing-and-scrolling)
@@ -104,13 +104,14 @@ a port of the same code.
   `mainAxisAlignment` and `Expanded` flex in a `Row`.
 - **[Guidelines](#guidelines)** and **[barriers](#barriers)**: invisible lines
   to link to, at a fixed or percent position, or following the outermost edge
-  of a group of widgets.
+  of a set of widgets.
 - **[Flow](#flow)** (wrapping rows, like `Wrap`) and **[grid](#grid)** (rows
   and columns with spans, skips, and weights). Both are virtual layouts: the
   widgets they arrange stay direct children that other links can target.
 - **[Circular positioning](#circular-positioning)**,
-  **[visibility](#visibility)** (`visible`, `invisible`, `gone`), and
-  **[z-order](#z-order)** (`zIndex`).
+  **[visibility](#visibility)** (`visible`, `invisible`, `gone`),
+  **[groups](#groups)** that set the visibility of several children at once,
+  and **[z-order](#z-order)** (`zIndex`).
 - **[Right-to-left](#right-to-left)** layouts through `start` and `end`.
 - **[Debug overlays](#debug-visualization)** that draw the constraint graph
   the way Android Studio's design surface does.
@@ -410,7 +411,7 @@ measured from the left. See [right-to-left](#right-to-left).
 | `.wrapContent` | The child's own size. It is not limited by the links: content larger than the space between them overflows it. |
 | `.fixed(n)` | Exactly `n` logical pixels. |
 | `.matchConstraint` | Fills the space between the two links on that axis, less their margins. With only one link, the child sizes to its content. |
-| `.spread(min: a, max: b)` | Like `.matchConstraint`, kept between `min` and `max` (both optional). |
+| `.spread(min: a, max: b)` | Like `.matchConstraint`, kept between `min` and `max` (both optional). With only one link, the child's own size is kept between them, and when a bound changes it the other dimension follows, so text wraps at a capped width. |
 | `.constrainedWrap(min: a, max: b)` | The child's own size, but no larger than the space between its links, and kept between `min` and `max`. When the cap applies, the other dimension follows the capped size, so text wraps inside the links; see the note below. |
 | `.percent(f, min: a, max: b)` | The fraction `f` (0 to 1) of the layout's size on that axis, kept between `min` and `max`. |
 | `.matchParent` | The layout's full size on that axis. Where the links point is ignored, but their margins still inset it. |
@@ -619,8 +620,8 @@ directions.
 
 A `Barrier` is an invisible line that follows the outermost edge of the widgets
 in `referenced`: the end-most `end` edge, the lowest `bottom` edge, and so on.
-Link to it to clear the widest or tallest of a group, whichever one that turns
-out to be.
+Link to it to clear the widest or tallest of those widgets, whichever one that
+turns out to be.
 
 ```dart
 ConstraintLayout(
@@ -665,11 +666,43 @@ the point it collapsed to, unless you set `allowsGone: false`.
 
 To keep a gap from a barrier, put the margin on the links that target it, as
 above: that works on every edge and in both text directions. The barrier's own
-`margin` (0 by default) is added to its position, so a positive value always
-moves it right or down: further out for a barrier on right or bottom edges, but
-back over its widgets for one on left or top edges. `.start` in left-to-right
-text and `.end` in right-to-left text track left edges, so they are in the
-second group.
+`margin` (0 by default) moves the barrier itself:
+
+- On a `.left`, `.right`, `.top`, or `.bottom` barrier, a positive value moves
+  it right or down: further out for a barrier on right or bottom edges, but
+  back over its widgets for one on left or top edges.
+- On a `.start` or `.end` barrier, a positive value moves it toward the end, in
+  both text directions: further out for an `.end` barrier, back over its
+  widgets for a `.start` one. A right-to-left layout is therefore the exact
+  mirror of its left-to-right twin. This is a deliberate difference from
+  Android, where a positive margin moves every barrier right or down, so that
+  the margin of a `start` or `end` barrier points the other way in
+  right-to-left text.
+
+Barriers resolve on the fast dependency-graph path (see
+[performance](#performance)) when the layout is bounded on both axes and, by
+the engine's model of Android's layout pass, Android would lay it out the same
+way, with each barrier on the outermost edge of its widgets plus its `margin`.
+Android places a barrier there whenever it places all of its widgets without
+its solver; any other barrier is the solver's, which can settle it elsewhere.
+The layout falls back to the solver when it sizes itself to its content on
+either axis, when Android's solver would settle a barrier elsewhere (for
+example a barrier on the left or top edges of its widgets that its `margin`
+pushes past the layout's right or bottom edge, or one that it moves out to
+make room for a centered child that does not fit) or a chain, a baseline
+link, or an `aspectRatio` size depends on where such a barrier is, when any
+child sits at a negative position or is squeezed to a negative size, when
+Android, placing a child without its solver, would center it a pixel away
+from the fast path (it works a bias other than 0, 0.5, and 1 out in single
+precision, and truncates the offset of a child too big for the space between
+its links where the fast path rounds), and where Android's solver would place
+a child differently from the fast path: a `.percent()` or `aspectRatio` size,
+a chain gap, or a centered position that falls between pixels where something
+depends on it, a chain that overflows or that a barrier pulls on, or a
+centered child with a negative margin. Rare differences remain: a position
+exactly on a half pixel, which floating-point noise can round either way, and
+layouts that both paths lay out alike but differently from Android, such as
+one with a child whose links cross.
 
 ### Circular positioning
 
@@ -717,6 +750,9 @@ matching Android's three states:
   margins are dropped). It is not painted or hit-testable, and links that target
   it switch from `margin` to their `goneMargin`.
 
+Invisible and gone children are also left out of the semantics tree, so screen
+readers neither announce nor activate them, as on Android.
+
 `goneMargin` takes over only when it is non-zero. With the default of 0, a link
 to a gone widget keeps its regular margin.
 
@@ -745,7 +781,61 @@ Widget nameRow({required bool showAvatar}) {
 ```
 
 Because `visibility` is a property, a hidden child stays mounted and keeps its
-state, unlike a child removed with `if`.
+state, unlike a child removed with `if`. To set it for several children at
+once, use a [group](#groups).
+
+### Groups
+
+A `ConstraintGroup` sets the visibility of several children at once, like
+Android's `Group`. Its `visibility` replaces the `visibility` of every child
+listed in `referenced`, so one value from your state shows or hides a whole
+section of the layout:
+
+```dart
+Widget contactCard({required bool expanded}) {
+  return ConstraintLayout(
+    children: [
+      Constrained(
+        id: #name,
+        start: .startOf(parent, margin: 16),
+        top: .topOf(parent, margin: 16),
+        child: const Text('Ada Lovelace'),
+      ),
+      Constrained(
+        id: #email,
+        start: .startOf(#name),
+        top: .bottomOf(#name, margin: 8),
+        child: const Text('ada@example.com'),
+      ),
+      Constrained(
+        id: #phone,
+        start: .startOf(#name),
+        top: .bottomOf(#email, margin: 8),
+        child: const Text('+44 20 7946 0000'),
+      ),
+      // Both detail rows take the group's visibility, whatever their own.
+      ConstraintGroup(
+        id: #details,
+        referenced: [#email, #phone],
+        visibility: expanded ? .visible : .gone,
+      ),
+    ],
+  );
+}
+```
+
+- **The group wins.** A referenced child takes the group's visibility for
+  layout, painting, hit testing, and semantics, even when its own `visibility`
+  says otherwise. When several groups reference the same child, the one that
+  comes last in `children` wins.
+- **A group is not on screen.** It has no position or size and takes no part
+  in the layout, so no link can target it, and no barrier, flow, grid, or other
+  group can reference it. It can reference `Constrained` children, flows, and
+  grids. Guidelines and barriers have no visibility, so a group leaves them as
+  they are.
+- **Changing its `visibility` costs what changing the children's would.**
+  Each referenced child is updated exactly as if its own `visibility` had
+  changed.
 
 ### Flow
 
@@ -802,11 +892,12 @@ inside its bounds rather than inside the whole layout's.
 
 `ConstraintGrid` places the widgets in `referenced` into a grid of `rows` by
 `columns` cells, filling it row by row (or column by column with
-`orientation: Axis.vertical`). Like a flow it is virtual, so the tiles stay
-siblings that other constraints can target. Give a tile `.matchConstraint` on
-both axes to fill its cell; otherwise it keeps its own size, centered in the
-cell. The grid's own `width` and `height` default to `.matchConstraint`, so link
-both sides of each axis, or give it a size.
+`orientation: Axis.vertical`) from the start edge: the left edge, or the right
+edge in [right-to-left](#right-to-left) text. Like a flow it is virtual, so
+the tiles stay siblings that other constraints can target. Give a tile
+`.matchConstraint` on both axes to fill its cell; otherwise it keeps its own
+size, centered in the cell. The grid's own `width` and `height` default to
+`.matchConstraint`, so link both sides of each axis, or give it a size.
 
 ```dart
 ConstraintLayout(
@@ -839,19 +930,28 @@ ConstraintLayout(
   number of widgets, or both to derive both from the number of widgets.
 - **`spans`** uses Android's `index:RxC` syntax, comma-separated: `R` rows by
   `C` columns, starting at cell `index` (cells are numbered from 0 in fill
-  order, so row by row unless `orientation` is vertical). The entries apply to
-  the referenced widgets *in order*: the first entry places the first widget,
-  the second entry the second widget, and the remaining widgets fill the free
-  cells. So `'0:2x1, 4:1x2'` gives the first widget cell 0 and the one below
-  it, and the second widget cells 4 and 5. In a grid with a single row or
-  column, write `index:N` instead (`N` cells); the grid adds the extra cells the
-  span needs.
+  order, so row by row unless `orientation` is vertical). The entries are
+  sorted by `index` and apply to the referenced widgets *in order*: the
+  lowest-index entry places the first widget, the next entry the second
+  widget, and the remaining widgets fill the free cells. So `'0:2x1, 4:1x2'`,
+  in either order, gives the first widget cell 0 and the one below it, and the
+  second widget cells 4 and 5. Entries beyond the number of widgets are
+  ignored. In a grid with a single row or column, write `index:N` instead (`N`
+  cells); the grid adds the extra cells the span needs, unless `skips` is set
+  too (see below).
 - **`skips`** uses the same syntax to leave cells empty: `'1:1x2'` skips cells
-  1 and 2.
+  1 and 2. The entries apply in order of `index`, and one that does not fit
+  (it overlaps an earlier one or runs off the grid) stops the ones after it.
+  In a grid with a single row or column, a skip `index:N` adds its `N` cells
+  to the grid, and then the spans add none (as in the core grid behind
+  Compose; Android's view-based grid has no `index:N` form): with
+  `spans: '0:2'` and `skips: '2:1'`, three widgets on three columns get four
+  columns, and the third widget gets no cell.
 - **`rowWeights` and `columnWeights`** share the space unevenly, one entry per
   row or column: `columnWeights: [2, 1, 1]` makes the first column twice as
-  wide as each of the others. A list with any other number of entries is
-  ignored, and the rows or columns stay equal.
+  wide as each of the others. A shorter list is padded with weights of 1, so
+  `[2]` is the same as `[2, 1, 1]` on three columns, and a longer list is
+  trimmed to the number of rows or columns.
 
 ### Z-order
 
@@ -930,12 +1030,25 @@ Following Android's rules, two more values mirror in right-to-left text:
 right edge, and `contentHorizontalBias` is measured from the start. A chain's
 head is its start-most member in either direction.
 
-Some things do not mirror:
+`ConstraintGrid` mirrors its columns: in right-to-left text the first column
+is the rightmost, so the cells fill from the right edge, and widgets linked to
+a grid's tiles follow them. Cell numbers in `spans` and `skips`, and the
+entries of `columnWeights`, still count from the first column. The grid itself
+is placed by its own links (with `start` and `end` it moves to the mirrored
+position), and its cells mirror within its bounds. A tile's `horizontalBias`
+is measured from the start edge of its cell, as for a child with a `start` or
+`end` link, so a tile smaller than its cell mirrors too. Android's grid
+helpers leave right-to-left unimplemented, so this follows the rest of this
+package instead. Positions are whole pixels, so a column edge that falls
+exactly on a half pixel can sit 1 px off the exact mirror.
 
-- A barrier's `margin` always moves it right or down (see
-  [barriers](#barriers)).
-- `ConstraintGrid` fills its cells from the left in both directions (upstream's
-  grid does not handle right-to-left either).
+The `margin` of a `.start` or `.end` barrier mirrors as well: a positive
+value moves the barrier toward the end, which is left in right-to-left text,
+so the barrier lands at the mirror of its left-to-right position. Android
+keeps the margin's sign and moves the barrier right instead; this package
+mirrors it on purpose, so that a layout written with `start` and `end`
+mirrors exactly. A `.left` or `.right` barrier keeps its margin as given
+(see [barriers](#barriers)).
 
 As on Android, `start` and `end` take precedence as a pair: when either is
 set, the child's `left` and `right` links are ignored. Prefer one pair or the
@@ -1068,21 +1181,46 @@ layout, which suits a full-height divider or background in a list item, and it
 resolves to 0 when no other child gives the layout a size. To size a child to
 its own content there, use `.wrapContent` or a fixed size.
 
-`ConstraintLayout` does not implement intrinsic sizing, dry layout, or a
-baseline of its own:
+### Intrinsic sizes, dry layout, and baseline
 
-- **Intrinsic size queries return 0.** Inside `IntrinsicHeight` or
-  `IntrinsicWidth` the layout collapses to zero height or width, and widgets
-  that size their children from intrinsic dimensions (the content of
-  `AlertDialog` and `SimpleDialog`, popup menus, and `IntrinsicColumnWidth`
-  table columns) get 0 from it; a dialog around it stays at its minimum width.
-  Give it an explicit size, for example with a `SizedBox`, in those places.
-- **Dry layout is not supported.** If an ancestor asks for the layout's dry
-  size, debug builds throw a `FlutterError` whose message begins
-  `The RenderConstraintLayout class does not implement "computeDryLayout".`,
-  and release builds get `Size.zero`.
-- **It reports no baseline**, so it cannot take part in an ancestor's baseline
-  alignment, such as a `Row` with `CrossAxisAlignment.baseline`.
+`ConstraintLayout` reports intrinsic sizes, computes dry layouts, and has a
+baseline, so it works inside the widgets that size or align their children by
+them: `IntrinsicHeight` and `IntrinsicWidth`, the content of `AlertDialog` and
+`SimpleDialog`, popup menu items, `IntrinsicColumnWidth` table columns,
+`Baseline`, and a `Row` with `CrossAxisAlignment.baseline`.
+
+- **Its intrinsic size is the size it wraps its children to.** The maximum
+  intrinsic width for a given height is the width the layout takes when its
+  width is unbounded and its height is that height, as in a horizontal list;
+  the maximum intrinsic height is the same on the other axis. The minimum
+  intrinsic sizes are worked out the same way, but with each child that sizes
+  to its content measured at its own minimum intrinsic size, so wrapping text
+  counts its longest word rather than its whole line.
+- **Its dry layout** is the size it takes under given constraints, worked out
+  without laying out any child: each child is asked for its own dry layout
+  instead.
+- **Its baseline** is the highest baseline among its visible children, so
+  `Baseline` or a baseline-aligned `Row` lines the layout up by its top line
+  of text. Invisible and gone children do not count, and neither do
+  guidelines, barriers, flows, or grids. Without a child that has a baseline,
+  the layout has none. (Android's `ConstraintLayout` reports no baseline of
+  its own.)
+
+The rules above still apply inside these widgets. `IntrinsicHeight` gives the
+layout a tight height, so the layout is exactly as tall as its content, but the
+content area of an `AlertDialog` has a bounded height, which the layout fills:
+wrap it in `IntrinsicHeight` there to make it only as tall as its content.
+
+An intrinsic size, or a dry layout on an unbounded axis, is worked out by
+solving a throwaway copy of the layout, so it costs about as much as a layout
+pass that runs the engine, and an `IntrinsicHeight` or `IntrinsicWidth` around
+the layout adds one such query to each of its layouts. A child that cannot
+compute a dry layout, such as a `LayoutBuilder`, makes these queries fail in
+debug builds, as it does under Flutter's own layouts. The layout reports the
+error and measures that child at the smallest size its constraints allow, but
+Flutter leaves the child unable to lay out again, so more errors follow. A
+child with a fixed size is never asked for its size: give such a child a fixed
+size, or use a widget that supports dry layout.
 
 ## Debug visualization
 
@@ -1182,10 +1320,12 @@ then look for the symptom here.
 | Long text overlaps its neighbors or runs off the layout. | A `.wrapContent` `Text` is measured against the layout's full width. | Set `width: .matchConstraint`, or `.constrainedWrap()` to keep short text as narrow as its content. |
 | `Incorrect use of ParentDataWidget.` | Another widget, such as `Padding`, sits between the `ConstraintLayout` and the `Constrained`. | Move it inside: `Constrained(child: Padding(...))`. |
 | `Constrained link targets unknown id ...` | A typo, or an id from another `ConstraintLayout`: ids are scoped to one layout. | Fix the id; see [unknown and duplicate ids](#unknown-and-duplicate-ids). |
+| `Constrained links loop back on themselves: ...` | The links form a loop, such as two children whose tops link to each other or an edge linked to itself, so no child in it has a position to start from. | Link one edge of the loop to `parent` or to a child outside it; see [unknown and duplicate ids](#unknown-and-duplicate-ids). |
 | A widget lines up with the wrong sibling. | Two children share an id. | Rename one; see [unknown and duplicate ids](#unknown-and-duplicate-ids). |
 | A chain style has no effect. | It is set on a member other than the chain's head. | Set it on the start-most (or top) member. |
 | The layout fills the screen instead of fitting its children. | On a bounded axis it takes the maximum size, even inside `Center`. | Wrap it in `UnconstrainedBox`, or size it with `SizedBox`. |
-| A dialog stays at its minimum width around the layout, or the layout gets zero height or width inside `IntrinsicHeight` or `IntrinsicWidth`. | The layout reports 0 for intrinsic sizes, which those widgets use to size their content. | Size it with `SizedBox`. |
+| The layout fills the height of an `AlertDialog` instead of fitting its children. | The dialog's content area has a bounded height, and on a bounded axis the layout takes the maximum size. | Wrap it in `IntrinsicHeight`. |
+| `The _RenderLayoutBuilder class does not support dry layout.` inside `IntrinsicHeight`, `IntrinsicWidth`, a dialog, or a menu. | A child is, or contains, a `LayoutBuilder`, which cannot be measured without laying it out. See [intrinsic sizes](#intrinsic-sizes-dry-layout-and-baseline). | Give that child a fixed size, or replace the `LayoutBuilder`. |
 
 ### Unknown and duplicate ids
 
@@ -1199,23 +1339,52 @@ layout throws a `FlutterError` that names the id:
 Constrained link targets unknown id Symbol("titel"). Targets must be `parent` or the id of a sibling Constrained in the same ConstraintLayout.
 ```
 
-`circle` links, `Barrier`, `ConstraintFlow`, and `ConstraintGrid` report
-unknown ids the same way. The layout pass is abandoned, so the other children
-are not positioned until the id is fixed. In profile and release builds the
-check is compiled out: the bad link or reference is skipped (a skipped link
-leaves its edge unconstrained), and the rest of the layout resolves. In profile
-and release WebAssembly builds and in `--obfuscate` builds, a link that writes
-an id in a different form from the child's id (`#item0` for `Symbol('item0')`)
-is skipped the same way; see [core concepts](#core-concepts).
+`circle` links, `Barrier`, `ConstraintFlow`, `ConstraintGrid`, and
+`ConstraintGroup` report unknown ids the same way. A link or `referenced` entry
+that names a `ConstraintGroup` is reported too, with a message that says so: a
+group has no position or size to link to. The layout pass is abandoned, so the
+other children are not positioned until the id is fixed. In profile and
+release builds the check is compiled out: the bad link or reference is skipped
+(a skipped link leaves its edge unconstrained), and the rest of the layout
+resolves. In profile and release WebAssembly builds and in `--obfuscate`
+builds, a link that writes an id in a different form from the child's id
+(`#item0` for `Symbol('item0')`) is skipped the same way; see
+[core concepts](#core-concepts).
+
+**Links that loop back on themselves.** Four kinds of loop leave none of their
+children a position to start from:
+
+- two children whose matching edges link to each other, such as two tops;
+- an edge linked to itself, such as `top: .topOf(#a)` on the child `#a`;
+- two children linked both ways on both sides, each one's start and the
+  other's end linked to each other, which makes a chain with no ends;
+- a chain whose first child's start links one way to its last child, while
+  the last child's end links back to the first child.
+
+Debug builds report each of them like an unknown id, with a `FlutterError`
+that names every link of the loop:
+
+```text
+Constrained links loop back on themselves: Symbol("a") top to Symbol("b") top, Symbol("b") top to Symbol("a") top. None of these children has a position to start from. Link one of these edges to `parent` or to a child outside the loop instead.
+```
+
+Baseline links are not followed, so two children whose baselines link to each
+other are not reported. In profile and release builds the check is compiled
+out, and the layout lays out every kind. Android never finishes laying out a
+layout with the last kind. It lays out the others, as this layout does: when
+nothing else anchors the loop, its children sit at the layout's left or top
+edge, in either text direction. Two children whose tops link to each other,
+for example, both sit at the top edge.
 
 **Two children with the same id.** This is not reported at runtime: links to
 that id resolve to the last child that uses it.
 
 The companion analyzer plugin,
 [`flutter_constraint_layout_lints`](https://pub.dev/packages/flutter_constraint_layout_lints),
-flags both mistakes as you type, with the warnings `undefined_constraint_id` and
-`duplicate_constraint_id`. Enable it in the `analysis_options.yaml` at the root
-of your package, then restart the Dart analysis server:
+flags both id mistakes as you type, with the warnings
+`undefined_constraint_id` and `duplicate_constraint_id`. Enable it in the
+`analysis_options.yaml` at the root of your package, then restart the Dart
+analysis server:
 
 ```yaml
 plugins:
@@ -1236,17 +1405,35 @@ genuine systems of simultaneous constraints, and those fall back to the
 **Cassowary solver**, which costs far more. The whole layout falls back to the
 solver when it contains any of:
 
-- a `Barrier`, a `ConstraintFlow`, or a `ConstraintGrid`,
+- a `ConstraintFlow` or a `ConstraintGrid`,
 - a `circle` link or a `.constrainedWrap()` size,
 - `aspectRatio` on a child whose width and height are both `.matchConstraint`,
-- a chain with a `gone` member or a member sized by `aspectRatio`,
+- a chain with a `gone` member, or with a member sized along the chain by
+  `aspectRatio` or `.percent()`,
 - in a right-to-left layout, a chain with a margin on any of its links,
-- on an axis where the layout sizes to its content (such as the scrolling axis
-  of a list): a chain along that axis, a child linked on both sides of that
-  axis, or a child that extends outside the layout,
+- a child that is not `gone` and has a `baseline` link but no baseline of its
+  own, such as one without text (Android ignores that link),
+- a `Barrier` that Android's solver would settle away from the outermost edge
+  of its widgets, such as one on their left or top edges that its `margin`
+  pushes past the layout's right or bottom edge, or such a `Barrier` that a
+  chain, a baseline link, or an `aspectRatio` size depends on (Android leaves
+  a barrier to its solver unless it places all of its widgets first; see
+  [barriers](#barriers)),
+- in a layout with a `Barrier`, a child at a negative position (for example
+  past the left or top edge after a negative margin) or squeezed to a negative
+  size, or a child that Android would place differently from the graph, such
+  as one centered between pixels on a `.percent()` size or a chain gap, or one
+  centered with a bias other than 0, 0.5, and 1 that Android works out a pixel
+  away (see [barriers](#barriers)),
+- in a layout that sizes to its content on an axis (such as the scrolling axis
+  of a list): a `Guideline`, a `Barrier`, a `.percent()` size, or an
+  `aspectRatio` anywhere, or along that axis a chain, a child linked on both
+  sides (a `gone` one too), a `.matchParent` child, or a child that extends
+  outside the layout,
 - anything else the graph cannot resolve directly.
 
-Guidelines, baselines, bias, percent and bounded sizes, weighted and packed
+Outside those cases, barriers, guidelines, baselines, bias, percent and bounded
+sizes, an `aspectRatio` with one `.matchConstraint` axis, weighted and packed
 chains (in a right-to-left layout, those without margins), and `invisible` or
 `gone` children outside chains all stay on the graph.
 
@@ -1273,38 +1460,97 @@ frame does no more work than its changes require:
   lacks one of its two links, and no baseline alignment). The engine is skipped
   and the previous geometry is reused.
 - **In place:** a `Constrained` property changed (a link, margin, bias, size,
-  ratio, chain style, weight, or visibility). The affected widgets are updated
-  in the existing model, which is then solved again. New incoming constraints,
-  or a child whose content changed size, also re-solve the existing model
-  without rebuilding it.
+  ratio, chain style, weight, or visibility), or the `visibility` of a
+  `ConstraintGroup` changed, which updates each `Constrained` child it
+  references as a change of that child's own visibility would. The affected
+  widgets are updated in the existing model, which is then solved again. New
+  incoming constraints, or a child whose content changed size, also re-solve
+  the existing model without rebuilding it.
 - **Rebuild:** children were added, removed, or reordered, an id changed, the
-  text direction changed, or a property of a `Guideline`, `Barrier`,
-  `ConstraintFlow`, or `ConstraintGrid` changed. The model is rebuilt from
-  scratch.
+  text direction changed, a property of a `Guideline`, `Barrier`,
+  `ConstraintFlow`, or `ConstraintGrid` changed, or a `ConstraintGroup`'s
+  `referenced` list changed (or its `visibility`, when it references a flow or
+  a grid). The model is rebuilt from scratch.
 
 Changing `zIndex` or a debug flag only repaints.
 
 ## Limitations and differences from Android
 
-- **No intrinsic sizing, dry layout, or baseline** on the layout itself; see
-  [sizing and scrolling](#sizing-and-scrolling).
 - **Whole logical pixels.** Like Android's engine, which works in integer
   pixels, the engine computes positions and sizes in whole logical pixels:
   fixed sizes, margins, and gaps are rounded to the nearest integer, and
   children are placed at whole-pixel offsets. An edge can therefore land up to
-  a logical pixel away from where fractional arithmetic would put it.
+  a logical pixel away from where fractional arithmetic would put it. The
+  engine also computes in 64-bit `double` where Android's uses 32-bit `float`,
+  so in rare cases an edge rounds a pixel or two away from Android's. More
+  rarely, in an over-constrained layout, such as a weighted chain whose
+  content does not fit its space, two of the solver's pivot candidates can tie
+  exactly, and the solver can then settle on a different solution from the
+  one Android's floats reach;
+  [UPSTREAM.md](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/UPSTREAM.md)
+  documents these ties.
+- **Edge cases on the fast path.** Most layouts resolve on the dependency
+  graph (see [how it works](#how-it-works)). Outside layouts with a
+  `Barrier` (see [barriers](#barriers)), the graph's result is not checked
+  against Android's rounding, so it can differ from Android's, mostly by 1 px.
+  A child at a negative position, past the left or top edge, sits where its
+  margin puts it (-7 for a margin of -7), where Android rounds it 1 px toward
+  the edge (-6). A `.percent()` size, a chain gap, or a centered position
+  that falls between pixels is rounded before what depends on it is placed,
+  where Android rounds once at the end, and an `aspectRatio` size is rounded
+  where Android truncates it. A child centered with a bias other than 0, 0.5,
+  and 1 can sit 1 px away when its offset falls on a half pixel or the child
+  does not fit between its links. A `.spread()` or `.percent()` size with a
+  `min` or `max`, or a `.matchConstraint` size squeezed between links that
+  leave it no room, can come out a different size. A `.percent()` size linked
+  on both sides keeps a `min` above its percent, centered between the links,
+  where Android stretches it across the space between them. And some
+  differences do not show: a gone child that nothing links to, a gone
+  `.matchParent` child, or a child squeezed to a negative size (which is
+  placed at a size of 0) can sit at a different point.
+- **Edge cases on the solver fallback.** Android's default optimization runs a
+  `Direct` optimizer before its solver: it places simply anchored and centered
+  children with whole-pixel arithmetic, as the graph does. This package has no
+  `Direct` optimizer, so a layout that falls back to the solver (see
+  [performance](#performance)) can differ where `Direct` would have placed a
+  child. A child centered on a widget whose own centered position falls on a
+  half pixel can sit 1 px off. A centered child with a negative margin can sit
+  up to that margin away, because the solver drops a negative margin from a
+  centered child unless the margin on its other link is positive. And a child
+  linked to the end of a gone `.matchParent` child is placed as if that child
+  had not collapsed. The graph gives Android's result in all three.
 - **A `goneMargin` of 0 means "not set".** When the target is gone, the
   regular `margin` stays in effect; you cannot replace it with exactly 0.
 - **No `guidelineUseRtl`.** A vertical guideline always mirrors in a
   right-to-left layout, which is Android's default; there is no equivalent of
   Android's `guidelineUseRtl="false"` to keep one in place. See
   [right-to-left](#right-to-left).
-- **Id mistakes.** Unknown ids throw in debug builds and are skipped in release
-  builds; duplicate ids are not reported. See
-  [unknown and duplicate ids](#unknown-and-duplicate-ids).
+- **More of a layout mirrors in right-to-left text.** `ConstraintGrid` mirrors
+  its columns, and the `margin` of a `.start` or `.end` barrier mirrors with
+  the layout, so a layout written with `start` and `end` mirrors as a whole.
+  Android leaves right-to-left unimplemented in its grids, and a positive
+  barrier margin there moves every barrier right or down. See
+  [right-to-left](#right-to-left).
+- **A baseline of its own.** Android's `ConstraintLayout` reports no baseline,
+  so its parent cannot align it by one. This one reports the highest baseline
+  among its visible children, so `Baseline` and a baseline-aligned `Row` can
+  align it; see
+  [intrinsic sizes, dry layout, and baseline](#intrinsic-sizes-dry-layout-and-baseline).
+- **Id and link mistakes.** Unknown ids throw in debug builds and are skipped
+  in release builds; duplicate ids are not reported. Links that loop back on
+  themselves throw in debug builds too and are laid out in release builds;
+  Android does not report them, and never finishes laying out one kind of
+  them. See [unknown and duplicate ids](#unknown-and-duplicate-ids).
 - **Flow and Grid options.** `ConstraintFlow` takes one `padding` for all four
   sides and has no first-row or last-row chain styles or biases.
   `ConstraintGrid` does not expose Android's grid flags.
+- **`ConstraintGrid` is core's grid.** It follows `GridCore` from core 1.1.1,
+  the grid that Jetpack Compose's ConstraintLayout uses, not the view-based
+  `Grid` helper of Android's ConstraintLayout 2.2.1. The view-based grid
+  ignores a weight list with the wrong number of entries, where this one pads
+  it with weights of 1 or trims it, and it hands spans to the widgets in the
+  order they are listed, where this one sorts them by cell index first. See
+  [grid](#grid).
 - **No built-in transitions.** A changed link or size takes effect at the next
   layout, without animation. To animate one, drive the value (a `margin`, a
   bias, or a `.fixed` size) from an `Animation` and rebuild; each frame then
@@ -1315,21 +1561,21 @@ Changing `zIndex` or a debug flag only repaints.
   - **JSON constraint sets** (upstream's `parser/`, `dsl/`, and `state/`). The
     widget API replaces them.
   - **`Placeholder`.** It is niche; use conditional ids instead.
-  - **The `Direct` and `Grouping` optimizers.** They are performance shortcuts
-    in front of upstream's solver; here the dependency graph plays that role.
-- **No view-layer helpers** such as Android's `Group`, `Layer`, or
-  `ConstraintSet`. In Flutter, set each child's `visibility` from your state,
-  and rebuild with different properties instead of applying a constraint set.
+  - **The `Direct` and `Grouping` optimizers.** They run in front of
+    upstream's solver; here the dependency graph plays their role (see the
+    solver fallback's edge cases above).
+- **No view-layer helpers** such as Android's `Layer` or `ConstraintSet`. In
+  Flutter, rebuild with different properties instead of applying a constraint
+  set. Android's `Group` is here as [`ConstraintGroup`](#groups).
 
 ## How it works
 
 `ConstraintLayout` maps each child to a widget in
 [`constraint_engine`](https://pub.dev/packages/constraint_engine), a pure-Dart,
 line-faithful port of `androidx.constraintlayout.core`. The port is pinned to
-upstream commit `9cd4b5a4079a14175f91dc897abd83270799364a`, its solver and
-widget classes are verified at parity with the released core 1.1.1 (only the
-Grid helper still follows the pinned commit), and nearly all of upstream's core
-tests are ported and passing;
+upstream commit `9cd4b5a4079a14175f91dc897abd83270799364a`, its solver, widget
+classes, and Grid helper are verified at parity with the released core 1.1.1,
+and every upstream core test in its scope is ported and passing;
 [UPSTREAM.md](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/UPSTREAM.md)
 records the pin, the parity check, and every intentional divergence. During
 layout the engine measures children through Flutter's own `RenderBox.layout`,
@@ -1342,11 +1588,14 @@ with no iteration and no search, so its cost grows close to linearly with the
 widget count. The fallback is upstream's `LinearSystem`, an implementation of
 the Cassowary linear-arithmetic constraint algorithm (the family behind Apple's
 Auto Layout): it expresses the layout as weighted equations and inequalities
-and minimizes the error with an incremental simplex method. Android runs the
-solver by default with the graph as an optional optimization; this port tries
-the graph first and falls back to the solver only for the layouts the graph
-cannot resolve faithfully (listed under [performance](#performance)), so both
-paths produce the same result Android does.
+and minimizes the error with an incremental simplex method. By default,
+Android places what it can with a `Direct` optimizer and solves the rest with
+the solver, with the graph as an optional optimization. This port has no
+`Direct` optimizer: it tries the graph first, which takes that role, and falls
+back to the solver for the layouts the graph cannot resolve faithfully (listed
+under [performance](#performance)). Both paths give Android's result apart
+from a few edge cases, listed under
+[limitations](#limitations-and-differences-from-android).
 
 ## Links
 

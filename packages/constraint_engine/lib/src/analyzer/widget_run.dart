@@ -244,13 +244,18 @@ abstract class WidgetRun implements Dependency {
   @override
   void update(Dependency dependency) {}
 
+  // Divergence from upstream, which applies the max to the unbounded
+  // dimension (`value = Math.min(max, dimension)`) and so drops the min
+  // whenever a max is set: a spread size whose min exceeds the space between
+  // its anchors resolved to that space here, where the solver keeps the min.
+  // The max is applied to the value the min produced instead. UPSTREAM.md.
   int getLimitedDimension(int dimension, int orientation) {
     if (orientation == ConstraintWidget.HORIZONTAL) {
       final max = mWidget.mMatchConstraintMaxWidth;
       final min = mWidget.mMatchConstraintMinWidth;
       var value = min > dimension ? min : dimension;
       if (max > 0) {
-        value = max < dimension ? max : dimension;
+        value = max < value ? max : value;
       }
       if (value != dimension) {
         dimension = value;
@@ -260,7 +265,7 @@ abstract class WidgetRun implements Dependency {
       final min = mWidget.mMatchConstraintMinHeight;
       var value = min > dimension ? min : dimension;
       if (max > 0) {
-        value = max < dimension ? max : dimension;
+        value = max < value ? max : value;
       }
       if (value != dimension) {
         dimension = value;

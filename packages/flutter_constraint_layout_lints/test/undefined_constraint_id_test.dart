@@ -66,6 +66,19 @@ class Barrier extends StatelessWidget {
   final List<Symbol> referenced;
 }
 
+enum ConstraintVisibility { visible, invisible, gone }
+
+class ConstraintGroup extends StatelessWidget {
+  const ConstraintGroup({
+    required this.id,
+    required this.referenced,
+    this.visibility = ConstraintVisibility.visible,
+  });
+  final Symbol id;
+  final List<Symbol> referenced;
+  final ConstraintVisibility visibility;
+}
+
 class HorizontalLink {
   const HorizontalLink.startOf(this.target, {this.margin = 0});
   const HorizontalLink.endOf(this.target, {this.margin = 0});
@@ -107,6 +120,46 @@ Widget f() => ConstraintLayout(
 );
 ''',
       [lint(244, 2)],
+    );
+  }
+
+  Future<void> test_groupReferenced_defined() async {
+    await assertNoDiagnostics(r'''
+import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
+import 'package:flutter/widgets.dart';
+
+Widget f(bool show) => ConstraintLayout(
+  children: [
+    Constrained(id: #address, child: Text('address')),
+    Constrained(
+      id: #phone,
+      top: VerticalLink.bottomOf(#address),
+      child: Text('phone'),
+    ),
+    ConstraintGroup(
+      id: #details,
+      referenced: [#address, #phone],
+      visibility: show ? ConstraintVisibility.visible : ConstraintVisibility.gone,
+    ),
+  ],
+);
+''');
+  }
+
+  Future<void> test_groupReferenced_undefined() async {
+    await assertDiagnostics(
+      r'''
+import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
+import 'package:flutter/widgets.dart';
+
+Widget f() => ConstraintLayout(
+  children: [
+    Constrained(id: #a, child: Text('a')),
+    ConstraintGroup(id: #details, referenced: [#a, #b]),
+  ],
+);
+''',
+      [lint(255, 2)],
     );
   }
 

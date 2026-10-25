@@ -153,6 +153,15 @@ class ChainHead {
       } else {
         next = null;
       }
+      // A last member whose end links back to the first member, while the
+      // first one's start links to it (a widget whose start and end both
+      // link to a second one that links back, or a widget whose start and
+      // end both link to its own end), would restart the walk, which
+      // upstream's never leaves. Only the first member can come round again:
+      // every other member's start links to the member before it.
+      if (identical(next, mFirst)) {
+        next = null;
+      }
       if (next != null) {
         widget = next;
       } else {

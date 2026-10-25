@@ -135,6 +135,8 @@ class ConstraintFlow extends ParentDataWidget<ConstraintParentData> {
   final double padding;
 
   /// Whether this flow (and its arrangement) is laid out and drawn.
+  ///
+  /// A `ConstraintGroup` that references this flow overrides it.
   final ConstraintVisibility visibility;
 
   @override

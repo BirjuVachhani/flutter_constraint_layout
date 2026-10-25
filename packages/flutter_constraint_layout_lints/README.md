@@ -8,7 +8,7 @@ layout defines.
 
 | Rule | Severity | Catches |
 | --- | --- | --- |
-| [`duplicate_constraint_id`](#duplicate_constraint_id) | warning | A child of a `ConstraintLayout` (a `Constrained`, `Guideline`, `Barrier`, `ConstraintFlow`, or `ConstraintGrid`) reuses an id already taken by an earlier child of the same layout. |
+| [`duplicate_constraint_id`](#duplicate_constraint_id) | warning | A child of a `ConstraintLayout` (a `Constrained`, `Guideline`, `Barrier`, `ConstraintFlow`, `ConstraintGrid`, or `ConstraintGroup`) reuses an id already taken by an earlier child of the same layout. |
 | [`undefined_constraint_id`](#undefined_constraint_id) | warning | A link, or a helper's `referenced` entry, names an id that no child of the same `ConstraintLayout` defines. |
 
 ## Getting started
@@ -110,10 +110,12 @@ ConstraintLayout(
 ```
 
 The rule reads the `children` list of each `ConstraintLayout` and compares the
-`id` arguments of its direct elements. It understands symbol literals (`#header`)
-and references to constants (`const headerId = #header;`), including inside a
-spread of an inline list. Ids in the two branches of a collection `if` are
-treated as alternatives, not duplicates.
+`id` arguments of its direct elements, including the id of a `ConstraintGroup`:
+a group takes no part in the layout, but its id belongs to the same set. It
+understands symbol literals (`#header`) and references to constants
+(`const headerId = #header;`), including inside a spread of an inline list. Ids
+in the two branches of a collection `if` are treated as alternatives, not
+duplicates.
 
 Because this is static analysis, it only sees what the source spells out. It
 cannot flag ids built at runtime (`Symbol(name)`), children produced by a `for`
@@ -126,9 +128,8 @@ Ids are scoped to one layout, and a link at an id nothing defines cannot be
 resolved. A debug build throws a `FlutterError` naming the unknown id when the
 layout runs; profile and release builds drop the link, so the edge it was meant
 to anchor is left unconstrained and the child is placed as if the link were not
-there.
-The usual causes are a typo and an id that was renamed on its child but not at
-its use sites.
+there. The usual causes are a typo and an id that was renamed on its child but
+not at its use sites.
 
 ```dart
 ConstraintLayout(
@@ -142,9 +143,14 @@ ConstraintLayout(
 
 Checked for every link parameter (`top`, `bottom`, `baseline`, `left`, `right`,
 `start`, `end`, `circle`) and for the `referenced` list of `Barrier`,
-`ConstraintFlow`, and `ConstraintGrid`. The reserved `parent` target is always
-fine, and ids defined by a `Guideline`, a `Barrier`, or a child sitting under a
-builder-style wrapper all count as defined.
+`ConstraintFlow`, `ConstraintGrid`, and `ConstraintGroup`. The reserved `parent`
+target is always fine, and ids defined by a `Guideline`, a `Barrier`, or a child
+sitting under a builder-style wrapper all count as defined.
+
+The id of a `ConstraintGroup` counts as defined too, so a link at it, or a
+helper's `referenced` entry naming it, is not reported. A group has no position
+or size, so the layout itself reports either one when it runs: a debug build
+throws a `FlutterError` that names the group.
 
 Unlike a duplicate id, this one needs the *complete* set of a layout's ids before
 it can call anything missing. Whenever a child could contribute an id that is not

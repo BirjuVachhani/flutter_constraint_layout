@@ -12,7 +12,8 @@ cannot resolve. No Flutter dependency.
 > [flutter_constraint_layout](https://pub.dev/packages/flutter_constraint_layout)
 > instead. It is built on this package and provides ConstraintLayout as
 > Flutter widgets (`ConstraintLayout`, `Constrained`, `Guideline`, `Barrier`,
-> `ConstraintFlow`, `ConstraintGrid`), with a debug visualizer.
+> `ConstraintFlow`, `ConstraintGrid`, `ConstraintGroup`), with a debug
+> visualizer.
 
 ## When to use it
 
@@ -149,10 +150,11 @@ root.setMeasurer(TextMeasurer({title: 'Pure Dart layout'}));
 ```
 
 Without a measurer, `layout()` installs a default one under which a
-wrap-content widget keeps its stored size. That is enough when every size is
-known up front and the layout has no `Flow` or `GridCore`, which only work
-through a measurer that runs their own measure pass. See
-[The measurer](#the-measurer) for the full contract.
+wrap-content widget keeps its stored size and a match-constraint size stays
+within its min and max. That is enough when every size is known up front and
+the layout has no `Flow` or `GridCore`, which only work through a measurer
+that runs their own measure pass. See [The measurer](#the-measurer) for the
+full contract.
 
 ### 6. Lay out and read the result
 
@@ -388,6 +390,15 @@ so set all four every time. Report the content's natural size on
 `wrapContent` axes (and on `MATCH_CONSTRAINT_WRAP` axes), and echo the
 proposed size on the others.
 
+Then keep each size within the widget's match-constraint bounds, as Android's
+measurer does: raise it to `mMatchConstraintMinWidth` and lower it to
+`mMatchConstraintMaxWidth` (and the height ones), skipping a bound that is 0.
+When that changes a size, measure the content again at it, so that the other
+axis follows. The dependency graph measures a `matchConstraint` axis that has
+only one anchor as wrap content and resolves it at the size you report, while
+the solver applies the bounds itself; without the clamp, such an axis ignores
+its min and max on the graph. The default measurer clamps the same way.
+
 After the solver has run, `layout()` measures some children again (see
 [how resolution works](#how-resolution-works)), first with
 `TRY_GIVEN_DIMENSIONS` and then with `USE_GIVEN_DIMENSIONS`. On those passes
@@ -439,6 +450,13 @@ if (widget is VirtualLayout) {
 The virtual layout then measures the widgets added to it through the same
 measurer.
 
+A `GridCore` follows the container's direction: in a right-to-left container
+(`setRtl(true)`) its first column is the rightmost, so its cells fill from the
+right, while the cell positions in its spans and skips and its column weights
+still count from the first column. Upstream's `GridCore` leaves right-to-left
+unhandled; this one lays the grid out as the mirror image of its left-to-right
+layout.
+
 `didMeasures()` marks the end of a batch of measures on the `measure(...)`
 entry point described below; `layout()` does not call it, and an empty body
 is typical.
@@ -465,18 +483,90 @@ is typical.
    another solver pass.
 
 The graph declines, and hands the whole layout to the solver, for chains with
-`GONE` or ratio-sized members, chains along a `wrapContent` axis of the
-container, chains with margins in a right-to-left (`setRtl(true)`) container,
-`MATCH_CONSTRAINT_WRAP` widgets, circular constraints, nested
-containers, widgets centered between two anchors along a `wrapContent` axis,
-wrap results whose children overflow the computed bounds, wrap results larger
-than the container's `setMaxWidth` or `setMaxHeight`, and virtual layouts.
-It also hands over any layout it leaves partly unresolved, which currently
-includes every layout that contains a `Barrier`: the graph tracks only the
-barrier's position.
+`GONE`, ratio-sized, or percent members, chains along a `wrapContent` axis of
+the container, chains with margins in a right-to-left (`setRtl(true)`)
+container, chains with no first or last member (anchors that loop back on
+themselves, such as two widgets whose tops target each other),
+`MATCH_CONSTRAINT_WRAP` widgets, circular constraints, nested containers,
+widgets (gone ones included) centered between two anchors along a
+`wrapContent` axis, `matchParent` widgets along a `wrapContent` axis, wrap
+results whose children overflow the computed bounds, wrap results larger than
+the container's `setMaxWidth` or `setMaxHeight`, a `wrapContent` axis whose
+size it cannot compute (a guideline, a barrier, or a match-constraint widget
+that does not simply spread turns the computation off, and widgets that depend
+on each other in a loop along that axis defeat it), widgets that
+`setWrapBehaviorInParent` leaves out of a `wrapContent` axis,
+match-constraint widgets resolved below their `setMinWidth` or `setMinHeight`,
+a baseline link from a widget that has no baseline (a baseline distance of 0
+after its measure, as a widget without text measures; Android ignores such a
+link), a widget whose size resolved after the graph's last measure of it, a
+chain whose members the graph left unplaced or at their measured sizes, a size
+override that `setFrame` left pending from the last solve, and virtual
+layouts. It also hands over any layout it leaves partly unresolved, such as
+one with a cycle.
 
-Upstream works the other way around: its default path is the solver, with the
-graph as an optional optimization. The graph is the cheaper path. The bundled
+Barriers resolve on the graph, at the outermost edge of their widgets plus
+their margin, when the graph can tell that Android would lay the whole layout
+out the same way. Android's default level, `OPTIMIZATION_STANDARD`, runs
+upstream's `Direct` optimizer before its solver, and a barrier whose widgets
+`Direct` places is placed at that edge and held there. Any other barrier is
+the solver's, which bounds it by its widgets and pulls it towards them and
+towards one edge of the container (widgets centered against it pull too).
+When those pulls would move it off the edge of its widgets, for example a
+`left` or `top` barrier past the container's right or bottom edge, or when
+the check cannot tell, the layout goes to the solver. So does a barrier layout
+where `Direct` would place a widget elsewhere than the graph (it works a
+centered position out in floats, and truncates the offset of a widget that
+does not fit where the graph rounds it), and one where, in the part `Direct`
+leaves to the solver, the solver would: a fraction of a pixel that the graph
+rounds earlier (a percent or ratio size, a chain gap, a centered position
+that another widget is centered on), a chain that overflows or that a barrier
+pulls on, a centered widget with a negative margin, or a baseline link to a
+gone widget that has a baseline distance. And so does a barrier layout with a
+negative position or size anywhere, which Android rounds differently, or with
+a widget given a minimum size through `setMinWidth` or `setMinHeight`. A
+barrier layout on the solver comes out as it always has.
+
+Outside barrier layouts the graph is not checked against Android's rounding,
+so a layout it keeps can come out differently from the solver, and from
+Android, usually by a pixel. Android's default level, `OPTIMIZATION_STANDARD`,
+runs upstream's `Direct` optimizer before its solver, and `Direct` places
+simply anchored and centered widgets in whole pixels, mostly as the graph
+does. So in three cases the graph gives Android's result, and the solver,
+which runs here without a `Direct` pass, does not: a widget centered on a
+widget whose own centered position falls on a half pixel (the solver puts it
+a pixel off), a centered widget with a negative margin (the solver drops that
+margin unless the one on the other side is positive), and a widget linked to
+the end of a gone match-parent widget (the solver places it as if that widget
+had not collapsed). Elsewhere the graph can differ from Android. It keeps a
+widget at a negative position (-7 for a margin of -7), where the solver and
+Android round it a pixel towards zero (-6), and keeps a frame with a negative
+size, which they report as 0 x 0 at 0, 0. It rounds a percent or ratio size,
+a chain gap, or a centered position that another widget is centered on, where
+Android's solver keeps the fraction and rounds once at the end, and it rounds
+a ratio size where Android truncates it, so a widget can land a pixel away.
+`Direct` itself works a centered position out in floats and truncates the
+offset of a widget that does not fit, where the graph rounds in doubles, so a
+centered widget it places can sit a pixel from the graph's position too. The
+solver can also size a match-constraint widget with a min or a max, or one
+between anchors that leave it no room, differently from the graph. The graph
+can collapse a gone widget that nothing references, or a gone match-parent
+widget, at another point; the widget has no size, so nothing shows. And it
+clamps a percent size by its min and max, which upstream's graph leaves to the
+solver, so it keeps a percent size anchored on both sides at its min when the
+min is above the percent, where the solver and Android fill the space between
+the anchors (see
+[UPSTREAM.md](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/UPSTREAM.md)).
+The barrier check above declines a barrier layout where the graph would
+differ from Android in any of these ways, but for a position exactly on a
+half pixel, which floating-point noise can round either way in Android and in
+the solver. It also keeps degenerate barrier layouts that the solver lays out
+as the graph does and Android does not, such as one with a widget whose links
+cross, since declining them would not give Android's result.
+
+Upstream works the other way around: its default path is that `Direct` pass
+and the solver, with the graph as an optional optimization. The graph is the
+cheaper path. The bundled
 [resolver benchmark](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/benchmark/resolver_benchmark.dart)
 times both on generated screens of increasing size, and a solver-routed screen
 takes ten or more times as long as a graph-resolved one (run it with
@@ -523,30 +613,34 @@ The port is pinned to upstream commit
 [`9cd4b5a`](https://github.com/androidx/constraintlayout/tree/9cd4b5a4079a14175f91dc897abd83270799364a),
 the final commit of the androidx/constraintlayout GitHub repository (core
 1.1.0-alpha04). Development has since moved to the AOSP androidx monorepo. The
-widget model, the dependency-graph resolver, and the solver are at parity with
-the released core 1.1.1: the one upstream change to them since the pin is
-applied here. `GridCore` still follows the pinned commit, which the released
-core has changed since (its flags, for example, became a bitmask).
+widget model, the dependency-graph resolver, the solver, and `GridCore` are at
+parity with the released core 1.1.1: the upstream changes to them since the
+pin are applied here (a solver pool fix, and the `GridCore` of core 1.1.0,
+unchanged in 1.1.1, whose flags are an int bitmask, whose weight lists are
+padded or trimmed to the track count, and whose spans and skips are sorted by
+position).
 
 - **Ported:** the widget model and the dependency-graph resolver (`widgets/`
   and `widgets/analyzer/`), the `LinearSystem` solver and its supporting
-  classes, and the virtual layouts (`VirtualLayout`, `Flow`, and
-  `utils/GridCore`).
+  classes, the virtual layouts (`VirtualLayout`, `Flow`, and
+  `utils/GridCore`), and `utils/GridEngine`, a standalone grid cell-placement
+  class that `GridCore` does not use.
 - **Not ported:** MotionLayout (`motion/`); the `parser/`, `dsl/`, and
   `state/` layers behind JSON constraint sets and Jetpack Compose
-  (flutter_constraint_layout plays that role here); `utils/GridEngine`, which
-  `GridCore` does not use; `Placeholder`; the `Direct` and `Grouping`
-  optimizers (the graph-first entry plays their role); and `Metrics`.
+  (flutter_constraint_layout plays that role here); `Placeholder`; the
+  `Direct` and `Grouping` optimizers (the graph-first entry plays their role);
+  and `Metrics`.
 
-Upstream's core unit tests for the ported code are ported to Dart under
+Every upstream core unit test for the ported code is ported to Dart under
 [`test/`](https://github.com/BirjuVachhani/flutter_constraint_layout/tree/main/packages/constraint_engine/test),
-keeping upstream's class and method names.
+with its whole upstream body and upstream's class and method names, and every
+active one passes.
 [UPSTREAM.md](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/UPSTREAM.md)
-maps each upstream test class to its Dart file and lists the ones left out,
-each with its reason. It also records the pinned revision, the parity check,
-and every intentional divergence, such as `double` arithmetic where upstream
-uses 32-bit `float` (which moves a few test values by 1 to 2 px) and the
-graph-first entry point.
+maps each upstream test class to its Dart file and lists the out-of-scope
+ones, each with its reason. It also records the pinned revision, the parity
+check, and every intentional divergence, such as `double` arithmetic where
+upstream uses 32-bit `float` (which moves a few test values by 1 to 2 px) and
+the graph-first entry point.
 
 ## License
 

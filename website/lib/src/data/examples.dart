@@ -11,7 +11,8 @@ import '../widgets/preview.dart';
 /// reader's eye stays on the constraints, not the contents. Swap it for any of
 /// your own widgets.
 ///
-/// Keyed by the docs section id (see `data/docs_sections.dart`).
+/// Keyed by the docs section id (see `data/docs_sections.dart`), or, for a
+/// section's second example, by its subsection (`groups`, under Visibility).
 final Map<String, LiveExample> docExamples = {
   'quick-start': LiveExample(
     previewHeight: 200,
@@ -493,6 +494,73 @@ ConstraintLayout(
           start: .endOf(#b, margin: 12, goneMargin: 40),
           top: .topOf(#a),
           child: const DemoBox('C'),
+        ),
+      ],
+    ),
+  ),
+
+  'groups': LiveExample(
+    previewHeight: 200,
+    caption:
+        'With expanded set to false, the group makes both detail rows gone at '
+        'once, so only the name shows. Set it to true and both rows come back.',
+    code: r'''
+bool expanded = false; // from your State
+
+ConstraintLayout(
+  children: [
+    Constrained(
+      id: #name,
+      start: .startOf(parent, margin: 16),
+      top: .topOf(parent, margin: 16),
+      child: DemoBox('Ada Lovelace'),
+    ),
+    Constrained(
+      id: #email,
+      start: .startOf(#name),
+      top: .bottomOf(#name, margin: 8),
+      child: DemoBox('ada@example.com'),
+    ),
+    Constrained(
+      id: #phone,
+      start: .startOf(#name),
+      top: .bottomOf(#email, margin: 8),
+      child: DemoBox('+44 20 7946 0000'),
+    ),
+    // Both detail rows take the group's visibility, whatever their own.
+    ConstraintGroup(
+      id: #details,
+      referenced: [#email, #phone],
+      visibility: expanded ? .visible : .gone,
+    ),
+  ],
+)''',
+    builder: (context) => ConstraintLayout(
+      children: [
+        Constrained(
+          id: #name,
+          start: .startOf(parent, margin: 16),
+          top: .topOf(parent, margin: 16),
+          child: const DemoBox('Ada Lovelace'),
+        ),
+        Constrained(
+          id: #email,
+          start: .startOf(#name),
+          top: .bottomOf(#name, margin: 8),
+          child: const DemoBox('ada@example.com'),
+        ),
+        Constrained(
+          id: #phone,
+          start: .startOf(#name),
+          top: .bottomOf(#email, margin: 8),
+          child: const DemoBox('+44 20 7946 0000'),
+        ),
+        // The snippet's group with `expanded` false. Written out, since a
+        // flag fixed at false here would leave the analyzer a dead branch.
+        const ConstraintGroup(
+          id: #details,
+          referenced: [#email, #phone],
+          visibility: .gone,
         ),
       ],
     ),

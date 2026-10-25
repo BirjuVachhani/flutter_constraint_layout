@@ -168,7 +168,8 @@ class ConstraintWidgetContainer extends WidgetContainer {
 
   /// Set the [Measurer] that measures the children's content, used by
   /// [layout] and [measure]. Without one, [layout] installs a default under
-  /// which a wrap-content widget keeps its stored size.
+  /// which a wrap-content widget keeps its stored size and a match-constraint
+  /// size stays within its min and max.
   void setMeasurer(Measurer? measurer) {
     mMeasurer = measurer;
     mDependencyGraph.setMeasurer(measurer);
@@ -273,14 +274,31 @@ class ConstraintWidgetContainer extends WidgetContainer {
   /// faithfully, the widget state from before the graph pass is restored and
   /// the [LinearSystem] solver resolves the layout instead.
   ///
-  /// Safe to call repeatedly on a persistent container: widget runs are reset
-  /// and the dependency graph is rebuilt from the current model each call.
+  /// Safe to call repeatedly on a persistent container: each call forgets the
+  /// final positions of the last one, resets the widget runs, and rebuilds
+  /// the dependency graph from the current model, so a container laid out
+  /// again gives what a freshly built one with the same configuration gives,
+  /// when each changed widget was configured as a new one would be (as the
+  /// Flutter adapter does). As upstream, a size override that the previous
+  /// solve left pending is applied by this pass.
   /// A cheaper measures-only re-resolve is not possible in this architecture,
   /// because resetting run state destroys the graph's edges along with the
   /// apply-time seeding (see the note in DependencyGraph.directMeasure), so
   /// callers should cache above this layer by skipping layout() entirely when
   /// nothing changed.
   void layout() {
+    // Upstream's Direct pass, which Android's default optimization level
+    // runs on every measure, starts by forgetting the final positions of the
+    // container and its children. This port has no Direct pass, but
+    // Barrier.allSolved still gives a barrier one (setFinalHorizontal,
+    // setFinalVertical), which those setters keep once the axis is resolved
+    // and Barrier.addToSolver never clears: without the reset, a barrier
+    // that counts no reference would start each layout from the position
+    // its previous one reported, a pixel nearer 0 when that is negative.
+    resetFinalResolution();
+    for (final widget in mChildren) {
+      widget.resetFinalResolution();
+    }
     ensureWidgetRuns();
     for (final widget in mChildren) {
       widget.ensureWidgetRuns();
@@ -337,8 +355,23 @@ class ConstraintWidgetContainer extends WidgetContainer {
       }
     }
 
+    // A size override setFrame left pending (the solver loop stopped before
+    // applying it) is consumed by upstream's next solve, which is the next
+    // layout there. The graph neither applies nor clears it, so such a pass
+    // goes to the solver too, or the override would wait for whichever later
+    // pass the solver happens to run.
+    var hasPendingOverride = false;
+    for (final widget in mChildren) {
+      if (widget.hasDimensionOverride()) {
+        hasPendingOverride = true;
+        break;
+      }
+    }
+
     var allResolved =
-        !hasNestedContainer && mDependencyGraph.directMeasure(optimizeWrap);
+        !hasNestedContainer &&
+        !hasPendingOverride &&
+        mDependencyGraph.directMeasure(optimizeWrap);
 
     // Finalize positions/sizes from the resolved runs and zero out GONE widgets.
     updateFromRuns(true, true);
@@ -360,12 +393,11 @@ class ConstraintWidgetContainer extends WidgetContainer {
         allResolved = false;
       } else if (wrapW || wrapH) {
         for (final widget in mChildren) {
-          if (widget.getVisibility() == ConstraintWidget.GONE) {
-            continue;
-          }
           // Widgets centered between two anchors along a wrap axis need the
           // solver: the graph's group wrap computation does not account for
-          // them correctly.
+          // them correctly. A gone one counts too: with a widget linked to
+          // it, the computation can come out larger than the solver's (and
+          // Android's) wrap size.
           if (wrapW &&
               widget.mLeft.mTarget != null &&
               widget.mRight.mTarget != null) {
@@ -377,6 +409,9 @@ class ConstraintWidgetContainer extends WidgetContainer {
               widget.mBottom.mTarget != null) {
             allResolved = false;
             break;
+          }
+          if (widget.getVisibility() == ConstraintWidget.GONE) {
+            continue;
           }
           // Margins on anchors targeting the container must fit inside the
           // wrap size as well.
@@ -1105,26 +1140,59 @@ class ConstraintWidgetContainer extends WidgetContainer {
 /// widgets whose intrinsic size was provided up-front (the common test setup),
 /// a WRAP_CONTENT measure returns the widget's current natural size, while a
 /// FIXED/MATCH measure honours the caller-provided hint (which is the computed
-/// size for ratio/percent). This makes the graph engine reproduce the same
-/// results the upstream solver produces without an explicit measurer.
+/// size for ratio/percent). A match-constraint size is then kept within its
+/// min and max, as the [Measurer] contract asks. This makes the graph engine
+/// reproduce the same results the upstream solver produces without an
+/// explicit measurer.
 class _EchoMeasurer implements Measurer {
   @override
   void measure(ConstraintWidget widget, Measure measure) {
-    if (measure.horizontalBehavior == DimensionBehaviour.wrapContent) {
-      measure.measuredWidth = widget.mWidth;
-    } else {
-      measure.measuredWidth = measure.horizontalDimension;
+    var width = measure.horizontalBehavior == DimensionBehaviour.wrapContent
+        ? widget.mWidth
+        : measure.horizontalDimension;
+    var height = measure.verticalBehavior == DimensionBehaviour.wrapContent
+        ? widget.mHeight
+        : measure.verticalDimension;
+    // Keep a match-constraint size within its min and max, as the Measurer
+    // contract asks (Android's measurer does): the graph resolves a
+    // match-constraint axis with a single link at the measured size, while
+    // the solver clamps it itself.
+    if (widget.getHorizontalDimensionBehaviour() ==
+        DimensionBehaviour.matchConstraint) {
+      width = _clampToBounds(
+        width,
+        widget.mMatchConstraintMinWidth,
+        widget.mMatchConstraintMaxWidth,
+      );
     }
-    if (measure.verticalBehavior == DimensionBehaviour.wrapContent) {
-      measure.measuredHeight = widget.mHeight;
-    } else {
-      measure.measuredHeight = measure.verticalDimension;
+    if (widget.getVerticalDimensionBehaviour() ==
+        DimensionBehaviour.matchConstraint) {
+      height = _clampToBounds(
+        height,
+        widget.mMatchConstraintMinHeight,
+        widget.mMatchConstraintMaxHeight,
+      );
     }
+    measure.measuredWidth = width;
+    measure.measuredHeight = height;
     // Preserve the widget's declared baseline (the measure() step writes these
     // back to the widget, so echoing them keeps baseline constraints working).
     measure.measuredHasBaseline = widget.hasBaseline();
     measure.measuredBaseline = widget.getBaselineDistance();
     widget.setMeasureRequested(false);
+  }
+
+  /// [size] raised to [min] and then lowered to [max], skipping a bound
+  /// that is 0 (none), in the order the solver applies them.
+  static int _clampToBounds(int size, int min, int max) {
+    var value = size;
+    if (min > 0 && value < min) {
+      value = min;
+    }
+    if (max > 0 && value > max) {
+      value = max;
+    }
+    return value;
   }
 
   @override

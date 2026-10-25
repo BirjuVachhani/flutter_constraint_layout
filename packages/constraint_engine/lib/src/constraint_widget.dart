@@ -812,7 +812,10 @@ class ConstraintWidget {
   ///
   /// A [GONE] widget gets a size of 0 x 0. A fixed axis never shrinks below
   /// its stored size, both sizes are raised to their minimums, and a
-  /// match-constraint axis is capped at its match-constraint maximum.
+  /// match-constraint axis is capped at its match-constraint maximum. When
+  /// a minimum or a maximum changed a size, that size is recorded as an
+  /// override ([hasDimensionOverride]): the next solve treats it as fixed,
+  /// and [ConstraintWidgetContainer.layout] solves again to apply it.
   void setFrame(int left, int top, int right, int bottom) {
     var w = right - left;
     var h = bottom - top;
@@ -823,6 +826,7 @@ class ConstraintWidget {
       mHeight = 0;
       return;
     }
+    // correct dimensional instability caused by rounding errors
     if (mListDimensionBehaviors[HORIZONTAL] == DimensionBehaviour.fixed &&
         w < mWidth) {
       w = mWidth;
@@ -848,6 +852,12 @@ class ConstraintWidget {
       mHeight = mHeight < mMatchConstraintMaxHeight
           ? mHeight
           : mMatchConstraintMaxHeight;
+    }
+    if (w != mWidth) {
+      mWidthOverride = mWidth;
+    }
+    if (h != mHeight) {
+      mHeightOverride = mHeight;
     }
   }
 
@@ -1305,6 +1315,21 @@ class ConstraintWidget {
   bool isResolvedVertically() =>
       mResolvedVertical || (mTop.hasFinalValue() && mBottom.hasFinalValue());
 
+  /// Forget the positions [setFinalHorizontal] and [setFinalVertical] gave
+  /// this widget, and the final value of every anchor. Upstream's
+  /// ConstraintWidget.resetFinalResolution, less the solving-pass flags of
+  /// the Direct pass this port has no use for.
+  /// [ConstraintWidgetContainer.layout] calls it on the container and on
+  /// every child first, as upstream's Direct pass does on every measure at
+  /// Android's default optimization level.
+  void resetFinalResolution() {
+    mResolvedHorizontal = false;
+    mResolvedVertical = false;
+    for (final anchor in mAnchors) {
+      anchor.resetFinalResolution();
+    }
+  }
+
   /// Resolve the horizontal axis to the left edge [x1] and the right edge
   /// [x2], as final values on the anchors. [addToSolver] then adds them as
   /// constants. Ignored once the axis was resolved this way.
@@ -1361,13 +1386,19 @@ class ConstraintWidget {
   /// [WRAP_BEHAVIOR_VERTICAL_ONLY], or [WRAP_BEHAVIOR_SKIPPED]. Other values
   /// are ignored.
   ///
-  /// Only the solver path ([addToSolver]) reads it: a layout the dependency
-  /// graph resolves counts the widget on both axes.
+  /// The solver ([addToSolver]) applies it. The dependency graph does not
+  /// model it, so a layout where it has an effect, a parent that wraps its
+  /// content on an axis this widget does not count toward, is resolved by
+  /// the solver.
   void setWrapBehaviorInParent(int behavior) {
     if (behavior >= 0 && behavior <= WRAP_BEHAVIOR_SKIPPED) {
       mWrapBehaviorInParent = behavior;
     }
   }
+
+  /// How this widget counts toward the size of a wrap-content parent; see
+  /// [setWrapBehaviorInParent].
+  int getWrapBehaviorInParent() => mWrapBehaviorInParent;
 
   /// Whether an anchor of another widget is connected to one of this
   /// widget's anchors.
@@ -1382,7 +1413,8 @@ class ConstraintWidget {
 
   /// Whether a width or height override is pending ([mWidthOverride] or
   /// [mHeightOverride] set), which makes the solver treat that size as fixed
-  /// on its next pass.
+  /// on its next pass. [setFrame] records one when a minimum or a maximum
+  /// changed the size the solver gave the widget.
   bool hasDimensionOverride() => mWidthOverride != -1 || mHeightOverride != -1;
 
   /// Immediate connection to an anchor without any checks.

@@ -28,6 +28,14 @@ abstract class Measurer {
   /// [Measure.measuredHasBaseline] on every call: the engine reuses its
   /// [Measure] objects, then copies the outputs onto [widget].
   ///
+  /// Like Android's view measurer, keep each measured size within the
+  /// widget's match-constraint min and max
+  /// ([ConstraintWidget.mMatchConstraintMinWidth] and the like, where 0 means
+  /// no bound), measuring the content again when that changes a size. The
+  /// dependency graph measures a match-constraint axis with a single anchor
+  /// as wrap content and resolves it at the reported size, while the solver
+  /// applies the bounds itself.
+  ///
   /// A [VirtualLayout] arranges its widgets in its own
   /// [VirtualLayout.measure], which only a measurer runs: call it, with
   /// [BasicMeasure.EXACTLY] and the proposed size on a fixed axis and on a
