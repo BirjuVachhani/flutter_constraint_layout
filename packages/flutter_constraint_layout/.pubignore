@@ -20,5 +20,10 @@ test/debug/debug_repaint_test.dart
 # not part of the published archive.
 analysis_options.yaml
 
+# The parity tooling's Flutter harness is a package of its own, set up outside
+# the repository; its imports resolve only there, and without this package's
+# analysis options (left out above) nothing would exclude it from analysis.
+tool/parity/fl_harness/
+
 # Flutter tool metadata for this directory.
 .metadata

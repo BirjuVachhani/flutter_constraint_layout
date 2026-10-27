@@ -3,7 +3,9 @@
 //
 // Two kinds of assertion appear throughout:
 //  * geometry oracle: after any mutation of the persistent tree, geometry must
-//    exactly equal a freshly built tree with the same configuration;
+//    exactly equal a freshly built tree with the same configuration (at the
+//    default level, where Android's own views lay a layout changed in place
+//    out as a fresh build; android_history_test.dart pins the other levels);
 //  * path verification: the debug counters prove which cache path ran (fast
 //    pass, engine pass, in-place config apply, full model rebuild), so caching
 //    cannot silently degrade to rebuild-every-frame or, worse, skip work it
@@ -26,8 +28,9 @@ class IntrinsicBox extends LeafRenderObjectWidget {
 
   @override
   void updateRenderObject(
-          BuildContext context, RenderIntrinsicBox renderObject) =>
-      renderObject.natural = natural;
+    BuildContext context,
+    RenderIntrinsicBox renderObject,
+  ) => renderObject.natural = natural;
 }
 
 class RenderIntrinsicBox extends RenderBox {
@@ -64,7 +67,9 @@ class BaselineBox extends LeafRenderObjectWidget {
 
   @override
   void updateRenderObject(
-      BuildContext context, RenderBaselineBox renderObject) {
+    BuildContext context,
+    RenderBaselineBox renderObject,
+  ) {
     renderObject
       ..natural = natural
       ..baseline = baseline;
@@ -102,18 +107,21 @@ Widget host(
   Size size = const Size(800, 600),
   TextDirection dir = TextDirection.ltr,
   Key? key,
-}) =>
-    Directionality(
-      textDirection: dir,
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: SizedBox(
-          width: size.width,
-          height: size.height,
-          child: ConstraintLayout(key: key, children: children),
-        ),
-      ),
-    );
+}) => Directionality(
+  textDirection: dir,
+  child: Align(
+    alignment: Alignment.topLeft,
+    child: SizedBox(
+      width: size.width,
+      height: size.height,
+      child: ConstraintLayout(key: key, children: children),
+    ),
+  ),
+);
+
+/// Whether the suite runs with `--dart-define=cl.verifyReplay=true`, under
+/// which a replayed layout also runs the engine to check itself.
+const verifyReplay = bool.fromEnvironment('cl.verifyReplay');
 
 RenderConstraintLayout layoutOf(WidgetTester tester) =>
     tester.renderObject<RenderConstraintLayout>(find.byType(ConstraintLayout));
@@ -147,7 +155,8 @@ Future<void> expectMatchesFresh(
 }) async {
   final live = geometryOf(tester);
   await tester.pumpWidget(
-      host(children(), size: size, dir: dir, key: UniqueKey()));
+    host(children(), size: size, dir: dir, key: UniqueKey()),
+  );
   expect(live, geometryOf(tester), reason: reason);
 }
 
@@ -167,8 +176,9 @@ RenderBox? topChildAt(RenderConstraintLayout ro, Offset position) {
 
 void main() {
   group('steady state', () {
-    testWidgets('re-layout with no changes takes the fast path',
-        (tester) async {
+    testWidgets('re-layout with no changes replays from the third layout', (
+      tester,
+    ) async {
       final children = [
         Constrained(
           id: #a,
@@ -192,21 +202,27 @@ void main() {
       final before = geometryOf(tester);
       expect(ro.debugModelBuilds, 1);
       expect(ro.debugEnginePasses, 1);
-      expect(ro.debugFastPasses, 0);
+      expect(ro.debugReplayPasses, 0);
 
       for (var i = 0; i < 3; i++) {
         ro.markNeedsLayout();
         ro.owner!.flushLayout();
       }
-      expect(ro.debugEnginePasses, 1,
-          reason: 'no change: the engine must not run again');
-      expect(ro.debugFastPasses, 3);
+      // The second layout runs the engine and confirms the first run; only
+      // then may a layout replay it.
+      expect(
+        ro.debugEnginePasses,
+        2 + (verifyReplay ? 2 : 0),
+        reason: 'no change: the engine must not run after the second time',
+      );
+      expect(ro.debugReplayPasses, 2);
+      expect(ro.debugReplayMismatches, 0);
       expect(ro.debugModelBuilds, 1);
       expect(geometryOf(tester), before);
     });
 
-    testWidgets('re-layout with wrap children re-runs the engine',
-        (tester) async {
+    testWidgets('re-layout with wrap children replays after asking them '
+        'again', (tester) async {
       final children = [
         Constrained(
           id: #a,
@@ -219,12 +235,30 @@ void main() {
       final ro = layoutOf(tester);
       final before = geometryOf(tester);
       expect(ro.debugEnginePasses, 1);
+      final leaf = tester.renderObject<RenderIntrinsicBox>(
+        find.byType(IntrinsicBox),
+      );
+      final leafLayouts = leaf.layoutCount;
 
       ro.markNeedsLayout();
       ro.owner!.flushLayout();
-      expect(ro.debugFastPasses, 0,
-          reason: 'wrap children depend on content: no fast path');
+      expect(
+        ro.debugReplayPasses,
+        0,
+        reason: 'the first run is not confirmed yet',
+      );
       expect(ro.debugEnginePasses, 2);
+
+      ro.markNeedsLayout();
+      ro.owner!.flushLayout();
+      // The wrap child is asked for its measure again (its answer is the
+      // same), so the layout replays the confirmed run. Its constraints are
+      // unchanged, so Flutter does not run its layout again (a replay saves
+      // the engine, not the children's layouts).
+      expect(ro.debugReplayPasses, 1);
+      expect(ro.debugEnginePasses, 2 + (verifyReplay ? 1 : 0));
+      expect(ro.debugReplayMismatches, 0);
+      expect(leaf.layoutCount, leafLayouts);
       expect(ro.debugModelBuilds, 1);
       expect(geometryOf(tester), before);
     });
@@ -233,25 +267,25 @@ void main() {
   group('incoming constraints', () {
     testWidgets('resize re-resolves without a model rebuild', (tester) async {
       List<Widget> children() => [
-            Constrained(
-              id: #centered,
-              left: .leftOf(parent),
-              right: .rightOf(parent),
-              top: .topOf(parent),
-              bottom: .bottomOf(parent),
-              width: .fixed(80),
-              height: .fixed(30),
-              child: const SizedBox(),
-            ),
-            Constrained(
-              id: #pinnedRight,
-              right: .rightOf(parent, margin: 12),
-              top: .topOf(parent, margin: 12),
-              width: .fixed(50),
-              height: .fixed(50),
-              child: const SizedBox(),
-            ),
-          ];
+        Constrained(
+          id: #centered,
+          left: .leftOf(parent),
+          right: .rightOf(parent),
+          top: .topOf(parent),
+          bottom: .bottomOf(parent),
+          width: .fixed(80),
+          height: .fixed(30),
+          child: const SizedBox(),
+        ),
+        Constrained(
+          id: #pinnedRight,
+          right: .rightOf(parent, margin: 12),
+          top: .topOf(parent, margin: 12),
+          width: .fixed(50),
+          height: .fixed(50),
+          child: const SizedBox(),
+        ),
+      ];
       await tester.pumpWidget(host(children()));
       final ro = layoutOf(tester);
       expect(geometryOf(tester)[1], [360.0, 285.0, 80.0, 30.0]);
@@ -266,50 +300,57 @@ void main() {
       await expectMatchesFresh(tester, children, size: const Size(640, 480));
     });
 
-    testWidgets('boundedness flip to wrap-content root and back',
-        (tester) async {
+    testWidgets('boundedness flip to wrap-content root and back', (
+      tester,
+    ) async {
       List<Widget> children() => [
-            Constrained(
-              id: #a,
-              left: .leftOf(parent, margin: 16),
-              top: .topOf(parent, margin: 16),
-              width: .fixed(80),
-              height: .fixed(40),
-              child: const SizedBox(),
-            ),
-            Constrained(
-              id: #b,
-              left: .leftOf(#a),
-              top: .bottomOf(#a, margin: 12),
-              width: .fixed(80),
-              height: .fixed(40),
-              child: const SizedBox(),
-            ),
-          ];
+        Constrained(
+          id: #a,
+          left: .leftOf(parent, margin: 16),
+          top: .topOf(parent, margin: 16),
+          width: .fixed(80),
+          height: .fixed(40),
+          child: const SizedBox(),
+        ),
+        Constrained(
+          id: #b,
+          left: .leftOf(#a),
+          top: .bottomOf(#a, margin: 12),
+          width: .fixed(80),
+          height: .fixed(40),
+          child: const SizedBox(),
+        ),
+      ];
       Widget bounded(bool isBounded, {Key? key}) => Directionality(
-            textDirection: TextDirection.ltr,
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: OverflowBox(
-                alignment: Alignment.topLeft,
-                minWidth: 800,
-                maxWidth: 800,
-                minHeight: isBounded ? 600 : 0,
-                maxHeight: isBounded ? 600 : double.infinity,
-                child: ConstraintLayout(key: key, children: children()),
-              ),
-            ),
-          );
+        textDirection: TextDirection.ltr,
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: OverflowBox(
+            alignment: Alignment.topLeft,
+            minWidth: 800,
+            maxWidth: 800,
+            minHeight: isBounded ? 600 : 0,
+            maxHeight: isBounded ? 600 : double.infinity,
+            child: ConstraintLayout(key: key, children: children()),
+          ),
+        ),
+      );
 
       await tester.pumpWidget(bounded(true));
       final ro = layoutOf(tester);
       expect(ro.size.height, 600);
 
       await tester.pumpWidget(bounded(false));
-      expect(ro.debugModelBuilds, 1,
-          reason: 'boundedness flip must not rebuild the model');
-      expect(ro.size.height, 108,
-          reason: 'wrap root: 16 + 40 + 12 + 40 content height');
+      expect(
+        ro.debugModelBuilds,
+        1,
+        reason: 'boundedness flip must not rebuild the model',
+      );
+      expect(
+        ro.size.height,
+        108,
+        reason: 'wrap root: 16 + 40 + 12 + 40 content height',
+      );
       final wrapGeometry = geometryOf(tester);
       await tester.pumpWidget(bounded(false, key: UniqueKey()));
       expect(wrapGeometry, geometryOf(tester));
@@ -320,93 +361,102 @@ void main() {
       expect(layoutOf(tester).size.height, 600);
     });
 
-    testWidgets('a flow re-laid out under new constraints matches a fresh one',
-        (tester) async {
-      // A match-constraint flow between the layout's edges, on an axis that
-      // wraps its content: the flow's width depends on where the chips it
-      // places sit, so the engine must not start from the positions the
-      // previous pass left behind.
-      List<Widget> children() => [
-            for (final (i, width) in const [91.0, 66.0, 66.0, 61.0].indexed)
-              Constrained(
-                id: Symbol('c$i'),
-                child: SizedBox(width: width, height: 35),
-              ),
-            ConstraintFlow(
-              id: #flow,
-              referenced: const [#c0, #c1, #c2, #c3],
-              start: .startOf(parent, margin: 12),
-              end: .endOf(parent, margin: 12),
-              top: .topOf(parent, margin: 12),
-              width: .matchConstraint,
-              wrap: .aligned,
-              horizontalGap: 8,
-              verticalGap: 8,
-              horizontalChainStyle: .packed,
-              contentHorizontalBias: 0,
+    testWidgets(
+      'a flow re-laid out under new constraints matches a fresh one',
+      (tester) async {
+        // A match-constraint flow between the layout's edges, on an axis that
+        // wraps its content: the flow's width depends on where the chips it
+        // places sit, so the engine must not start from the positions the
+        // previous pass left behind.
+        List<Widget> children() => [
+          for (final (i, width) in const [91.0, 66.0, 66.0, 61.0].indexed)
+            Constrained(
+              id: Symbol('c$i'),
+              child: SizedBox(width: width, height: 35),
             ),
-          ];
-      Widget under(BoxConstraints constraints, {Key? key}) => Directionality(
-            textDirection: TextDirection.ltr,
-            child: Align(
+          ConstraintFlow(
+            id: #flow,
+            referenced: const [#c0, #c1, #c2, #c3],
+            start: .startOf(parent, margin: 12),
+            end: .endOf(parent, margin: 12),
+            top: .topOf(parent, margin: 12),
+            width: .matchConstraint,
+            wrap: .aligned,
+            horizontalGap: 8,
+            verticalGap: 8,
+            horizontalChainStyle: .packed,
+            contentHorizontalBias: 0,
+          ),
+        ];
+        Widget under(BoxConstraints constraints, {Key? key}) => Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: OverflowBox(
               alignment: Alignment.topLeft,
-              child: OverflowBox(
-                alignment: Alignment.topLeft,
-                minWidth: constraints.minWidth,
-                maxWidth: constraints.maxWidth,
-                minHeight: constraints.minHeight,
-                maxHeight: constraints.maxHeight,
-                child: ConstraintLayout(key: key, children: children()),
-              ),
+              minWidth: constraints.minWidth,
+              maxWidth: constraints.maxWidth,
+              minHeight: constraints.minHeight,
+              maxHeight: constraints.maxHeight,
+              child: ConstraintLayout(key: key, children: children()),
             ),
-          );
+          ),
+        );
 
-      await tester.pumpWidget(under(const BoxConstraints(maxWidth: 332)));
-      const unboundedWidth = BoxConstraints.tightFor(height: 600);
-      await tester.pumpWidget(under(unboundedWidth));
-      expect(layoutOf(tester).debugModelBuilds, 1);
-      final persistent = geometryOf(tester);
-      await tester.pumpWidget(under(unboundedWidth, key: UniqueKey()));
-      expect(persistent, geometryOf(tester));
-    });
+        await tester.pumpWidget(under(const BoxConstraints(maxWidth: 332)));
+        const unboundedWidth = BoxConstraints.tightFor(height: 600);
+        await tester.pumpWidget(under(unboundedWidth));
+        expect(layoutOf(tester).debugModelBuilds, 1);
+        final persistent = geometryOf(tester);
+        await tester.pumpWidget(under(unboundedWidth, key: UniqueKey()));
+        expect(persistent, geometryOf(tester));
+      },
+    );
 
-    testWidgets('margins wider than the layout place a child at a size of 0',
-        (tester) async {
+    testWidgets('margins wider than the layout place a child at a size of 0', (
+      tester,
+    ) async {
       // 200 + 200 of margins in a 300-wide layout: the engine resolves both
       // widths to -100.
       Widget spread() => Constrained(
-            id: #spread,
+        id: #spread,
+        start: .startOf(parent, margin: 200),
+        end: .endOf(parent, margin: 200),
+        top: .topOf(parent, margin: 50),
+        width: .matchConstraint,
+        height: .fixed(40),
+        child: const SizedBox(),
+      );
+      await tester.pumpWidget(
+        host([
+          Constrained(
+            id: #capped,
             start: .startOf(parent, margin: 200),
             end: .endOf(parent, margin: 200),
-            top: .topOf(parent, margin: 50),
-            width: .matchConstraint,
+            top: .topOf(parent),
+            width: .constrainedWrap(),
             height: .fixed(40),
-            child: const SizedBox(),
-          );
-      await tester.pumpWidget(host([
-        Constrained(
-          id: #capped,
-          start: .startOf(parent, margin: 200),
-          end: .endOf(parent, margin: 200),
-          top: .topOf(parent),
-          width: .constrainedWrap(),
-          height: .fixed(40),
-          child: const SizedBox(width: 700),
-        ),
-        spread(),
-      ], size: const Size(300, 100)));
+            child: const SizedBox(width: 700),
+          ),
+          spread(),
+        ], size: const Size(300, 100)),
+      );
       expect(tester.takeException(), isNull);
       expect(geometryOf(tester)[1][2], 0);
       expect(geometryOf(tester)[2][2], 0);
 
-      // The fast path places the child from the stored geometry too.
+      // A replay places the child from the recorded frames too. The second
+      // layout of the new configuration confirms the first, the third
+      // replays it.
       await tester.pumpWidget(host([spread()], size: const Size(300, 100)));
       final ro = layoutOf(tester);
-      final fastPasses = ro.debugFastPasses;
+      ro.markNeedsLayout();
+      await tester.pump();
+      final replays = ro.debugReplayPasses;
       ro.markNeedsLayout();
       await tester.pump();
       expect(tester.takeException(), isNull);
-      expect(ro.debugFastPasses, fastPasses + 1);
+      expect(ro.debugReplayPasses, replays + 1);
       expect(geometryOf(tester)[1][2], 0);
     });
   });
@@ -422,29 +472,28 @@ void main() {
       double bBias = 0.5,
       double? bRatio,
       bool aGone = false,
-    }) =>
-        [
-          Constrained(
-            id: #a,
-            left: .leftOf(parent, margin: 10),
-            top: .topOf(parent, margin: 10),
-            width: .fixed(100),
-            height: .fixed(40),
-            visibility: aGone ? .gone : .visible,
-            child: const SizedBox(),
-          ),
-          Constrained(
-            id: #b,
-            left: bLeft,
-            top: bTop ?? const VerticalLink.topOf(parent),
-            bottom: bBottom,
-            width: bWidth,
-            height: bHeight,
-            verticalBias: bBias,
-            aspectRatio: bRatio,
-            child: const SizedBox(),
-          ),
-        ];
+    }) => [
+      Constrained(
+        id: #a,
+        left: .leftOf(parent, margin: 10),
+        top: .topOf(parent, margin: 10),
+        width: .fixed(100),
+        height: .fixed(40),
+        visibility: aGone ? .gone : .visible,
+        child: const SizedBox(),
+      ),
+      Constrained(
+        id: #b,
+        left: bLeft,
+        top: bTop ?? const VerticalLink.topOf(parent),
+        bottom: bBottom,
+        width: bWidth,
+        height: bHeight,
+        verticalBias: bBias,
+        aspectRatio: bRatio,
+        child: const SizedBox(),
+      ),
+    ];
 
     Future<void> expectInPlace(
       WidgetTester tester,
@@ -452,50 +501,58 @@ void main() {
       List<Widget> Function() config, {
       required int applies,
     }) async {
-      expect(ro.debugModelBuilds, 1,
-          reason: 'config change must be applied in place, not rebuilt');
+      expect(
+        ro.debugModelBuilds,
+        1,
+        reason: 'config change must be applied in place, not rebuilt',
+      );
       expect(ro.debugConfigApplies, applies);
       await expectMatchesFresh(tester, config);
     }
 
     testWidgets('margin change', (tester) async {
-      await tester
-          .pumpWidget(host(pair(bLeft: .rightOf(#a, margin: 8))));
+      await tester.pumpWidget(host(pair(bLeft: .rightOf(#a, margin: 8))));
       final ro = layoutOf(tester);
       expect(geometryOf(tester)[2][0], 118.0);
 
-      await tester
-          .pumpWidget(host(pair(bLeft: .rightOf(#a, margin: 40))));
+      await tester.pumpWidget(host(pair(bLeft: .rightOf(#a, margin: 40))));
       expect(geometryOf(tester)[2][0], 150.0);
       await expectInPlace(
-          tester, ro, () => pair(bLeft: .rightOf(#a, margin: 40)),
-          applies: 1);
+        tester,
+        ro,
+        () => pair(bLeft: .rightOf(#a, margin: 40)),
+        applies: 1,
+      );
     });
 
     testWidgets('link retarget and edge change', (tester) async {
-      await tester
-          .pumpWidget(host(pair(bLeft: .rightOf(#a, margin: 8))));
+      await tester.pumpWidget(host(pair(bLeft: .rightOf(#a, margin: 8))));
       final ro = layoutOf(tester);
 
       // Retarget: B now aligns to A's left edge instead of following its right.
       await tester.pumpWidget(host(pair(bLeft: .leftOf(#a))));
       expect(geometryOf(tester)[2][0], 10.0);
-      await expectInPlace(tester, ro, () => pair(bLeft: .leftOf(#a)),
-          applies: 1);
+      await expectInPlace(
+        tester,
+        ro,
+        () => pair(bLeft: .leftOf(#a)),
+        applies: 1,
+      );
     });
 
-    testWidgets('adding an opposing anchor centers, removing it restores',
-        (tester) async {
+    testWidgets('adding an opposing anchor centers, removing it restores', (
+      tester,
+    ) async {
       List<Widget> anchored() => pair(
-            bLeft: .leftOf(parent),
-            bTop: const VerticalLink.topOf(parent),
-          );
+        bLeft: .leftOf(parent),
+        bTop: const VerticalLink.topOf(parent),
+      );
       List<Widget> centered({double bias = 0.5}) => pair(
-            bLeft: .leftOf(parent),
-            bTop: const VerticalLink.topOf(parent),
-            bBottom: const VerticalLink.bottomOf(parent),
-            bBias: bias,
-          );
+        bLeft: .leftOf(parent),
+        bTop: const VerticalLink.topOf(parent),
+        bBottom: const VerticalLink.bottomOf(parent),
+        bBias: bias,
+      );
       await tester.pumpWidget(host(anchored()));
       final ro = layoutOf(tester);
       expect(geometryOf(tester)[2][1], 0.0);
@@ -507,8 +564,11 @@ void main() {
       // Bias sweep on the persistent model.
       for (final bias in [0.0, 0.25, 0.75, 1.0]) {
         await tester.pumpWidget(host(centered(bias: bias)));
-        expect(geometryOf(tester)[2][1], (600 - 20) * bias,
-            reason: 'bias $bias');
+        expect(
+          geometryOf(tester)[2][1],
+          (600 - 20) * bias,
+          reason: 'bias $bias',
+        );
         expect(ro.debugModelBuilds, 1);
       }
 
@@ -519,16 +579,16 @@ void main() {
 
     testWidgets('dimension type transitions', (tester) async {
       List<Widget> withWidth(Dimension width) => [
-            Constrained(
-              id: #a,
-              left: .leftOf(parent, margin: 20),
-              right: .rightOf(parent, margin: 20),
-              top: .topOf(parent),
-              width: width,
-              height: .fixed(40),
-              child: const IntrinsicBox(Size(88, 33)),
-            ),
-          ];
+        Constrained(
+          id: #a,
+          left: .leftOf(parent, margin: 20),
+          right: .rightOf(parent, margin: 20),
+          top: .topOf(parent),
+          width: width,
+          height: .fixed(40),
+          child: const IntrinsicBox(Size(88, 33)),
+        ),
+      ];
       await tester.pumpWidget(host(withWidth(.fixed(100))));
       final ro = layoutOf(tester);
       expect(geometryOf(tester)[1][2], 100.0);
@@ -548,19 +608,19 @@ void main() {
 
     testWidgets('aspect ratio add, change, remove', (tester) async {
       // matchConstraint width + fixed height + ratio derives the width from
-      // the height (the phase-1-supported ratio pattern).
+      // the height.
       List<Widget> withRatio(double? ratio) => [
-            Constrained(
-              id: #a,
-              left: .leftOf(parent),
-              right: .rightOf(parent),
-              top: .topOf(parent),
-              width: .matchConstraint,
-              height: .fixed(40),
-              aspectRatio: ratio,
-              child: const SizedBox(),
-            ),
-          ];
+        Constrained(
+          id: #a,
+          left: .leftOf(parent),
+          right: .rightOf(parent),
+          top: .topOf(parent),
+          width: .matchConstraint,
+          height: .fixed(40),
+          aspectRatio: ratio,
+          child: const SizedBox(),
+        ),
+      ];
 
       // All persistent-tree steps first, recording geometry.
       final ratios = <double?>[null, 2.0, 4.0, null];
@@ -578,44 +638,53 @@ void main() {
         await tester.pumpWidget(host(withRatio(ratio)));
         snapshots.add(geometryOf(tester));
       }
-      expect(ro.debugModelBuilds, 1,
-          reason: 'ratio changes must be applied in place');
+      expect(
+        ro.debugModelBuilds,
+        1,
+        reason: 'ratio changes must be applied in place',
+      );
       for (var i = 0; i < ratios.length; i++) {
-        expect(snapshots[i][1], expectedWidgetRect[i],
-            reason: 'ratio ${ratios[i]}');
+        expect(
+          snapshots[i][1],
+          expectedWidgetRect[i],
+          reason: 'ratio ${ratios[i]}',
+        );
       }
 
       // Fresh replay of every step. The final null step in particular proves
       // the removed ratio was fully cleared from the persistent widget.
       for (var i = 0; i < ratios.length; i++) {
-        await tester
-            .pumpWidget(host(withRatio(ratios[i]), key: UniqueKey()));
-        expect(geometryOf(tester), snapshots[i],
-            reason: 'fresh replay for ratio ${ratios[i]} diverged');
+        await tester.pumpWidget(host(withRatio(ratios[i]), key: UniqueKey()));
+        expect(
+          geometryOf(tester),
+          snapshots[i],
+          reason: 'fresh replay for ratio ${ratios[i]} diverged',
+        );
       }
     });
 
-    testWidgets('gone round-trip with a dependent sibling and goneMargin',
-        (tester) async {
+    testWidgets('gone round-trip with a dependent sibling and goneMargin', (
+      tester,
+    ) async {
       List<Widget> children({required bool aGone}) => [
-            Constrained(
-              id: #a,
-              left: .leftOf(parent, margin: 10),
-              top: .topOf(parent, margin: 10),
-              width: .fixed(100),
-              height: .fixed(40),
-              visibility: aGone ? .gone : .visible,
-              child: const SizedBox(),
-            ),
-            Constrained(
-              id: #b,
-              left: .rightOf(#a, margin: 8, goneMargin: 32),
-              top: .topOf(#a),
-              width: .fixed(60),
-              height: .fixed(20),
-              child: const SizedBox(),
-            ),
-          ];
+        Constrained(
+          id: #a,
+          left: .leftOf(parent, margin: 10),
+          top: .topOf(parent, margin: 10),
+          width: .fixed(100),
+          height: .fixed(40),
+          visibility: aGone ? .gone : .visible,
+          child: const SizedBox(),
+        ),
+        Constrained(
+          id: #b,
+          left: .rightOf(#a, margin: 8, goneMargin: 32),
+          top: .topOf(#a),
+          width: .fixed(60),
+          height: .fixed(20),
+          child: const SizedBox(),
+        ),
+      ];
       await tester.pumpWidget(host(children(aGone: false)));
       final ro = layoutOf(tester);
       final visible = geometryOf(tester);
@@ -623,8 +692,12 @@ void main() {
 
       await tester.pumpWidget(host(children(aGone: true)));
       final gone = geometryOf(tester);
-      expect(gone[1], [0.0, 0.0, 0.0, 0.0],
-          reason: 'gone child collapses to zero at origin');
+      expect(gone[1], [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+      ], reason: 'gone child collapses to zero at origin');
       expect(gone[2][0], 32.0, reason: 'gone margin applies');
       expect(ro.debugModelBuilds, 1);
 
@@ -635,44 +708,42 @@ void main() {
       expect(ro.debugModelBuilds, 1);
 
       // Fresh replay of both states.
-      await tester
-          .pumpWidget(host(children(aGone: true), key: UniqueKey()));
+      await tester.pumpWidget(host(children(aGone: true), key: UniqueKey()));
       expect(geometryOf(tester), gone);
-      await tester
-          .pumpWidget(host(children(aGone: false), key: UniqueKey()));
+      await tester.pumpWidget(host(children(aGone: false), key: UniqueKey()));
       expect(geometryOf(tester), visible);
     });
 
     testWidgets('several children changed in one frame', (tester) async {
       List<Widget> children(int margin, double bias, Dimension width) => [
-            Constrained(
-              id: #a,
-              left: .leftOf(parent, margin: margin.toDouble()),
-              top: .topOf(parent),
-              width: .fixed(50),
-              height: .fixed(20),
-              child: const SizedBox(),
-            ),
-            Constrained(
-              id: #b,
-              left: .leftOf(parent),
-              right: .rightOf(parent),
-              top: .bottomOf(#a),
-              horizontalBias: bias,
-              width: .fixed(70),
-              height: .fixed(20),
-              child: const SizedBox(),
-            ),
-            Constrained(
-              id: #c,
-              left: .leftOf(parent),
-              right: .rightOf(parent),
-              top: .bottomOf(#b),
-              width: width,
-              height: .fixed(20),
-              child: const SizedBox(),
-            ),
-          ];
+        Constrained(
+          id: #a,
+          left: .leftOf(parent, margin: margin.toDouble()),
+          top: .topOf(parent),
+          width: .fixed(50),
+          height: .fixed(20),
+          child: const SizedBox(),
+        ),
+        Constrained(
+          id: #b,
+          left: .leftOf(parent),
+          right: .rightOf(parent),
+          top: .bottomOf(#a),
+          horizontalBias: bias,
+          width: .fixed(70),
+          height: .fixed(20),
+          child: const SizedBox(),
+        ),
+        Constrained(
+          id: #c,
+          left: .leftOf(parent),
+          right: .rightOf(parent),
+          top: .bottomOf(#b),
+          width: width,
+          height: .fixed(20),
+          child: const SizedBox(),
+        ),
+      ];
       await tester.pumpWidget(host(children(10, 0.5, .fixed(100))));
       final ro = layoutOf(tester);
       final applies = ro.debugConfigApplies;
@@ -681,31 +752,34 @@ void main() {
       expect(ro.debugModelBuilds, 1);
       expect(ro.debugConfigApplies, applies + 3);
       await expectMatchesFresh(
-          tester, () => children(24, 0.25, .matchConstraint));
+        tester,
+        () => children(24, 0.25, .matchConstraint),
+      );
     });
   });
 
   group('structural changes', () {
-    testWidgets('id rename with a simultaneous sibling retarget',
-        (tester) async {
+    testWidgets('id rename with a simultaneous sibling retarget', (
+      tester,
+    ) async {
       List<Widget> children(Symbol anchorId) => [
-            Constrained(
-              id: anchorId,
-              left: .leftOf(parent, margin: 30),
-              top: .topOf(parent),
-              width: .fixed(100),
-              height: .fixed(40),
-              child: const SizedBox(),
-            ),
-            Constrained(
-              id: #b,
-              left: .rightOf(anchorId, margin: 8),
-              top: .topOf(anchorId),
-              width: .fixed(60),
-              height: .fixed(20),
-              child: const SizedBox(),
-            ),
-          ];
+        Constrained(
+          id: anchorId,
+          left: .leftOf(parent, margin: 30),
+          top: .topOf(parent),
+          width: .fixed(100),
+          height: .fixed(40),
+          child: const SizedBox(),
+        ),
+        Constrained(
+          id: #b,
+          left: .rightOf(anchorId, margin: 8),
+          top: .topOf(anchorId),
+          width: .fixed(60),
+          height: .fixed(20),
+          child: const SizedBox(),
+        ),
+      ];
       await tester.pumpWidget(host(children(#a)));
       final ro = layoutOf(tester);
       final before = geometryOf(tester);
@@ -718,14 +792,14 @@ void main() {
 
     testWidgets('adding and removing a child', (tester) async {
       Widget cell(Symbol id, Symbol after, {Key? key}) => Constrained(
-            key: key,
-            id: id,
-            left: .leftOf(parent, margin: 10),
-            top: .bottomOf(after, margin: 6),
-            width: .fixed(80),
-            height: .fixed(30),
-            child: const SizedBox(),
-          );
+        key: key,
+        id: id,
+        left: .leftOf(parent, margin: 10),
+        top: .bottomOf(after, margin: 6),
+        width: .fixed(80),
+        height: .fixed(30),
+        child: const SizedBox(),
+      );
       final head = Constrained(
         key: const ValueKey(#head),
         id: #head,
@@ -736,13 +810,15 @@ void main() {
         child: const SizedBox(),
       );
 
-      List<Widget> two() =>
-          [head, cell(#row1, #head, key: const ValueKey(#row1))];
+      List<Widget> two() => [
+        head,
+        cell(#row1, #head, key: const ValueKey(#row1)),
+      ];
       List<Widget> three() => [
-            head,
-            cell(#row1, #head, key: const ValueKey(#row1)),
-            cell(#row2, #row1, key: const ValueKey(#row2)),
-          ];
+        head,
+        cell(#row1, #head, key: const ValueKey(#row1)),
+        cell(#row2, #row1, key: const ValueKey(#row2)),
+      ];
 
       // All persistent-tree steps first.
       await tester.pumpWidget(host(two()));
@@ -765,19 +841,19 @@ void main() {
       expect(geometryOf(tester), withTwo);
     });
 
-    testWidgets('reordering children rebuilds and keeps anchor semantics',
-        (tester) async {
+    testWidgets('reordering children rebuilds and keeps anchor semantics', (
+      tester,
+    ) async {
       Widget box(Symbol id, HorizontalLink left, {Key? key}) => Constrained(
-            key: key,
-            id: id,
-            left: left,
-            top: .topOf(parent),
-            width: .fixed(50),
-            height: .fixed(20),
-            child: const SizedBox(),
-          );
-      final a =
-          box(#a, .leftOf(parent, margin: 5), key: const ValueKey(#a));
+        key: key,
+        id: id,
+        left: left,
+        top: .topOf(parent),
+        width: .fixed(50),
+        height: .fixed(20),
+        child: const SizedBox(),
+      );
+      final a = box(#a, .leftOf(parent, margin: 5), key: const ValueKey(#a));
       final b = box(#b, .rightOf(#a, margin: 5), key: const ValueKey(#b));
 
       await tester.pumpWidget(host([a, b]));
@@ -794,8 +870,9 @@ void main() {
       await expectMatchesFresh(tester, () => [b, a]);
     });
 
-    testWidgets('removing a referenced target reports an error',
-        (tester) async {
+    testWidgets('removing a referenced target reports an error', (
+      tester,
+    ) async {
       final a = Constrained(
         key: const ValueKey(#a),
         id: #a,
@@ -819,69 +896,75 @@ void main() {
       expect(tester.takeException(), isFlutterError);
     });
 
-    testWidgets('retargeting a link to an unknown id reports an error',
-        (tester) async {
+    testWidgets('retargeting a link to an unknown id reports an error', (
+      tester,
+    ) async {
       List<Widget> children(Symbol target) => [
-            Constrained(
-              id: #a,
-              left: .leftOf(target),
-              top: .topOf(parent),
-              width: .fixed(50),
-              height: .fixed(20),
-              child: const SizedBox(),
-            ),
-          ];
+        Constrained(
+          id: #a,
+          left: .leftOf(target),
+          top: .topOf(parent),
+          width: .fixed(50),
+          height: .fixed(20),
+          child: const SizedBox(),
+        ),
+      ];
       await tester.pumpWidget(host(children(parent)));
       await tester.pumpWidget(host(children(#missing)));
       expect(tester.takeException(), isFlutterError);
     });
 
-    testWidgets('text direction flip re-resolves start/end links',
-        (tester) async {
+    testWidgets('text direction flip re-resolves start/end links', (
+      tester,
+    ) async {
       List<Widget> children() => [
-            Constrained(
-              id: #a,
-              start: .startOf(parent, margin: 24),
-              top: .topOf(parent),
-              width: .fixed(60),
-              height: .fixed(20),
-              child: const SizedBox(),
-            ),
-          ];
+        Constrained(
+          id: #a,
+          start: .startOf(parent, margin: 24),
+          top: .topOf(parent),
+          width: .fixed(60),
+          height: .fixed(20),
+          child: const SizedBox(),
+        ),
+      ];
       await tester.pumpWidget(host(children()));
       final ro = layoutOf(tester);
       expect(geometryOf(tester)[1][0], 24.0);
 
       await tester.pumpWidget(host(children(), dir: TextDirection.rtl));
-      expect(ro.debugModelBuilds, 2,
-          reason: 'direction change rebuilds connections');
+      expect(
+        ro.debugModelBuilds,
+        2,
+        reason: 'direction change rebuilds connections',
+      );
       expect(geometryOf(tester)[1][0], 800.0 - 24.0 - 60.0);
       await expectMatchesFresh(tester, children, dir: TextDirection.rtl);
     });
 
-    testWidgets('text direction flip re-applies mirrored bias and guidelines',
-        (tester) async {
+    testWidgets('text direction flip re-applies mirrored bias and guidelines', (
+      tester,
+    ) async {
       List<Widget> children() => [
-            const Guideline.vertical(id: #g, percent: 0.25),
-            Constrained(
-              id: #a,
-              start: .startOf(parent),
-              end: .endOf(parent),
-              top: .topOf(parent),
-              width: .fixed(100),
-              height: .fixed(20),
-              horizontalBias: 0.25,
-              child: const SizedBox(),
-            ),
-            Constrained(
-              id: #b,
-              left: .leftOf(#g),
-              top: .bottomOf(#a),
-              width: .fixed(60),
-              height: .fixed(20),
-              child: const SizedBox(),
-            ),
-          ];
+        const Guideline.vertical(id: #g, percent: 0.25),
+        Constrained(
+          id: #a,
+          start: .startOf(parent),
+          end: .endOf(parent),
+          top: .topOf(parent),
+          width: .fixed(100),
+          height: .fixed(20),
+          horizontalBias: 0.25,
+          child: const SizedBox(),
+        ),
+        Constrained(
+          id: #b,
+          left: .leftOf(#g),
+          top: .bottomOf(#a),
+          width: .fixed(60),
+          height: .fixed(20),
+          child: const SizedBox(),
+        ),
+      ];
       // Both direction sources: the ambient Directionality, and the layout's
       // own textDirection, which overrides it.
       Widget build(TextDirection ambient, {TextDirection? own}) =>
@@ -904,6 +987,7 @@ void main() {
         final geometry = geometryOf(tester);
         return [geometry[2][0], geometry[3][0]];
       }
+
       const ltrXs = [175.0, 200.0];
       const rtlXs = [525.0, 600.0];
 
@@ -912,18 +996,22 @@ void main() {
       expect(xs(), ltrXs);
 
       await tester.pumpWidget(build(TextDirection.rtl));
-      expect(ro.debugModelBuilds, 2,
-          reason: 'an ambient direction change rebuilds the model');
+      expect(
+        ro.debugModelBuilds,
+        2,
+        reason: 'an ambient direction change rebuilds the model',
+      );
       expect(xs(), rtlXs);
 
-      await tester.pumpWidget(
-          build(TextDirection.rtl, own: TextDirection.ltr));
-      expect(ro.debugModelBuilds, 3,
-          reason: 'the layout\'s own direction overrides the ambient one');
+      await tester.pumpWidget(build(TextDirection.rtl, own: TextDirection.ltr));
+      expect(
+        ro.debugModelBuilds,
+        3,
+        reason: 'the layout\'s own direction overrides the ambient one',
+      );
       expect(xs(), ltrXs);
 
-      await tester.pumpWidget(
-          build(TextDirection.ltr, own: TextDirection.rtl));
+      await tester.pumpWidget(build(TextDirection.ltr, own: TextDirection.rtl));
       expect(ro.debugModelBuilds, 4);
       expect(xs(), rtlXs);
       await expectMatchesFresh(tester, children, dir: TextDirection.rtl);
@@ -931,24 +1019,25 @@ void main() {
   });
 
   group('content changes', () {
-    testWidgets('wrap child content growth re-resolves dependents',
-        (tester) async {
+    testWidgets('wrap child content growth re-resolves dependents', (
+      tester,
+    ) async {
       List<Widget> children(Size aNatural) => [
-            Constrained(
-              id: #a,
-              left: .leftOf(parent),
-              top: .topOf(parent),
-              child: IntrinsicBox(aNatural),
-            ),
-            Constrained(
-              id: #b,
-              left: .rightOf(#a, margin: 8),
-              top: .topOf(#a),
-              width: .fixed(60),
-              height: .fixed(20),
-              child: const SizedBox(),
-            ),
-          ];
+        Constrained(
+          id: #a,
+          left: .leftOf(parent),
+          top: .topOf(parent),
+          child: IntrinsicBox(aNatural),
+        ),
+        Constrained(
+          id: #b,
+          left: .rightOf(#a, margin: 8),
+          top: .topOf(#a),
+          width: .fixed(60),
+          height: .fixed(20),
+          child: const SizedBox(),
+        ),
+      ];
       await tester.pumpWidget(host(children(const Size(80, 40))));
       final ro = layoutOf(tester);
       expect(geometryOf(tester)[2][0], 88.0);
@@ -960,74 +1049,88 @@ void main() {
       // so this must reach the container purely through layout dirtiness.
       await tester.pumpWidget(host(children(const Size(120, 40))));
       expect(geometryOf(tester)[1][2], 120.0);
-      expect(geometryOf(tester)[2][0], 128.0,
-          reason: 'dependent sibling must follow the grown wrap child');
+      expect(
+        geometryOf(tester)[2][0],
+        128.0,
+        reason: 'dependent sibling must follow the grown wrap child',
+      );
       expect(ro.debugModelBuilds, builds);
       expect(ro.debugConfigApplies, applies);
       expect(ro.debugEnginePasses, engine + 1);
       await expectMatchesFresh(tester, () => children(const Size(120, 40)));
     });
 
-    testWidgets('fixed child content change does not re-layout the container',
-        (tester) async {
-      await tester.pumpWidget(host([
-        Constrained(
-          id: #a,
-          left: .leftOf(parent),
-          top: .topOf(parent),
-          width: .fixed(100),
-          height: .fixed(50),
-          child: const IntrinsicBox(Size(80, 40)),
-        ),
-      ]));
+    testWidgets('fixed child content change re-measures without moving it', (
+      tester,
+    ) async {
+      Widget fixed(Size natural) => Constrained(
+        id: #a,
+        left: .leftOf(parent),
+        top: .topOf(parent),
+        width: .fixed(100),
+        height: .fixed(50),
+        child: IntrinsicBox(natural),
+      );
+      await tester.pumpWidget(host([fixed(const Size(80, 40))]));
       final ro = layoutOf(tester);
       final passes = ro.debugLayoutPasses;
+      final engine = ro.debugEnginePasses;
 
-      await tester.pumpWidget(host([
-        Constrained(
-          id: #a,
-          left: .leftOf(parent),
-          top: .topOf(parent),
-          width: .fixed(100),
-          height: .fixed(50),
-          child: const IntrinsicBox(Size(200, 90)),
-        ),
-      ]));
-      expect(ro.debugLayoutPasses, passes,
-          reason: 'a fixed-size child is a relayout boundary; its content '
-              'change must be absorbed by the child itself');
+      // The layout reads the baseline of every child it measures, a fixed one
+      // too, as Android does, so the child's content change reaches this
+      // layout through Flutter's baseline cache even though its tight
+      // constraints make it a relayout boundary. Its answer (100 x 50,
+      // measured E100/E50) does not change, so its frame does not either.
+      await tester.pumpWidget(host([fixed(const Size(200, 90))]));
+      expect(ro.debugLayoutPasses, passes + 1);
+      expect(
+        ro.debugEnginePasses,
+        engine + 1,
+        reason: 'the first run is not confirmed yet',
+      );
+      expect(geometryOf(tester)[1], [0.0, 0.0, 100.0, 50.0]);
+
+      // The next content change replays the confirmed run: the child is
+      // asked again, answers the same, and the engine does not run.
+      await tester.pumpWidget(host([fixed(const Size(60, 30))]));
+      expect(ro.debugLayoutPasses, passes + 2);
+      expect(ro.debugReplayPasses, 1);
+      expect(ro.debugEnginePasses, engine + 1 + (verifyReplay ? 1 : 0));
       expect(geometryOf(tester)[1], [0.0, 0.0, 100.0, 50.0]);
     });
 
-    testWidgets('baseline shift of a fixed-size target re-resolves',
-        (tester) async {
+    testWidgets('baseline shift of a fixed-size target re-resolves', (
+      tester,
+    ) async {
       List<Widget> children(double aBaseline) => [
-            Constrained(
-              id: #a,
-              left: .leftOf(parent),
-              top: .topOf(parent, margin: 10),
-              width: .fixed(100),
-              height: .fixed(40),
-              child: BaselineBox(const Size(100, 40), aBaseline),
-            ),
-            Constrained(
-              id: #b,
-              left: .rightOf(#a, margin: 8),
-              baseline: .baselineOf(#a),
-              width: .fixed(80),
-              height: .fixed(30),
-              child: const BaselineBox(Size(80, 30), 10),
-            ),
-          ];
+        Constrained(
+          id: #a,
+          left: .leftOf(parent),
+          top: .topOf(parent, margin: 10),
+          width: .fixed(100),
+          height: .fixed(40),
+          child: BaselineBox(const Size(100, 40), aBaseline),
+        ),
+        Constrained(
+          id: #b,
+          left: .rightOf(#a, margin: 8),
+          baseline: .baselineOf(#a),
+          width: .fixed(80),
+          height: .fixed(30),
+          child: const BaselineBox(Size(80, 30), 10),
+        ),
+      ];
       await tester.pumpWidget(host(children(30)));
       final ro = layoutOf(tester);
-      expect(geometryOf(tester)[2][1], 30.0,
-          reason: 'B top = 10 + 30 - 10');
+      expect(geometryOf(tester)[2][1], 30.0, reason: 'B top = 10 + 30 - 10');
       final builds = ro.debugModelBuilds;
 
       await tester.pumpWidget(host(children(38)));
-      expect(geometryOf(tester)[2][1], 38.0,
-          reason: 'baseline change must propagate through the container');
+      expect(
+        geometryOf(tester)[2][1],
+        38.0,
+        reason: 'baseline change must propagate through the container',
+      );
       expect(ro.debugModelBuilds, builds);
       await expectMatchesFresh(tester, () => children(38));
     });
@@ -1039,15 +1142,15 @@ void main() {
       // full 400, but capped at 368 they wrap one to a line: 80 tall.
       const size = Size(400, 600);
       List<Widget> children(String text) => [
-            Constrained(
-              id: #t,
-              left: .leftOf(parent, margin: 16),
-              right: .rightOf(parent, margin: 16),
-              top: .topOf(parent),
-              width: .constrainedWrap(),
-              child: Text(text, style: const TextStyle(fontSize: 20)),
-            ),
-          ];
+        Constrained(
+          id: #t,
+          left: .leftOf(parent, margin: 16),
+          right: .rightOf(parent, margin: 16),
+          top: .topOf(parent),
+          width: .constrainedWrap(),
+          child: Text(text, style: const TextStyle(fontSize: 20)),
+        ),
+      ];
       const short = 'Short';
       const long = 'AAAAAAAAA BBBBBBBBB CCCCCCCCC DDDDDDDDD';
       await tester.pumpWidget(host(children(short), size: size));
@@ -1059,12 +1162,20 @@ void main() {
       // Only the text changes: no Constrained field differs, so this must
       // reach the container through layout dirtiness alone.
       await tester.pumpWidget(host(children(long), size: size));
-      expect(geometryOf(tester)[1], [16.0, 0.0, 368.0, 80.0],
-          reason: 'capped at 368, the text must be measured again there');
+      expect(geometryOf(tester)[1], [
+        16.0,
+        0.0,
+        368.0,
+        80.0,
+      ], reason: 'capped at 368, the text must be measured again there');
 
       await tester.pumpWidget(host(children(short), size: size));
-      expect(geometryOf(tester)[1], [150.0, 0.0, 100.0, 20.0],
-          reason: 'a capped child must not become a relayout boundary');
+      expect(geometryOf(tester)[1], [
+        150.0,
+        0.0,
+        100.0,
+        20.0,
+      ], reason: 'a capped child must not become a relayout boundary');
       expect(ro.debugModelBuilds, builds);
       expect(ro.debugConfigApplies, applies);
       await expectMatchesFresh(tester, () => children(short), size: size);
@@ -1073,55 +1184,66 @@ void main() {
     testWidgets('constrainedWrap on both axes keeps following content that '
         'fits', (tester) async {
       List<Widget> children(Size natural) => [
-            Constrained(
-              id: #a,
-              left: .leftOf(parent),
-              right: .rightOf(parent),
-              top: .topOf(parent),
-              bottom: .bottomOf(parent),
-              width: .constrainedWrap(),
-              height: .constrainedWrap(),
-              child: IntrinsicBox(natural),
-            ),
-          ];
-      await tester.pumpWidget(host(children(const Size(80, 40))));
-      expect(geometryOf(tester)[1], [360.0, 280.0, 80.0, 40.0]);
-
-      // The re-measure after the solve must not pin the child to the size it
-      // already has: that tight layout would make it a relayout boundary.
-      await tester.pumpWidget(host(children(const Size(120, 60))));
-      expect(geometryOf(tester)[1], [340.0, 270.0, 120.0, 60.0],
-          reason: 'content growth inside the caps must reach the container');
-      await expectMatchesFresh(tester, () => children(const Size(120, 60)));
-    });
-
-    testWidgets('both capped axes keep following a leaf without a baseline',
-        (tester) async {
-      await tester.pumpWidget(host([
         Constrained(
           id: #a,
           left: .leftOf(parent),
           right: .rightOf(parent),
           top: .topOf(parent),
           bottom: .bottomOf(parent),
-          width: .constrainedWrap(max: 200),
-          height: .constrainedWrap(max: 100),
-          child: const IntrinsicBox(Size(300, 150)),
+          width: .constrainedWrap(),
+          height: .constrainedWrap(),
+          child: IntrinsicBox(natural),
         ),
-        Constrained(
-          id: #below,
-          left: .leftOf(parent),
-          top: .bottomOf(#a),
-          width: .fixed(10),
-          height: .fixed(10),
-          child: const SizedBox(),
-        ),
-      ]));
+      ];
+      await tester.pumpWidget(host(children(const Size(80, 40))));
+      expect(geometryOf(tester)[1], [360.0, 280.0, 80.0, 40.0]);
+
+      // The re-measure after the solve must not pin the child to the size it
+      // already has: that tight layout would make it a relayout boundary.
+      await tester.pumpWidget(host(children(const Size(120, 60))));
+      expect(geometryOf(tester)[1], [
+        340.0,
+        270.0,
+        120.0,
+        60.0,
+      ], reason: 'content growth inside the caps must reach the container');
+      await expectMatchesFresh(tester, () => children(const Size(120, 60)));
+    });
+
+    testWidgets('both capped axes keep following a leaf without a baseline', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host([
+          Constrained(
+            id: #a,
+            left: .leftOf(parent),
+            right: .rightOf(parent),
+            top: .topOf(parent),
+            bottom: .bottomOf(parent),
+            width: .constrainedWrap(max: 200),
+            height: .constrainedWrap(max: 100),
+            child: const IntrinsicBox(Size(300, 150)),
+          ),
+          Constrained(
+            id: #below,
+            left: .leftOf(parent),
+            top: .bottomOf(#a),
+            width: .fixed(10),
+            height: .fixed(10),
+            child: const SizedBox(),
+          ),
+        ]),
+      );
       final ro = layoutOf(tester);
       final leaf = tester.renderObject<RenderIntrinsicBox>(
-          find.byType(IntrinsicBox));
-      expect(leaf.constraints.isTight, isTrue,
-          reason: 'both caps really leave the child tightly constrained');
+        find.byType(IntrinsicBox),
+      );
+      expect(
+        leaf.constraints.isTight,
+        isTrue,
+        reason: 'both caps really leave the child tightly constrained',
+      );
       expect(geometryOf(tester)[1], [300.0, 250.0, 200.0, 100.0]);
       final builds = ro.debugModelBuilds;
       final applies = ro.debugConfigApplies;
@@ -1139,8 +1261,11 @@ void main() {
         final w = natural.width.clamp(0.0, 200.0);
         final h = natural.height.clamp(0.0, 100.0);
         expect(geometryOf(tester)[1], [(800 - w) / 2, (600 - h) / 2, w, h]);
-        expect(geometryOf(tester)[2][1], (600 + h) / 2,
-            reason: 'the sibling must follow the resized child');
+        expect(
+          geometryOf(tester)[2][1],
+          (600 + h) / 2,
+          reason: 'the sibling must follow the resized child',
+        );
         expect(ro.debugEnginePasses, engine + 1);
         expect(ro.debugModelBuilds, builds);
         expect(ro.debugConfigApplies, applies);
@@ -1154,25 +1279,25 @@ void main() {
         const long = 'AAAAAAAAA BBBBBBBBB CCCCCCCCC DDDDDDDDD';
         const short = 'Short';
         List<Widget> children(String text) => [
-              Constrained(
-                id: #t,
-                start: .startOf(parent, margin: 16),
-                end: .endOf(parent, margin: 16),
-                top: .topOf(parent),
-                bottom: .bottomOf(parent),
-                width: .constrainedWrap(),
-                height: .constrainedWrap(max: 30),
-                child: Text(text, style: const TextStyle(fontSize: 20)),
-              ),
-              Constrained(
-                id: #below,
-                start: .startOf(parent),
-                top: .bottomOf(#t),
-                width: .fixed(10),
-                height: .fixed(10),
-                child: const SizedBox(),
-              ),
-            ];
+          Constrained(
+            id: #t,
+            start: .startOf(parent, margin: 16),
+            end: .endOf(parent, margin: 16),
+            top: .topOf(parent),
+            bottom: .bottomOf(parent),
+            width: .constrainedWrap(),
+            height: .constrainedWrap(max: 30),
+            child: Text(text, style: const TextStyle(fontSize: 20)),
+          ),
+          Constrained(
+            id: #below,
+            start: .startOf(parent),
+            top: .bottomOf(#t),
+            width: .fixed(10),
+            height: .fixed(10),
+            child: const SizedBox(),
+          ),
+        ];
         await tester.pumpWidget(host(children(long), size: size, dir: dir));
         final ro = layoutOf(tester);
         expect(geometryOf(tester)[1], [16.0, 285.0, 368.0, 30.0]);
@@ -1185,8 +1310,11 @@ void main() {
         await tester.pumpWidget(host(children(short), size: size, dir: dir));
         expect(ro.debugEnginePasses, engine + 1);
         expect(geometryOf(tester)[1], [150.0, 290.0, 100.0, 20.0]);
-        expect(geometryOf(tester)[2][1], 310.0,
-            reason: 'a dependent sibling must follow the shrunken text');
+        expect(
+          geometryOf(tester)[2][1],
+          310.0,
+          reason: 'a dependent sibling must follow the shrunken text',
+        );
 
         await tester.pumpWidget(host(children(long), size: size, dir: dir));
         expect(ro.debugEnginePasses, engine + 2);
@@ -1194,8 +1322,12 @@ void main() {
         expect(geometryOf(tester)[2][1], 315.0);
         expect(ro.debugModelBuilds, builds);
         expect(ro.debugConfigApplies, applies);
-        await expectMatchesFresh(tester, () => children(long),
-            size: size, dir: dir);
+        await expectMatchesFresh(
+          tester,
+          () => children(long),
+          size: size,
+          dir: dir,
+        );
       });
     }
   });
@@ -1209,39 +1341,37 @@ void main() {
       ConstraintVisibility group = .visible,
       ConstraintVisibility own = .visible,
       List<Symbol> referenced = const [#a, #b],
-    }) =>
-        [
-          Constrained(
-            id: #a,
-            left: .leftOf(parent, margin: 10),
-            top: .topOf(parent, margin: 10),
-            width: .fixed(100),
-            height: .fixed(40),
-            visibility: own,
-            child: const SizedBox(),
-          ),
-          Constrained(
-            id: #b,
-            left: .rightOf(#a, margin: 8, goneMargin: 32),
-            top: .topOf(#a),
-            width: .fixed(60),
-            height: .fixed(20),
-            visibility: own,
-            child: const SizedBox(),
-          ),
-          Constrained(
-            id: #c,
-            left: .rightOf(#b, margin: 8, goneMargin: 24),
-            top: .bottomOf(#a, margin: 4, goneMargin: 12),
-            width: .fixed(50),
-            height: .fixed(30),
-            child: const SizedBox(),
-          ),
-          ConstraintGroup(id: #g, referenced: referenced, visibility: group),
-        ];
+    }) => [
+      Constrained(
+        id: #a,
+        left: .leftOf(parent, margin: 10),
+        top: .topOf(parent, margin: 10),
+        width: .fixed(100),
+        height: .fixed(40),
+        visibility: own,
+        child: const SizedBox(),
+      ),
+      Constrained(
+        id: #b,
+        left: .rightOf(#a, margin: 8, goneMargin: 32),
+        top: .topOf(#a),
+        width: .fixed(60),
+        height: .fixed(20),
+        visibility: own,
+        child: const SizedBox(),
+      ),
+      Constrained(
+        id: #c,
+        left: .rightOf(#b, margin: 8, goneMargin: 24),
+        top: .bottomOf(#a, margin: 4, goneMargin: 12),
+        width: .fixed(50),
+        height: .fixed(30),
+        child: const SizedBox(),
+      ),
+      ConstraintGroup(id: #g, referenced: referenced, visibility: group),
+    ];
 
-    testWidgets(
-        'toggling a group updates its members in place, as their own '
+    testWidgets('toggling a group updates its members in place, as their own '
         'visibility would', (tester) async {
       // Oracle first: each member's own visibility, toggled.
       const ownKey = ValueKey('own');
@@ -1249,12 +1379,19 @@ void main() {
       var ro = layoutOf(tester);
       var applies = ro.debugConfigApplies;
       await tester.pumpWidget(
-          host(members(referenced: const [], own: .gone), key: ownKey));
+        host(
+          members(referenced: const [], own: .gone),
+          key: ownKey,
+        ),
+      );
       expect(ro.debugModelBuilds, 1);
       expect(ro.debugConfigApplies, applies + 2);
       final ownGone = geometryOf(tester);
-      expect([ownGone[1][2], ownGone[2][2]], [0.0, 0.0],
-          reason: 'both members collapse');
+      expect(
+        [ownGone[1][2], ownGone[2][2]],
+        [0.0, 0.0],
+        reason: 'both members collapse',
+      );
 
       // The group toggles the same members through the same tier.
       const groupKey = ValueKey('group');
@@ -1263,152 +1400,197 @@ void main() {
       final visible = geometryOf(tester);
       applies = ro.debugConfigApplies;
       await tester.pumpWidget(host(members(group: .gone), key: groupKey));
-      expect(ro.debugModelBuilds, 1,
-          reason: 'a group visibility change is not structural');
-      expect(ro.debugConfigApplies, applies + 2,
-          reason: 'one in-place apply per member, none for the group');
+      expect(
+        ro.debugModelBuilds,
+        1,
+        reason: 'a group visibility change is not structural',
+      );
+      // A group is an engine widget, as Android's Group view is, so its own
+      // visibility is configuration applied in place too.
+      expect(
+        ro.debugConfigApplies,
+        applies + 3,
+        reason: 'one in-place apply per member, and one for the group',
+      );
       expect(geometryOf(tester), ownGone);
 
-      // Nothing is left dirty: an unchanged re-layout takes the fast path.
-      final fast = ro.debugFastPasses;
+      // Nothing is left dirty: an unchanged re-layout confirms the last
+      // run, and the one after it replays.
+      final replays = ro.debugReplayPasses;
+      final configApplies = ro.debugConfigApplies;
       ro.markNeedsLayout();
       ro.owner!.flushLayout();
-      expect(ro.debugFastPasses, fast + 1);
+      ro.markNeedsLayout();
+      ro.owner!.flushLayout();
+      expect(ro.debugReplayPasses, replays + 1);
+      expect(ro.debugConfigApplies, configApplies);
 
       await tester.pumpWidget(host(members(), key: groupKey));
       expect(ro.debugModelBuilds, 1);
-      expect(ro.debugConfigApplies, applies + 4);
+      expect(ro.debugConfigApplies, applies + 6);
       expect(geometryOf(tester), visible);
       await expectMatchesFresh(tester, () => members());
     });
 
-    testWidgets('a group over members declared gone shows them in place',
-        (tester) async {
+    testWidgets('a group over members declared gone shows them in place', (
+      tester,
+    ) async {
       await tester.pumpWidget(host(members(own: .gone, group: .gone)));
       final ro = layoutOf(tester);
       final applies = ro.debugConfigApplies;
       await tester.pumpWidget(host(members(own: .gone)));
       expect(ro.debugModelBuilds, 1);
-      expect(ro.debugConfigApplies, applies + 2);
+      // The two members, and the group's own engine widget.
+      expect(ro.debugConfigApplies, applies + 3);
       expect(geometryOf(tester)[1], [10.0, 10.0, 100.0, 40.0]);
       expect(geometryOf(tester)[2], [118.0, 10.0, 60.0, 20.0]);
       await expectMatchesFresh(tester, () => members(own: .gone));
     });
 
     testWidgets(
-        'a member\'s own visibility change under a group applies in place '
-        'and the group still wins', (tester) async {
-      await tester.pumpWidget(host(members()));
-      final ro = layoutOf(tester);
-      final before = geometryOf(tester);
-      final applies = ro.debugConfigApplies;
-      await tester.pumpWidget(host(members(own: .gone)));
-      expect(ro.debugModelBuilds, 1);
-      expect(ro.debugConfigApplies, applies + 2);
-      expect(geometryOf(tester), before,
-          reason: 'the visible group overrides the members\' own gone');
-    });
+      'a member\'s own visibility change under a group applies in place '
+      'and the group still wins',
+      (tester) async {
+        await tester.pumpWidget(host(members()));
+        final ro = layoutOf(tester);
+        final before = geometryOf(tester);
+        final applies = ro.debugConfigApplies;
+        await tester.pumpWidget(host(members(own: .gone)));
+        expect(ro.debugModelBuilds, 1);
+        expect(ro.debugConfigApplies, applies + 2);
+        expect(
+          geometryOf(tester),
+          before,
+          reason: 'the visible group overrides the members\' own gone',
+        );
+      },
+    );
 
     testWidgets(
-        'toggling a group that references a flow rebuilds, as the flow\'s '
-        'own visibility would', (tester) async {
-      List<Widget> withFlow({
-        ConstraintVisibility group = .visible,
-        ConstraintVisibility own = .visible,
-        List<Symbol> referenced = const [#flow],
-      }) =>
-          [
-            for (final id in const [#x, #y])
-              Constrained(
-                id: id,
-                width: .fixed(100),
-                height: .fixed(40),
-                child: const SizedBox(),
-              ),
-            ConstraintFlow(
-              id: #flow,
-              referenced: const [#x, #y],
-              left: .leftOf(parent, margin: 20),
-              top: .topOf(parent, margin: 20),
-              horizontalGap: 10,
-              visibility: own,
-            ),
+      'toggling a group that references a flow rebuilds, as the flow\'s '
+      'own visibility would',
+      (tester) async {
+        List<Widget> withFlow({
+          ConstraintVisibility group = .visible,
+          ConstraintVisibility own = .visible,
+          List<Symbol> referenced = const [#flow],
+        }) => [
+          for (final id in const [#x, #y])
             Constrained(
-              id: #after,
-              left: .rightOf(#flow, margin: 10, goneMargin: 5),
-              top: .topOf(parent),
-              width: .fixed(30),
-              height: .fixed(30),
+              id: id,
+              width: .fixed(100),
+              height: .fixed(40),
               child: const SizedBox(),
             ),
-            ConstraintGroup(id: #g, referenced: referenced, visibility: group),
-          ];
+          ConstraintFlow(
+            id: #flow,
+            referenced: const [#x, #y],
+            left: .leftOf(parent, margin: 20),
+            top: .topOf(parent, margin: 20),
+            horizontalGap: 10,
+            visibility: own,
+          ),
+          Constrained(
+            id: #after,
+            left: .rightOf(#flow, margin: 10, goneMargin: 5),
+            top: .topOf(parent),
+            width: .fixed(30),
+            height: .fixed(30),
+            child: const SizedBox(),
+          ),
+          ConstraintGroup(id: #g, referenced: referenced, visibility: group),
+        ];
 
-      const ownKey = ValueKey('own');
-      await tester
-          .pumpWidget(host(withFlow(referenced: const []), key: ownKey));
-      var ro = layoutOf(tester);
-      await tester.pumpWidget(
-          host(withFlow(referenced: const [], own: .gone), key: ownKey));
-      expect(ro.debugModelBuilds, 2,
-          reason: 'a flow\'s own visibility change rebuilds the model');
-      final ownGone = geometryOf(tester);
+        const ownKey = ValueKey('own');
+        await tester.pumpWidget(
+          host(withFlow(referenced: const []), key: ownKey),
+        );
+        var ro = layoutOf(tester);
+        await tester.pumpWidget(
+          host(
+            withFlow(referenced: const [], own: .gone),
+            key: ownKey,
+          ),
+        );
+        expect(
+          ro.debugModelBuilds,
+          2,
+          reason: 'a flow\'s own visibility change rebuilds the model',
+        );
+        final ownGone = geometryOf(tester);
 
-      const groupKey = ValueKey('group');
-      await tester.pumpWidget(host(withFlow(), key: groupKey));
-      ro = layoutOf(tester);
-      await tester.pumpWidget(host(withFlow(group: .gone), key: groupKey));
-      expect(ro.debugModelBuilds, 2,
-          reason: 'so a group\'s change of it rebuilds the model too');
-      expect(geometryOf(tester), ownGone);
-      await expectMatchesFresh(tester, () => withFlow(group: .gone));
-    });
+        const groupKey = ValueKey('group');
+        await tester.pumpWidget(host(withFlow(), key: groupKey));
+        ro = layoutOf(tester);
+        await tester.pumpWidget(host(withFlow(group: .gone), key: groupKey));
+        expect(
+          ro.debugModelBuilds,
+          2,
+          reason: 'so a group\'s change of it rebuilds the model too',
+        );
+        expect(geometryOf(tester), ownGone);
+        await expectMatchesFresh(tester, () => withFlow(group: .gone));
+      },
+    );
 
-    testWidgets('an equal referenced list does not invalidate anything',
-        (tester) async {
+    testWidgets('an equal referenced list does not invalidate anything', (
+      tester,
+    ) async {
       await tester.pumpWidget(host(members(group: .gone)));
       final ro = layoutOf(tester);
       final passes = ro.debugLayoutPasses;
       // A new list with the same ids, not the const instance.
       await tester.pumpWidget(
-          host(members(group: .gone, referenced: List.of(const [#a, #b]))));
-      expect(ro.debugLayoutPasses, passes,
-          reason: 'referenced is compared by value, as for Barrier');
+        host(members(group: .gone, referenced: List.of(const [#a, #b]))),
+      );
+      expect(
+        ro.debugLayoutPasses,
+        passes,
+        reason: 'referenced is compared by value, as for Barrier',
+      );
     });
 
-    testWidgets('changing which children a group references rebuilds',
-        (tester) async {
+    testWidgets('changing which children a group references rebuilds', (
+      tester,
+    ) async {
       await tester.pumpWidget(host(members(group: .gone)));
       final ro = layoutOf(tester);
-      await tester
-          .pumpWidget(host(members(group: .gone, referenced: const [#b])));
+      await tester.pumpWidget(
+        host(members(group: .gone, referenced: const [#b])),
+      );
       expect(ro.debugModelBuilds, 2);
-      expect(geometryOf(tester)[1], [10.0, 10.0, 100.0, 40.0],
-          reason: '#a is no longer in the group, so it is visible again');
+      expect(geometryOf(tester)[1], [
+        10.0,
+        10.0,
+        100.0,
+        40.0,
+      ], reason: '#a is no longer in the group, so it is visible again');
       expect(geometryOf(tester)[2][2], 0.0);
       await expectMatchesFresh(
-          tester, () => members(group: .gone, referenced: const [#b]));
+        tester,
+        () => members(group: .gone, referenced: const [#b]),
+      );
     });
 
-    testWidgets('removing a group gives the members their own visibility back',
-        (tester) async {
-      List<Widget> children({required bool withGroup}) => [
-            ...members(own: .gone).take(3),
-            if (withGroup)
-              const ConstraintGroup(id: #g, referenced: [#a, #b]),
-          ];
-      await tester.pumpWidget(host(children(withGroup: true)));
-      final ro = layoutOf(tester);
-      expect(geometryOf(tester)[1], [10.0, 10.0, 100.0, 40.0]);
+    testWidgets(
+      'removing a group gives the members their own visibility back',
+      (tester) async {
+        List<Widget> children({required bool withGroup}) => [
+          ...members(own: .gone).take(3),
+          if (withGroup) const ConstraintGroup(id: #g, referenced: [#a, #b]),
+        ];
+        await tester.pumpWidget(host(children(withGroup: true)));
+        final ro = layoutOf(tester);
+        expect(geometryOf(tester)[1], [10.0, 10.0, 100.0, 40.0]);
 
-      await tester.pumpWidget(host(children(withGroup: false)));
-      expect(ro.debugModelBuilds, 2, reason: 'a removed child rebuilds');
-      expect(geometryOf(tester)[1][2], 0.0);
-      await expectMatchesFresh(tester, () => children(withGroup: false));
-    });
+        await tester.pumpWidget(host(children(withGroup: false)));
+        expect(ro.debugModelBuilds, 2, reason: 'a removed child rebuilds');
+        expect(geometryOf(tester)[1][2], 0.0);
+        await expectMatchesFresh(tester, () => children(withGroup: false));
+      },
+    );
 
-    testWidgets('a group sequence matches fresh at every step',
-        (tester) async {
+    testWidgets('a group sequence matches fresh at every step', (tester) async {
       final steps = <(String, List<Widget> Function())>[
         ('initial', () => members()),
         ('group gone', () => members(group: .gone)),
@@ -1416,8 +1598,10 @@ void main() {
         ('own gone', () => members(group: .invisible, own: .gone)),
         ('group visible', () => members(own: .gone)),
         ('narrowed', () => members(own: .gone, referenced: const [#a])),
-        ('group gone again',
-            () => members(own: .gone, referenced: const [#a], group: .gone)),
+        (
+          'group gone again',
+          () => members(own: .gone, referenced: const [#a], group: .gone),
+        ),
         ('restore', () => members()),
       ];
       final snapshots = <List<List<double>>>[];
@@ -1426,41 +1610,48 @@ void main() {
         expect(tester.takeException(), isNull, reason: 'step $name');
         snapshots.add(geometryOf(tester));
       }
-      expect(layoutOf(tester).debugModelBuilds, 3,
-          reason: 'only the two referenced-list changes are structural');
+      expect(
+        layoutOf(tester).debugModelBuilds,
+        3,
+        reason: 'only the two referenced-list changes are structural',
+      );
 
       for (var i = 0; i < steps.length; i++) {
         final (name, children) = steps[i];
         await tester.pumpWidget(host(children(), key: UniqueKey()));
-        expect(geometryOf(tester), snapshots[i],
-            reason: 'fresh replay of step "$name" diverged');
+        expect(
+          geometryOf(tester),
+          snapshots[i],
+          reason: 'fresh replay of step "$name" diverged',
+        );
       }
     });
   });
 
   group('paint-only changes', () {
-    testWidgets('zIndex change reorders hit testing without re-layout',
-        (tester) async {
+    testWidgets('zIndex change reorders hit testing without re-layout', (
+      tester,
+    ) async {
       List<Widget> children({required int aZ, required int bZ}) => [
-            Constrained(
-              id: #a,
-              left: .leftOf(parent),
-              top: .topOf(parent),
-              width: .fixed(100),
-              height: .fixed(100),
-              zIndex: aZ,
-              child: const IntrinsicBox(Size(100, 100)),
-            ),
-            Constrained(
-              id: #b,
-              left: .leftOf(parent),
-              top: .topOf(parent),
-              width: .fixed(100),
-              height: .fixed(100),
-              zIndex: bZ,
-              child: const IntrinsicBox(Size(100, 100)),
-            ),
-          ];
+        Constrained(
+          id: #a,
+          left: .leftOf(parent),
+          top: .topOf(parent),
+          width: .fixed(100),
+          height: .fixed(100),
+          zIndex: aZ,
+          child: const IntrinsicBox(Size(100, 100)),
+        ),
+        Constrained(
+          id: #b,
+          left: .leftOf(parent),
+          top: .topOf(parent),
+          width: .fixed(100),
+          height: .fixed(100),
+          zIndex: bZ,
+          child: const IntrinsicBox(Size(100, 100)),
+        ),
+      ];
       await tester.pumpWidget(host(children(aZ: 0, bZ: 1)));
       final ro = layoutOf(tester);
       final boxes = ro.getChildrenAsList();
@@ -1468,52 +1659,55 @@ void main() {
       final passes = ro.debugLayoutPasses;
 
       await tester.pumpWidget(host(children(aZ: 2, bZ: 1)));
-      expect(ro.debugLayoutPasses, passes,
-          reason: 'zIndex is paint-only: no layout pass');
+      expect(
+        ro.debugLayoutPasses,
+        passes,
+        reason: 'zIndex is paint-only: no layout pass',
+      );
       expect(topChildAt(ro, const Offset(50, 50)), boxes[0]);
     });
   });
 
   group('mutation sequences', () {
-    testWidgets('scripted sequence matches fresh at every step',
-        (tester) async {
+    testWidgets('scripted sequence matches fresh at every step', (
+      tester,
+    ) async {
       List<Widget> config({
         int margin = 10,
         double bias = 0.5,
         bool cGone = false,
         Dimension bWidth = const Dimension.fixed(60),
         Size aNatural = const Size(80, 40),
-      }) =>
-          [
-            Constrained(
-              key: const ValueKey(#a),
-              id: #a,
-              left: .leftOf(parent, margin: margin.toDouble()),
-              top: .topOf(parent, margin: 10),
-              child: IntrinsicBox(aNatural),
-            ),
-            Constrained(
-              key: const ValueKey(#b),
-              id: #b,
-              left: .rightOf(#a, margin: 8),
-              right: .rightOf(parent, margin: 8),
-              top: .topOf(#a),
-              horizontalBias: bias,
-              width: bWidth,
-              height: .fixed(24),
-              child: const SizedBox(),
-            ),
-            Constrained(
-              key: const ValueKey(#c),
-              id: #c,
-              left: .leftOf(#a),
-              top: .bottomOf(#a, margin: 12, goneMargin: 40),
-              width: .fixed(120),
-              height: .fixed(32),
-              visibility: cGone ? .gone : .visible,
-              child: const SizedBox(),
-            ),
-          ];
+      }) => [
+        Constrained(
+          key: const ValueKey(#a),
+          id: #a,
+          left: .leftOf(parent, margin: margin.toDouble()),
+          top: .topOf(parent, margin: 10),
+          child: IntrinsicBox(aNatural),
+        ),
+        Constrained(
+          key: const ValueKey(#b),
+          id: #b,
+          left: .rightOf(#a, margin: 8),
+          right: .rightOf(parent, margin: 8),
+          top: .topOf(#a),
+          horizontalBias: bias,
+          width: bWidth,
+          height: .fixed(24),
+          child: const SizedBox(),
+        ),
+        Constrained(
+          key: const ValueKey(#c),
+          id: #c,
+          left: .leftOf(#a),
+          top: .bottomOf(#a, margin: 12, goneMargin: 40),
+          width: .fixed(120),
+          height: .fixed(32),
+          visibility: cGone ? .gone : .visible,
+          child: const SizedBox(),
+        ),
+      ];
 
       final steps = <(String, List<Widget> Function(), Size)>[
         ('initial', () => config(), const Size(800, 600)),
@@ -1523,41 +1717,48 @@ void main() {
         (
           'gone',
           () => config(margin: 32, bias: 0.2, cGone: true),
-          const Size(640, 480)
+          const Size(640, 480),
         ),
         (
           'content',
           () => config(
-              margin: 32, bias: 0.2, cGone: true, aNatural: const Size(50, 60)),
-          const Size(640, 480)
+            margin: 32,
+            bias: 0.2,
+            cGone: true,
+            aNatural: const Size(50, 60),
+          ),
+          const Size(640, 480),
         ),
         (
           'match',
           () => config(
-              margin: 32,
-              bias: 0.2,
-              cGone: true,
-              aNatural: const Size(50, 60),
-              bWidth: .matchConstraint),
-          const Size(640, 480)
+            margin: 32,
+            bias: 0.2,
+            cGone: true,
+            aNatural: const Size(50, 60),
+            bWidth: .matchConstraint,
+          ),
+          const Size(640, 480),
         ),
         (
           'ungone',
           () => config(
-              margin: 32,
-              bias: 0.2,
-              aNatural: const Size(50, 60),
-              bWidth: .matchConstraint),
-          const Size(640, 480)
+            margin: 32,
+            bias: 0.2,
+            aNatural: const Size(50, 60),
+            bWidth: .matchConstraint,
+          ),
+          const Size(640, 480),
         ),
         (
           'resize back',
           () => config(
-              margin: 32,
-              bias: 0.2,
-              aNatural: const Size(50, 60),
-              bWidth: .matchConstraint),
-          const Size(800, 600)
+            margin: 32,
+            bias: 0.2,
+            aNatural: const Size(50, 60),
+            bWidth: .matchConstraint,
+          ),
+          const Size(800, 600),
         ),
         ('restore', () => config(), const Size(800, 600)),
       ];
@@ -1570,16 +1771,21 @@ void main() {
         snapshots.add(geometryOf(tester));
       }
       final ro = layoutOf(tester);
-      expect(ro.debugModelBuilds, 1,
-          reason: 'no step in this sequence is structural');
+      expect(
+        ro.debugModelBuilds,
+        1,
+        reason: 'no step in this sequence is structural',
+      );
 
       // Replay every step as a fresh tree and compare.
       for (var i = 0; i < steps.length; i++) {
         final (name, children, size) = steps[i];
-        await tester
-            .pumpWidget(host(children(), size: size, key: UniqueKey()));
-        expect(geometryOf(tester), snapshots[i],
-            reason: 'fresh replay of step "$name" diverged');
+        await tester.pumpWidget(host(children(), size: size, key: UniqueKey()));
+        expect(
+          geometryOf(tester),
+          snapshots[i],
+          reason: 'fresh replay of step "$name" diverged',
+        );
       }
     });
   });
@@ -1629,8 +1835,9 @@ void main() {
 
     for (final solver in [false, true]) {
       testWidgets('a baseline target re-applied in place keeps the link that '
-          'points at its baseline (${solver ? 'solver' : 'graph'})',
-          (tester) async {
+          'points at its baseline (${solver ? 'solver' : 'graph'})', (
+        tester,
+      ) async {
         // Two list rows: a value label on the title's baseline, a gone
         // chevron centered on the title, and row barriers. The second title
         // turns gone in place while the layout resizes.

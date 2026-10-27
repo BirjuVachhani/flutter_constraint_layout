@@ -5,27 +5,36 @@
 // Ported from androidx.constraintlayout.core.SolverVariableValues (upstream
 // pinned in UPSTREAM.md). Debug display and dead (`if (false)`) branches
 // omitted.
+//
+// Storage is typed, as upstream's arrays are: Int32Lists and a Float32List of
+// values (Java floats), each float operation one rounding (jfloat.dart). A
+// variable parameter is nullable and dereferenced only where upstream
+// dereferences it (indexOf of null is not found, as upstream's).
+
+import 'dart:typed_data';
 
 import 'array_row.dart';
 import 'cache.dart';
+import 'jfloat.dart';
 import 'solver_variable.dart';
 
 /// Store a set of variables and their values in an array-based linked list
 /// coupled with a custom hashmap.
 class SolverVariableValues implements ArrayRowVariables {
-  static const double _epsilon = 0.001;
+  /// Java's `0.001f`.
+  static const double _epsilon = kEps001;
   static const int _none = -1;
 
   int _size = 16;
   final int _hashSize = 16;
 
-  List<int> mKeys = List.filled(16, _none);
-  List<int> mNextKeys = List.filled(16, _none);
+  Int32List mKeys = Int32List(16)..fillRange(0, 16, _none);
+  Int32List mNextKeys = Int32List(16)..fillRange(0, 16, _none);
 
-  List<int> mVariables = List.filled(16, _none);
-  List<double> mValues = List.filled(16, 0);
-  List<int> mPrevious = List.filled(16, _none);
-  List<int> mNext = List.filled(16, _none);
+  Int32List mVariables = Int32List(16)..fillRange(0, 16, _none);
+  Float32List mValues = Float32List(16);
+  Int32List mPrevious = Int32List(16)..fillRange(0, 16, _none);
+  Int32List mNext = Int32List(16)..fillRange(0, 16, _none);
   int mCount = 0;
   int mHead = -1;
 
@@ -79,11 +88,11 @@ class SolverVariableValues implements ArrayRowVariables {
   }
 
   @override
-  bool contains(SolverVariable variable) => indexOf(variable) != _none;
+  bool contains(SolverVariable? variable) => indexOf(variable) != _none;
 
   @override
-  int indexOf(SolverVariable variable) {
-    if (mCount == 0) {
+  int indexOf(SolverVariable? variable) {
+    if (mCount == 0 || variable == null) {
       return _none;
     }
     final id = variable.id;
@@ -108,7 +117,7 @@ class SolverVariableValues implements ArrayRowVariables {
   }
 
   @override
-  double get(SolverVariable variable) {
+  double get(SolverVariable? variable) {
     final index = indexOf(variable);
     if (index != _none) {
       return mValues[index];
@@ -155,16 +164,25 @@ class SolverVariableValues implements ArrayRowVariables {
     mHead = -1;
   }
 
+  /// Doubles the arrays as upstream's Arrays.copyOf does, then marks the new
+  /// variable and next-key slots free. (Upstream leaves the new previous and
+  /// next slots 0 and the port fills them with -1; nothing reads a free
+  /// slot's links before addVariable writes them.)
   void _increaseSize() {
     final size = _size * 2;
-    mVariables = [
-      ...mVariables,
-      ...List.filled(size - mVariables.length, _none),
-    ];
-    mValues = [...mValues, ...List.filled(size - mValues.length, 0.0)];
-    mPrevious = [...mPrevious, ...List.filled(size - mPrevious.length, _none)];
-    mNext = [...mNext, ...List.filled(size - mNext.length, _none)];
-    mNextKeys = [...mNextKeys, ...List.filled(size - mNextKeys.length, _none)];
+    mVariables = Int32List(size)
+      ..setAll(0, mVariables)
+      ..fillRange(_size, size, _none);
+    mValues = Float32List(size)..setAll(0, mValues);
+    mPrevious = Int32List(size)
+      ..setAll(0, mPrevious)
+      ..fillRange(_size, size, _none);
+    mNext = Int32List(size)
+      ..setAll(0, mNext)
+      ..fillRange(_size, size, _none);
+    mNextKeys = Int32List(size)
+      ..setAll(0, mNextKeys)
+      ..fillRange(_size, size, _none);
     _size = size;
   }
 
@@ -205,8 +223,8 @@ class SolverVariableValues implements ArrayRowVariables {
     }
   }
 
-  void _addVariable(int index, SolverVariable variable, double value) {
-    mVariables[index] = variable.id;
+  void _addVariable(int index, SolverVariable? variable, double value) {
+    mVariables[index] = variable!.id;
     mValues[index] = value;
     mPrevious[index] = _none;
     mNext[index] = _none;
@@ -227,7 +245,7 @@ class SolverVariableValues implements ArrayRowVariables {
     return -1;
   }
 
-  void _insertVariable(int index, SolverVariable variable, double value) {
+  void _insertVariable(int index, SolverVariable? variable, double value) {
     final availableSlot = _findEmptySlot();
     _addVariable(availableSlot, variable, value);
     if (index != _none) {
@@ -246,18 +264,20 @@ class SolverVariableValues implements ArrayRowVariables {
     if (mNext[availableSlot] != _none) {
       mPrevious[mNext[availableSlot]] = availableSlot;
     }
-    _addToHashMap(variable, availableSlot);
+    _addToHashMap(variable!, availableSlot);
   }
 
+  /// [value] is a Java float: the storage keeps its binary32 value.
   @override
-  void put(SolverVariable variable, double value) {
+  void put(SolverVariable? variable, double value) {
+    value = f32(value);
     if (value > -_epsilon && value < _epsilon) {
       remove(variable, true);
       return;
     }
     if (mCount == 0) {
       _addVariable(0, variable, value);
-      _addToHashMap(variable, 0);
+      _addToHashMap(variable!, 0);
       mHead = 0;
     } else {
       final index = indexOf(variable);
@@ -271,7 +291,7 @@ class SolverVariableValues implements ArrayRowVariables {
         var previousItem = -1;
         var j = mHead;
         for (var i = 0; i < count; i++) {
-          if (mVariables[j] == variable.id) {
+          if (mVariables[j] == variable!.id) {
             mValues[j] = value;
             return;
           }
@@ -292,12 +312,12 @@ class SolverVariableValues implements ArrayRowVariables {
   int sizeInBytes() => 0;
 
   @override
-  double remove(SolverVariable v, bool removeFromDefinition) {
+  double remove(SolverVariable? v, bool removeFromDefinition) {
     final index = indexOf(v);
     if (index == _none) {
       return 0;
     }
-    _removeFromHashMap(v);
+    _removeFromHashMap(v!);
     final value = mValues[index];
     if (mHead == index) {
       mHead = mNext[index];
@@ -318,8 +338,14 @@ class SolverVariableValues implements ArrayRowVariables {
     return value;
   }
 
+  /// [value] is a Java float.
   @override
-  void add(SolverVariable v, double value, bool removeFromDefinition) {
+  void add(SolverVariable? v, double value, bool removeFromDefinition) {
+    assert(
+      isF32(value),
+      'SolverVariableValues.add($value): Java adds a float, and every caller '
+      'passes a product or a stored coefficient that is already binary32',
+    );
     if (value > -_epsilon && value < _epsilon) {
       return;
     }
@@ -327,7 +353,8 @@ class SolverVariableValues implements ArrayRowVariables {
     if (index == _none) {
       put(v, value);
     } else {
-      mValues[index] += value;
+      // Java's `mValues[index] += value`: the store rounds the float sum.
+      mValues[index] = fadd(mValues[index], value);
       if (mValues[index] > -_epsilon && mValues[index] < _epsilon) {
         mValues[index] = 0;
         remove(v, removeFromDefinition);
@@ -337,10 +364,10 @@ class SolverVariableValues implements ArrayRowVariables {
 
   @override
   double use(ArrayRow definition, bool removeFromDefinition) {
-    final value = get(definition.mVariable!);
-    remove(definition.mVariable!, removeFromDefinition);
-    // Scans the definition's slots linearly (not in list order); addition
-    // into this row is order-independent.
+    final value = get(definition.mVariable);
+    remove(definition.mVariable, removeFromDefinition);
+    // Scans the definition's slots linearly (not in list order), as
+    // upstream's live branch does.
     final localDef = definition.variables as SolverVariableValues;
     final definitionSize = localDef.getCurrentSize();
     var j = 0;
@@ -348,20 +375,25 @@ class SolverVariableValues implements ArrayRowVariables {
       if (localDef.mVariables[i] != _none) {
         final definitionValue = localDef.mValues[i];
         final definitionVariable =
-            mCache.mIndexedVariables[localDef.mVariables[i]]!;
-        add(definitionVariable, definitionValue * value, removeFromDefinition);
+            mCache.mIndexedVariables[localDef.mVariables[i]];
+        add(
+          definitionVariable,
+          fmul(definitionValue, value),
+          removeFromDefinition,
+        );
         j++;
       }
     }
     return value;
   }
 
+  /// Negate every value (Java's `*= -1`, exact).
   @override
   void invert() {
     final count = mCount;
     var j = mHead;
     for (var i = 0; i < count; i++) {
-      mValues[j] *= -1;
+      mValues[j] = mValues[j] * -1;
       j = mNext[j];
       if (j == _none) {
         break;
@@ -369,12 +401,13 @@ class SolverVariableValues implements ArrayRowVariables {
     }
   }
 
+  /// Divide every value by [amount], one float division each.
   @override
   void divideByAmount(double amount) {
     final count = mCount;
     var j = mHead;
     for (var i = 0; i < count; i++) {
-      mValues[j] /= amount;
+      mValues[j] = fdiv(mValues[j], amount);
       j = mNext[j];
       if (j == _none) {
         break;

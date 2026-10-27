@@ -68,6 +68,10 @@ class ConstraintGrid extends ParentDataWidget<ConstraintParentData> {
   final Symbol id;
 
   /// Ids of the sibling widgets this grid arranges, in cell order.
+  ///
+  /// The grid places each of them itself, at every layout, so a referenced
+  /// child's own links (its `left`, `top`, `start` and the rest) are
+  /// ignored.
   final List<Symbol> referenced;
 
   /// Number of rows; null derives it from [columns] and the widget count.

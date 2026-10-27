@@ -181,8 +181,9 @@ void main() {
       );
     });
 
-    // A group has no position or size, so it is not a target. The message
-    // says what the id is rather than calling it unknown.
+    // A group only sets the visibility of the children it references (its
+    // own widget is a 0 x 0 point at the origin), so it is not a target. The
+    // message says what the id is rather than calling it unknown.
     testWidgets('a link to a group', (tester) async {
       final errors = await layoutErrors(tester, [
         Constrained(
@@ -204,7 +205,8 @@ void main() {
         errors,
         reportsError(
           'Constrained link targets Symbol("group"), which is a '
-          'ConstraintGroup. A group has no position or size',
+          'ConstraintGroup. A group only sets the visibility of the children '
+          'it references, so nothing can link to or reference it',
         ),
       );
     });

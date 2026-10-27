@@ -1,9 +1,21 @@
 // Regression tests for a Flow whose size the solver resolves (a
-// matchConstraint axis) laid out through ConstraintWidgetContainer.layout(),
-// the entry the Flutter adapter uses. Such a flow is first measured before the
-// solver knows its size, so it has to be measured again at the solved size
-// (as upstream's BasicMeasure.solverMeasure does) to arrange its rows against
-// its own bounds rather than the whole container's.
+// matchConstraint axis). Such a flow is first measured before the solver
+// knows its size, so it has to be measured again at the solved size (as
+// upstream's BasicMeasure.solverMeasure does) to arrange its rows against its
+// own bounds rather than the whole container's. The layouts run through
+// ConstraintWidgetContainer.measure at level 0, as upstream's FlowTest does;
+// layout() measures nothing.
+//
+// Java J0 and J257 (VOpDriver v2, view path: the same scenes as op lists,
+// box chips and a text) give the frames asserted here. The horizontal
+// WRAP_CHAIN scene one pixel too narrow is `R 331 400;w c0 91 35;
+// w c1 66 35;w c2 66 35;w c3 61 35;add c0;add c1;add c2;add c3;fl f;fo f 0;
+// fwm f 1;fhg f 8;fvg f 8;fhs f 2;fvs f 2;fhb f 0;fvb f 0;fpad f 0 0 0 0;
+// frtl f 0;ref f c0;ref f c1;ref f c2;ref f c3;hb f M;vb f W;
+// c f L root L 12;c f R root R 12;c f T root T 12;add f;ct c0 box 91 35 -1;
+// ...;cspec E 331 E 400`: c3: (12, 55) 61 x 35, f: (12, 12) 307 x 78,
+// passes=2. The other scenes change the width, the wrap mode, the padding
+// or the orientation; the shared-solve scene adds `ct t text 900 20 -1`.
 
 import 'package:constraint_engine/constraint_engine.dart';
 import 'package:test/test.dart';
@@ -128,6 +140,22 @@ const _gap = 8;
   return (root, flow, chips);
 }
 
+/// Measures and lays out [root] at level 0 (upstream's measure entry).
+void _measure(ConstraintWidgetContainer root) {
+  root.setOptimizationLevel(Optimizer.OPTIMIZATION_NONE);
+  root.measure(
+    Optimizer.OPTIMIZATION_NONE,
+    BasicMeasure.EXACTLY,
+    root.getWidth(),
+    BasicMeasure.EXACTLY,
+    root.getHeight(),
+    0,
+    0,
+    0,
+    0,
+  );
+}
+
 void main() {
   group('Flow wraps against its solved size', () {
     for (final (name, wrapMode) in [
@@ -139,7 +167,7 @@ void main() {
           _lineSize + 2 * _margin,
           wrapMode: wrapMode,
         );
-        root.layout();
+        _measure(root);
 
         expect(flow.getWidth(), _lineSize);
         for (final chip in chips) {
@@ -154,7 +182,7 @@ void main() {
           _lineSize + 2 * _margin - 1,
           wrapMode: wrapMode,
         );
-        root.layout();
+        _measure(root);
 
         expect(flow.getWidth(), _lineSize - 1);
         expect(chips[2].getTop(), _margin);
@@ -172,14 +200,14 @@ void main() {
         _lineSize + 2 * (_margin + padding),
         padding: padding,
       );
-      fitRoot.layout();
+      _measure(fitRoot);
       expect(fitChips.last.getTop(), fitChips.first.getTop());
 
       final (wrapRoot, wrapFlow, wrapChips) = _scene(
         _lineSize + 2 * (_margin + padding) - 1,
         padding: padding,
       );
-      wrapRoot.layout();
+      _measure(wrapRoot);
       expect(wrapChips.last.getTop(), wrapChips.first.getBottom() + _gap);
       expect(wrapChips.last.getLeft(), wrapFlow.getLeft() + padding);
     });
@@ -189,7 +217,7 @@ void main() {
         _lineSize + 2 * _margin,
         orientation: ConstraintWidget.VERTICAL,
       );
-      fitRoot.layout();
+      _measure(fitRoot);
       expect(fitFlow.getHeight(), _lineSize);
       for (final chip in fitChips) {
         expect(chip.getLeft(), _margin);
@@ -200,7 +228,7 @@ void main() {
         _lineSize + 2 * _margin - 1,
         orientation: ConstraintWidget.VERTICAL,
       );
-      wrapRoot.layout();
+      _measure(wrapRoot);
       expect(wrapFlow.getHeight(), _lineSize - 1);
       expect(wrapChips.last.getLeft(), wrapChips.first.getRight() + _gap);
       expect(wrapChips.last.getTop(), wrapFlow.getTop());
@@ -209,18 +237,24 @@ void main() {
       }
     });
 
-    test('layout() places the flow like the upstream measure() entry', () {
-      List<List<int>> geometry(Iterable<ConstraintWidget> widgets) => [
-        for (final w in widgets)
-          [w.getLeft(), w.getTop(), w.getWidth(), w.getHeight()],
-      ];
-
+    test('the upstream measure() entry places every chip and the flow', () {
+      // Java J0 and J257 (the scene one pixel too narrow in the header).
       final (measured, _, _) = _scene(_lineSize + 2 * _margin - 1);
-      measured.measure(Optimizer.OPTIMIZATION_NONE, 0, 0, 0, 0, 0, 0, 0, 0);
-      final (laidOut, _, _) = _scene(_lineSize + 2 * _margin - 1);
-      laidOut.layout();
+      _measure(measured);
 
-      expect(geometry(laidOut.getChildren()), geometry(measured.getChildren()));
+      expect(
+        [
+          for (final w in measured.getChildren())
+            [w.getLeft(), w.getTop(), w.getWidth(), w.getHeight()],
+        ],
+        [
+          [12, 12, 91, 35],
+          [111, 12, 66, 35],
+          [185, 12, 66, 35],
+          [12, 55, 61, 35],
+          [12, 12, 307, 78],
+        ],
+      );
     });
 
     test('a re-measured flow and a re-measured text share one solve, as in '
@@ -276,7 +310,7 @@ void main() {
         8,
       );
 
-      root.layout();
+      _measure(root);
 
       expect(flow.getHeight(), 70, reason: 'two rows of 30 and a gap of 10');
       expect(chips.last.getTop(), chips.first.getBottom() + 10);

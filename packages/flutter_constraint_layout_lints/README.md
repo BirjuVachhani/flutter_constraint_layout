@@ -111,11 +111,11 @@ ConstraintLayout(
 
 The rule reads the `children` list of each `ConstraintLayout` and compares the
 `id` arguments of its direct elements, including the id of a `ConstraintGroup`:
-a group takes no part in the layout, but its id belongs to the same set. It
-understands symbol literals (`#header`) and references to constants
-(`const headerId = #header;`), including inside a spread of an inline list. Ids
-in the two branches of a collection `if` are treated as alternatives, not
-duplicates.
+a group only sets the visibility of other children, but its id belongs to the
+same set. It understands symbol literals (`#header`) and references to
+constants (`const headerId = #header;`), including inside a spread of an
+inline list. Ids in the two branches of a collection `if` are treated as
+alternatives, not duplicates.
 
 Because this is static analysis, it only sees what the source spells out. It
 cannot flag ids built at runtime (`Symbol(name)`), children produced by a `for`
@@ -148,9 +148,10 @@ target is always fine, and ids defined by a `Guideline`, a `Barrier`, or a child
 sitting under a builder-style wrapper all count as defined.
 
 The id of a `ConstraintGroup` counts as defined too, so a link at it, or a
-helper's `referenced` entry naming it, is not reported. A group has no position
-or size, so the layout itself reports either one when it runs: a debug build
-throws a `FlutterError` that names the group.
+helper's `referenced` entry naming it, is not reported. A group only sets the
+visibility of the children it references, so it is not a target: the layout
+itself reports either one when it runs, and a debug build throws a
+`FlutterError` that names the group.
 
 Unlike a duplicate id, this one needs the *complete* set of a layout's ids before
 it can call anything missing. Whenever a child could contribute an id that is not

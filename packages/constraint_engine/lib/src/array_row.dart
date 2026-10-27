@@ -9,34 +9,88 @@
 //   createRowEquals(v, value)        -> createRowEqualsConstant
 //   createRowEquals(a, b, margin)    -> createRowEquals
 //   createRowGreaterThan(a, b, slack) -> createRowGreaterThanConstant
+//
+// Java floats: mConstantValue and every coefficient hold binary32 values,
+// each float operation is one rounding in Java's evaluation order
+// (jfloat.dart), and a method whose Java parameter is a float uses the
+// parameter's binary32 value.
 
 import 'array_linked_variables.dart';
 import 'cache.dart';
+import 'debug/solver_trace.dart';
+import 'jfloat.dart';
 import 'linear_system.dart';
 import 'solver_variable.dart';
 
 /// Storage backend for one row's variables. Implemented by
 /// [ArrayLinkedVariables] and SolverVariableValues.
+///
+/// The values are Java floats (binary32). A variable parameter is nullable
+/// because Java passes a missing variable (a null cache slot, a row without
+/// a subject) straight through: each implementation throws exactly where
+/// its Java original dereferences it, and not before (for example, `get` of
+/// a missing variable in an empty row returns 0).
 abstract class ArrayRowVariables {
   int getCurrentSize();
   SolverVariable? getVariable(int index);
   double getVariableValue(int index);
-  double get(SolverVariable variable);
-  int indexOf(SolverVariable variable);
+  double get(SolverVariable? variable);
+  int indexOf(SolverVariable? variable);
   void display();
   void clear();
-  bool contains(SolverVariable variable);
-  void put(SolverVariable variable, double value);
+  bool contains(SolverVariable? variable);
+  void put(SolverVariable? variable, double value);
   int sizeInBytes();
   void invert();
-  double remove(SolverVariable v, bool removeFromDefinition);
+  double remove(SolverVariable? v, bool removeFromDefinition);
   void divideByAmount(double amount);
-  void add(SolverVariable v, double value, bool removeFromDefinition);
+  void add(SolverVariable? v, double value, bool removeFromDefinition);
   double use(ArrayRow definition, bool removeFromDefinition);
 }
 
+/// Java's `1E12F`: 1e12 is not a binary32 value.
+const double _kWeight1e12f = 999999995904.0;
+
 class ArrayRow implements Row {
+  /// Not upstream: this row's bit in the client-row mask of
+  /// [SolverVariable] (see SolverVariable.addToRow), fixed for the row's
+  /// life. Rows take the bits round-robin as they are created, so rows made
+  /// close together, as the rows of one variable usually are, differ. Any
+  /// assignment keeps the mask exact; this one only keeps its false
+  /// positives rare.
+  final int mClientBit = _nextClientBit();
+
+  static int _clientBitSerial = 0;
+
+  /// 64 bits where ints are 64-bit for bit operations; 32 where a shift by
+  /// 32 or more gives 0 (JavaScript), so that no row's bit is 0.
+  static final int _clientBitCount = (1 << 40) == 0 ? 32 : 64;
+
+  static int _nextClientBit() {
+    final bit = 1 << (_clientBitSerial++ % _clientBitCount);
+    assert(
+      bit != 0,
+      'a row with no client bit would let SolverVariable.addToRow skip the '
+      'duplicate scan for it and add the row to a client list twice',
+    );
+    return bit;
+  }
+
   SolverVariable? mVariable;
+
+  /// Not upstream: the index LinearSystem last stored this row at in its
+  /// mRows. LinearSystem writes it with every store of the row into mRows,
+  /// so the row is at that index exactly when the entry there is this row;
+  /// a row that left mRows keeps a stale value, which that test rejects.
+  int mRowIndex = -1;
+
+  /// Not upstream: the reset count of the LinearSystem whose createRow last
+  /// handed out this row (-1 for a row built directly). A row added to a
+  /// system in the epoch it was created in started empty in that epoch, so
+  /// every entry it holds was stored then (see Cache.mUnregisteredEntry).
+  int mSystemEpoch = -1;
+
+  /// The row's constant: a Java float, so always a binary32 value.
   double mConstantValue = 0;
   bool mUsed = false;
 
@@ -122,18 +176,18 @@ class ArrayRow implements Row {
 
   ArrayRow createRowDefinition(SolverVariable variable, int value) {
     mVariable = variable;
-    variable.computedValue = value.toDouble();
-    mConstantValue = value.toDouble();
+    variable.computedValue = fi(value);
+    mConstantValue = fi(value);
     mIsSimpleDefinition = true;
     return this;
   }
 
   ArrayRow createRowEqualsConstant(SolverVariable variable, int value) {
     if (value < 0) {
-      mConstantValue = -1.0 * value;
+      mConstantValue = fi(-1 * value);
       variables.put(variable, 1);
     } else {
-      mConstantValue = value.toDouble();
+      mConstantValue = fi(value);
       variables.put(variable, -1);
     }
     return this;
@@ -151,7 +205,7 @@ class ArrayRow implements Row {
         m = -1 * m;
         inverse = true;
       }
-      mConstantValue = m.toDouble();
+      mConstantValue = fi(m);
     }
     if (!inverse) {
       variables.put(variableA, -1);
@@ -164,7 +218,7 @@ class ArrayRow implements Row {
   }
 
   ArrayRow addSingleError(SolverVariable error, int sign) {
-    variables.put(error, sign.toDouble());
+    variables.put(error, fi(sign));
     return this;
   }
 
@@ -181,7 +235,7 @@ class ArrayRow implements Row {
         m = -1 * m;
         inverse = true;
       }
-      mConstantValue = m.toDouble();
+      mConstantValue = fi(m);
     }
     if (!inverse) {
       variables.put(variableA, -1);
@@ -200,7 +254,7 @@ class ArrayRow implements Row {
     int b,
     SolverVariable slack,
   ) {
-    mConstantValue = b.toDouble();
+    mConstantValue = fi(b);
     variables.put(a, -1);
     return this;
   }
@@ -218,7 +272,7 @@ class ArrayRow implements Row {
         m = -1 * m;
         inverse = true;
       }
-      mConstantValue = m.toDouble();
+      mConstantValue = fi(m);
     }
     if (!inverse) {
       variables.put(variableA, -1);
@@ -232,6 +286,7 @@ class ArrayRow implements Row {
     return this;
   }
 
+  /// The weights are Java floats: the row uses their binary32 values.
   ArrayRow createRowEqualMatchDimensions(
     double currentWeight,
     double totalWeights,
@@ -241,6 +296,9 @@ class ArrayRow implements Row {
     SolverVariable variableStartB,
     SolverVariable variableEndB,
   ) {
+    currentWeight = f32(currentWeight);
+    totalWeights = f32(totalWeights);
+    nextWeight = f32(nextWeight);
     mConstantValue = 0;
     if (totalWeights == 0 || (currentWeight == nextWeight)) {
       // endA - startA == endB - startB
@@ -256,9 +314,9 @@ class ArrayRow implements Row {
         variables.put(variableStartB, 1);
         variables.put(variableEndB, -1);
       } else {
-        final cw = currentWeight / totalWeights;
-        final nw = nextWeight / totalWeights;
-        final w = cw / nw;
+        final cw = fdiv(currentWeight, totalWeights);
+        final nw = fdiv(nextWeight, totalWeights);
+        final w = fdiv(cw, nw);
         // endA - startA == w * (endB - startB)
         variables.put(variableStartA, 1);
         variables.put(variableEndA, -1);
@@ -269,6 +327,7 @@ class ArrayRow implements Row {
     return this;
   }
 
+  /// The weights are Java floats: the row uses their binary32 values.
   ArrayRow createRowEqualDimension(
     double currentWeight,
     double totalWeights,
@@ -282,19 +341,26 @@ class ArrayRow implements Row {
     SolverVariable variableEndB,
     int marginEndB,
   ) {
+    currentWeight = f32(currentWeight);
+    totalWeights = f32(totalWeights);
+    nextWeight = f32(nextWeight);
     if (totalWeights == 0 || (currentWeight == nextWeight)) {
-      mConstantValue = (-marginStartA - marginEndA + marginStartB + marginEndB)
-          .toDouble();
+      mConstantValue = fi(
+        -marginStartA - marginEndA + marginStartB + marginEndB,
+      );
       variables.put(variableStartA, 1);
       variables.put(variableEndA, -1);
       variables.put(variableEndB, 1);
       variables.put(variableStartB, -1);
     } else {
-      final cw = currentWeight / totalWeights;
-      final nw = nextWeight / totalWeights;
-      final w = cw / nw;
-      mConstantValue =
-          -marginStartA - marginEndA + w * marginStartB + w * marginEndB;
+      final cw = fdiv(currentWeight, totalWeights);
+      final nw = fdiv(nextWeight, totalWeights);
+      final w = fdiv(cw, nw);
+      // Java: ((-msA - meA) + w * msB) + w * meB, the int part summed first.
+      mConstantValue = fadd(
+        fadd(fi(-marginStartA - marginEndA), fmul(w, fi(marginStartB))),
+        fmul(w, fi(marginEndB)),
+      );
       variables.put(variableStartA, 1);
       variables.put(variableEndA, -1);
       variables.put(variableEndB, w);
@@ -303,6 +369,7 @@ class ArrayRow implements Row {
     return this;
   }
 
+  /// [bias] is a Java float: the row uses its binary32 value.
   ArrayRow createRowCentering(
     SolverVariable variableA,
     SolverVariable variableB,
@@ -312,6 +379,7 @@ class ArrayRow implements Row {
     SolverVariable variableD,
     int marginB,
   ) {
+    bias = f32(bias);
     if (identical(variableB, variableC)) {
       // centering on the same position: 0 = A + D - 2 * B
       variables.put(variableA, 1);
@@ -326,25 +394,32 @@ class ArrayRow implements Row {
       variables.put(variableC, -1);
       variables.put(variableD, 1);
       if (marginA > 0 || marginB > 0) {
-        mConstantValue = (-marginA + marginB).toDouble();
+        mConstantValue = fi(-marginA + marginB);
       }
     } else if (bias <= 0) {
       // A = B + m
       variables.put(variableA, -1);
       variables.put(variableB, 1);
-      mConstantValue = marginA.toDouble();
+      mConstantValue = fi(marginA);
     } else if (bias >= 1) {
       // D = C - m
       variables.put(variableD, -1);
       variables.put(variableC, 1);
-      mConstantValue = -marginB.toDouble();
+      mConstantValue = fi(-marginB);
     } else {
-      variables.put(variableA, 1 * (1 - bias));
-      variables.put(variableB, -1 * (1 - bias));
+      // Java: 1 * (1 - bias), -1 * (1 - bias), -1 * bias, 1 * bias; the
+      // subtraction is one float rounding, the products by +-1 are exact.
+      final inverseBias = fsub(1, bias);
+      variables.put(variableA, 1 * inverseBias);
+      variables.put(variableB, -1 * inverseBias);
       variables.put(variableC, -1 * bias);
       variables.put(variableD, 1 * bias);
       if (marginA > 0 || marginB > 0) {
-        mConstantValue = -marginA * (1 - bias) + marginB * bias;
+        // Java: -marginA * (1 - bias) + marginB * bias.
+        mConstantValue = fadd(
+          fmul(fi(-marginA), fsub(1, bias)),
+          fmul(fi(marginB), bias),
+        );
       }
     }
     return this;
@@ -356,11 +431,13 @@ class ArrayRow implements Row {
     return this;
   }
 
+  /// [percent] is a Java float: the row uses its binary32 value.
   ArrayRow createRowDimensionPercent(
     SolverVariable variableA,
     SolverVariable variableC,
     double percent,
   ) {
+    percent = f32(percent);
     variables.put(variableA, -1);
     variables.put(variableC, percent);
     return this;
@@ -368,6 +445,7 @@ class ArrayRow implements Row {
 
   /// Create a constraint to express `A = B + (C - D) * ratio`.
   /// Used for ratio, e.g. `Right = Left + (Bottom - Top) * percent`.
+  /// [ratio] is a Java float: the row uses its binary32 value.
   ArrayRow createRowDimensionRatio(
     SolverVariable variableA,
     SolverVariable variableB,
@@ -375,6 +453,7 @@ class ArrayRow implements Row {
     SolverVariable variableD,
     double ratio,
   ) {
+    ratio = f32(ratio);
     variables.put(variableA, -1);
     variables.put(variableB, 1);
     variables.put(variableC, ratio);
@@ -383,6 +462,7 @@ class ArrayRow implements Row {
   }
 
   /// Create a constraint to express `At + (Ab-At)/2 = Bt + (Bb-Bt)/2 - angle`.
+  /// [angleComponent] is a Java float: the row uses its binary32 value.
   ArrayRow createRowWithAngle(
     SolverVariable at,
     SolverVariable ab,
@@ -390,6 +470,7 @@ class ArrayRow implements Row {
     SolverVariable bb,
     double angleComponent,
   ) {
+    angleComponent = f32(angleComponent);
     variables.put(bt, 0.5);
     variables.put(bb, 0.5);
     variables.put(at, -0.5);
@@ -411,7 +492,7 @@ class ArrayRow implements Row {
 
   void ensurePositiveConstant() {
     if (mConstantValue < 0) {
-      mConstantValue *= -1;
+      mConstantValue = mConstantValue * -1;
       variables.invert();
     }
   }
@@ -441,10 +522,28 @@ class ArrayRow implements Row {
     var unrestrictedCandidateIsNew = false;
     var restrictedCandidateIsNew = false;
 
-    final currentSize = variables.getCurrentSize();
+    final rowVariables = variables;
+    final currentSize = rowVariables.getCurrentSize();
+    // Representation change: the entries in linked order, walked once from
+    // the head instead of once per index by getVariableValue(i) and
+    // getVariable(i). Nothing in the loop changes the list, so the slot
+    // reached after i steps is the one both of them reach, and the variable
+    // and value read there are theirs (the same index expression, so the
+    // same RangeError for a bad id); past the end of the chain the loop
+    // calls them as before, and they answer 0 and null.
+    final alv = rowVariables is ArrayLinkedVariables ? rowVariables : null;
+    var slot = alv == null ? ArrayLinkedVariables.NONE : alv.getHead();
     for (var i = 0; i < currentSize; i++) {
-      final amount = variables.getVariableValue(i);
-      final variable = variables.getVariable(i)!;
+      final double amount;
+      final SolverVariable variable;
+      if (slot != ArrayLinkedVariables.NONE) {
+        amount = alv!.getValue(slot);
+        variable = alv.mCache.mIndexedVariables[alv.getId(slot)]!;
+        slot = alv.getNextIndice(slot);
+      } else {
+        amount = rowVariables.getVariableValue(i);
+        variable = rowVariables.getVariable(i)!;
+      }
       if (variable.mType == SolverVariableType.unrestricted) {
         if (unrestrictedCandidate == null) {
           unrestrictedCandidate = variable;
@@ -490,7 +589,11 @@ class ArrayRow implements Row {
     return variable.usageInRowCount <= 1;
   }
 
-  void pivot(SolverVariable v) {
+  /// Make [v] the subject of this row. Java's enforceBFS passes a cache slot
+  /// as it is, so [v] can be null: as upstream, the old subject is moved back
+  /// into the row first, and remove() throws only if it walks a variable.
+  void pivot(SolverVariable? v) {
+    final traceLeaving = kSolverTrace ? mVariable : null;
     if (mVariable != null) {
       // first, move back the variable to its column
       variables.put(mVariable!, -1);
@@ -498,13 +601,16 @@ class ArrayRow implements Row {
       mVariable = null;
     }
 
+    // Exact: the stored coefficient negated.
     final amount = variables.remove(v, true) * -1;
     mVariable = v;
     if (amount == 1) {
+      if (kSolverTrace) SolverTrace.pivot(traceLeaving, v, amount, this);
       return;
     }
-    mConstantValue = mConstantValue / amount;
+    mConstantValue = fdiv(mConstantValue, amount);
     variables.divideByAmount(amount);
+    if (kSolverTrace) SolverTrace.pivot(traceLeaving, v, amount, this);
   }
 
   // Row compatibility
@@ -524,7 +630,10 @@ class ArrayRow implements Row {
   ) {
     final value = variables.use(definition, removeFromDefinition);
 
-    mConstantValue += definition.mConstantValue * value;
+    mConstantValue = fadd(
+      mConstantValue,
+      fmul(definition.mConstantValue, value),
+    );
     if (removeFromDefinition) {
       definition.mVariable!.removeFromRow(this);
     }
@@ -546,7 +655,7 @@ class ArrayRow implements Row {
       return;
     }
     final value = variables.get(variable);
-    mConstantValue += variable.computedValue * value;
+    mConstantValue = fadd(mConstantValue, fmul(variable.computedValue, value));
     variables.remove(variable, removeFromDefinition);
     if (removeFromDefinition) {
       variable.removeFromRow(this);
@@ -566,13 +675,14 @@ class ArrayRow implements Row {
       return;
     }
     final value = variables.get(variable);
-    mConstantValue += variable.mSynonymDelta * value;
+    mConstantValue = fadd(mConstantValue, fmul(variable.mSynonymDelta, value));
     variables.remove(variable, removeFromDefinition);
     if (removeFromDefinition) {
       variable.removeFromRow(this);
     }
+    // Java passes the cache slot as it is, even null.
     variables.add(
-      system.mCache.mIndexedVariables[variable.mSynonym]!,
+      system.mCache.mIndexedVariables[variable.mSynonym],
       value,
       removeFromDefinition,
     );
@@ -634,7 +744,8 @@ class ArrayRow implements Row {
       mVariable = null;
       variables.clear();
       for (var i = 0; i < row.variables.getCurrentSize(); i++) {
-        final variable = row.variables.getVariable(i)!;
+        // Java passes a missing variable on to add().
+        final variable = row.variables.getVariable(i);
         final val = row.variables.getVariableValue(i);
         variables.add(variable, val, true);
       }
@@ -643,6 +754,7 @@ class ArrayRow implements Row {
 
   @override
   void addError(SolverVariable error) {
+    // Java's float literals 1F, 1E3F, 1E6F, 1E9F, 1E12F.
     var weight = 1.0;
     if (error.strength == SolverVariable.STRENGTH_LOW) {
       weight = 1.0;
@@ -653,7 +765,7 @@ class ArrayRow implements Row {
     } else if (error.strength == SolverVariable.STRENGTH_HIGHEST) {
       weight = 1e9;
     } else if (error.strength == SolverVariable.STRENGTH_EQUALITY) {
-      weight = 1e12;
+      weight = _kWeight1e12f;
     }
     variables.put(error, weight);
   }
@@ -683,9 +795,21 @@ class ArrayRow implements Row {
           'ArrayRow.updateFromSystem: no fixed point after $maxRounds rounds',
         );
       }
-      final currentSize = variables.getCurrentSize();
+      final rowVariables = variables;
+      final currentSize = rowVariables.getCurrentSize();
+      // Representation change, as in chooseSubjectInVariables: one walk in
+      // linked order instead of getVariable(i) from the head for each i. The
+      // scan only reads, so it sees the slots getVariable(i) would.
+      final alv = rowVariables is ArrayLinkedVariables ? rowVariables : null;
+      var slot = alv == null ? ArrayLinkedVariables.NONE : alv.getHead();
       for (var i = 0; i < currentSize; i++) {
-        final variable = variables.getVariable(i)!;
+        final SolverVariable variable;
+        if (slot != ArrayLinkedVariables.NONE) {
+          variable = alv!.mCache.mIndexedVariables[alv.getId(slot)]!;
+          slot = alv.getNextIndice(slot);
+        } else {
+          variable = rowVariables.getVariable(i)!;
+        }
         if (variable.mDefinitionId != -1 ||
             variable.isFinalValue ||
             variable.mIsSynonym) {

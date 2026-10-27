@@ -9,6 +9,7 @@ import 'analyzer/basic_measure.dart';
 import 'constraint_anchor.dart';
 import 'constraint_widget.dart';
 import 'constraint_widget_container.dart';
+import 'jfloat.dart';
 import 'linear_system.dart';
 import 'virtual_layout.dart';
 
@@ -129,28 +130,30 @@ class Flow extends VirtualLayout {
 
   /// Set the horizontal bias (0 to 1, 0.5 by default) of each row's chain,
   /// and of the chain of columns in [WRAP_ALIGNED] mode. It is mirrored in a
-  /// right-to-left layout.
-  void setHorizontalBias(double value) => _horizontalBias = value;
+  /// right-to-left layout. Every bias is kept as the binary32 value
+  /// upstream's float holds.
+  void setHorizontalBias(double value) => _horizontalBias = f32(value);
 
   /// Set the vertical bias (0 to 1, 0.5 by default) of each column's chain,
   /// and of the chain of rows in [WRAP_ALIGNED] mode.
-  void setVerticalBias(double value) => _verticalBias = value;
+  void setVerticalBias(double value) => _verticalBias = f32(value);
 
   /// Similar to [setHorizontalBias], but only applies to the first row, and
   /// only when [setFirstHorizontalStyle] is set.
-  void setFirstHorizontalBias(double value) => _firstHorizontalBias = value;
+  void setFirstHorizontalBias(double value) =>
+      _firstHorizontalBias = f32(value);
 
   /// Similar to [setVerticalBias], but only applies to the first column, and
   /// only when [setFirstVerticalStyle] is set.
-  void setFirstVerticalBias(double value) => _firstVerticalBias = value;
+  void setFirstVerticalBias(double value) => _firstVerticalBias = f32(value);
 
   /// Similar to [setHorizontalBias], but only applies to the last row, and
   /// only when [setLastHorizontalStyle] is set.
-  void setLastHorizontalBias(double value) => _lastHorizontalBias = value;
+  void setLastHorizontalBias(double value) => _lastHorizontalBias = f32(value);
 
   /// Similar to [setVerticalBias], but only applies to the last column, and
   /// only when [setLastVerticalStyle] is set.
-  void setLastVerticalBias(double value) => _lastVerticalBias = value;
+  void setLastVerticalBias(double value) => _lastVerticalBias = f32(value);
 
   /// Set how the widgets of a column line up horizontally (in a vertical
   /// flow): [HORIZONTAL_ALIGN_START], [HORIZONTAL_ALIGN_END], or
@@ -194,7 +197,9 @@ class Flow extends VirtualLayout {
         return 0;
       } else if (widget.mMatchConstraintDefaultWidth ==
           ConstraintWidget.MATCH_CONSTRAINT_PERCENT) {
-        final value = (widget.mMatchConstraintPercentWidth * max).toInt();
+        // (int) (mMatchConstraintPercentWidth * max): a float product,
+        // truncated.
+        final value = jint(fmul(widget.mMatchConstraintPercentWidth, fi(max)));
         if (value != widget.getWidth()) {
           widget.setMeasureRequested(true);
           measureWidget(
@@ -211,7 +216,10 @@ class Flow extends VirtualLayout {
         return widget.getWidth();
       } else if (widget.mMatchConstraintDefaultWidth ==
           ConstraintWidget.MATCH_CONSTRAINT_RATIO) {
-        return (widget.getHeight() * widget.mDimensionRatio + 0.5).toInt();
+        // (int) (getHeight() * mDimensionRatio + 0.5f), in float.
+        return jint(
+          fadd(fmul(fi(widget.getHeight()), widget.mDimensionRatio), 0.5),
+        );
       }
     }
     return widget.getWidth();
@@ -228,7 +236,9 @@ class Flow extends VirtualLayout {
         return 0;
       } else if (widget.mMatchConstraintDefaultHeight ==
           ConstraintWidget.MATCH_CONSTRAINT_PERCENT) {
-        final value = (widget.mMatchConstraintPercentHeight * max).toInt();
+        final value = jint(
+          fmul(widget.mMatchConstraintPercentHeight, fi(max)),
+        );
         if (value != widget.getHeight()) {
           widget.setMeasureRequested(true);
           measureWidget(
@@ -245,7 +255,9 @@ class Flow extends VirtualLayout {
         return widget.getHeight();
       } else if (widget.mMatchConstraintDefaultHeight ==
           ConstraintWidget.MATCH_CONSTRAINT_RATIO) {
-        return (widget.getWidth() * widget.mDimensionRatio + 0.5).toInt();
+        return jint(
+          fadd(fmul(fi(widget.getWidth()), widget.mDimensionRatio), 0.5),
+        );
       }
     }
     return widget.getHeight();
@@ -902,10 +914,12 @@ class Flow extends VirtualLayout {
       // get a num of rows (or cols)
       // get for each row and cols the chain of biggest elements
 
+      // (int) Math.ceil(count / (float) cols): a float quotient, its ceiling
+      // in double, then the cast.
       if (orientation == ConstraintWidget.HORIZONTAL) {
-        rows = (count / cols).ceil();
+        rows = jint(fdiv(fi(count), fi(cols)).ceilToDouble());
       } else {
-        cols = (count / rows).ceil();
+        cols = jint(fdiv(fi(count), fi(rows)).ceilToDouble());
       }
 
       if (_alignedBiggestElementsInCols == null ||
@@ -1032,7 +1046,7 @@ class Flow extends VirtualLayout {
       var index = i;
       if (isInRtl) {
         index = cols - i - 1;
-        horizontalBias = 1 - _horizontalBias;
+        horizontalBias = fsub(1, _horizontalBias);
       }
       final widget = _alignedBiggestElementsInCols![index];
       if (widget == null || widget.getVisibility() == ConstraintWidget.GONE) {
@@ -1354,20 +1368,21 @@ class _WidgetsList {
         // E.g. RTL would have head at the right most widget.
         if (index == 0) {
           var style = _flow._horizontalStyle;
+          // 1 - bias: a float difference.
           var bias = isInRtl
-              ? (1 - _flow._horizontalBias)
+              ? fsub(1, _flow._horizontalBias)
               : _flow._horizontalBias;
           if (_startIndex == 0 &&
               _flow._firstHorizontalStyle != ConstraintWidget.UNKNOWN) {
             style = _flow._firstHorizontalStyle;
             bias = isInRtl
-                ? (1 - _flow._firstHorizontalBias)
+                ? fsub(1, _flow._firstHorizontalBias)
                 : _flow._firstHorizontalBias;
           } else if (isLastChain &&
               _flow._lastHorizontalStyle != ConstraintWidget.UNKNOWN) {
             style = _flow._lastHorizontalStyle;
             bias = isInRtl
-                ? (1 - _flow._lastHorizontalBias)
+                ? fsub(1, _flow._lastHorizontalBias)
                 : _flow._lastHorizontalBias;
           }
           widget.setHorizontalChainStyle(style);

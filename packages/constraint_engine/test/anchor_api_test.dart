@@ -280,6 +280,45 @@ void main() {
       expect(a.mRight.hasCenteredDependents(), isTrue);
     });
 
+    test('a dependent without an opposite anchor fails the null check, as '
+        "upstream's NullPointerException (ConstraintAnchor.java 68)", () {
+      final failsNullCheck = throwsA(
+        isA<TypeError>().having(
+          (e) => '$e',
+          'message',
+          contains('Null check operator'),
+        ),
+      );
+      final a = widgetNamed('A');
+      final b = widgetNamed('B', baseline: true);
+
+      // B's baseline hangs off A's bottom. A baseline has no opposite anchor,
+      // and upstream dereferences it anyway.
+      b.mBaseline.connect(a.mBottom, 0);
+      expect(b.mBaseline.getOpposite(), isNull);
+      expect(a.mBottom.hasCenteredDependents, failsNullCheck);
+
+      // The dependents are read in the order they were linked (the port's
+      // order for upstream's HashSet), and the loop returns at the first
+      // centered one: a centered dependent linked before the baseline
+      // answers, one linked after it is never reached.
+      final first = widgetNamed('first');
+      final centered = widgetNamed('centered');
+      final baseline = widgetNamed('baseline', baseline: true);
+      centered.mTop.connect(first.mBottom, 0);
+      centered.mBottom.connect(a.mTop, 0);
+      baseline.mBaseline.connect(first.mBottom, 0);
+      expect(first.mBottom.hasCenteredDependents(), isTrue);
+
+      final last = widgetNamed('last');
+      final early = widgetNamed('early', baseline: true);
+      final after = widgetNamed('after');
+      early.mBaseline.connect(last.mBottom, 0);
+      after.mTop.connect(last.mBottom, 0);
+      after.mBottom.connect(a.mTop, 0);
+      expect(last.mBottom.hasCenteredDependents, failsNullCheck);
+    });
+
     test('toString names the owner and the edge', () {
       final a = widgetNamed('header');
       expect('${a.mLeft}', 'header:left');

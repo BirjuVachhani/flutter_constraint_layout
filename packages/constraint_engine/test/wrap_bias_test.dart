@@ -109,12 +109,14 @@ void main() {
       expect(a.getLeft(), 10);
     });
 
-    test('the graph computes a wrap size for a packed chain', () {
-      // Unlike upstream, the graph then declines the chain (see UPSTREAM.md:
-      // chains along a wrap-content axis go to the solver), but it computes
-      // the wrap size first.
-      final (:root, a: _, b: _) = packedChain(bias: 1, margin: 16);
-      expect(() => root.directMeasure(true), returnsNormally);
+    test('the graph wraps a packed chain', () {
+      // BasicMeasure never builds the graph for a layout with a chain, but a
+      // direct call lays it out with ChainRun, as upstream's does.
+      final (:root, :a, :b) = packedChain(bias: 1, margin: 16);
+      expect(root.directMeasure(true), isTrue);
+      expect(root.getWidth(), 232);
+      expect(a.getLeft(), 16);
+      expect(b.getLeft(), 116);
     });
 
     test('layout() resolves a packed chain with margins', () {

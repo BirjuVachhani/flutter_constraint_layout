@@ -7,8 +7,11 @@ single layer of anchored siblings, with chains, guidelines, barriers, bias, and
 aspect ratios built in.
 
 Layouts are resolved by a pure-Dart port of `androidx.constraintlayout.core`,
-the engine behind Android's ConstraintLayout, so the same layout runs on every
-Flutter platform with no native code.
+the engine behind Android's ConstraintLayout, run through Android's own
+measure passes, so the same layout runs on every Flutter platform with no
+native code and gets Android's frames, to the pixel. Checked against
+Android's own code, the frames match on 60,000 real widget trees and on more
+than 1.8 million engine layouts.
 
 [Documentation](https://constraints.birju.dev/docs) ·
 [Live examples](https://constraints.birju.dev) ·
@@ -119,7 +122,7 @@ API.
 | Package | Path | pub.dev | What it is |
 | --- | --- | --- | --- |
 | `flutter_constraint_layout` | [packages/flutter_constraint_layout](packages/flutter_constraint_layout) | [flutter_constraint_layout](https://pub.dev/packages/flutter_constraint_layout) | The Flutter widgets: `ConstraintLayout`, `Constrained`, `Guideline`, `Barrier`, `ConstraintFlow`, `ConstraintGrid`, `ConstraintGroup`, and the debug overlay. Start here. |
-| `constraint_engine` | [packages/constraint_engine](packages/constraint_engine) | [constraint_engine](https://pub.dev/packages/constraint_engine) | The layout engine: a line-faithful, pure-Dart port of `androidx.constraintlayout.core`, with a dependency-graph resolver and a Cassowary solver as its fallback. No Flutter dependency. |
+| `constraint_engine` | [packages/constraint_engine](packages/constraint_engine) | [constraint_engine](https://pub.dev/packages/constraint_engine) | The layout engine: a line-faithful, pure-Dart port of `androidx.constraintlayout.core` and of the measure of Android's `ConstraintLayout` view, with Android's measure passes, `Direct` pass, and Cassowary solver in Android's 32-bit float arithmetic. No Flutter dependency. |
 | `flutter_constraint_layout_lints` | [packages/flutter_constraint_layout_lints](packages/flutter_constraint_layout_lints) | [flutter_constraint_layout_lints](https://pub.dev/packages/flutter_constraint_layout_lints) | An analyzer plugin that warns about duplicate and undefined constraint ids while you edit. |
 | `flutter_constraint_layout_website` | [website](website) | Not published | The documentation site, [constraints.birju.dev](https://constraints.birju.dev). |
 | `site_kit` | [template](template) | Not published | The site's theme and component kit, used by path or git, with a [storyboard](template/storyboard) app that showcases it. |

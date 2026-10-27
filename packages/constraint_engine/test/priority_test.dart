@@ -46,9 +46,8 @@ void main() {
       expect(b.getWidth(), 100);
       expect(c.getWidth(), 100);
       expect(a.getLeft(), 300);
-      // closeTo: double-vs-float32 solver rounding, see UPSTREAM.md.
-      expect(b.getLeft(), closeTo(367, 1));
-      expect(c.getLeft(), closeTo(533, 1));
+      expect(b.getLeft(), 367);
+      expect(c.getLeft(), 533);
 
       b.setHorizontalChainStyle(ConstraintWidget.CHAIN_SPREAD_INSIDE);
       root.layout();
@@ -96,9 +95,8 @@ void main() {
       expect(b.getHeight(), 100);
       expect(c.getHeight(), 100);
       expect(a.getTop(), 300);
-      // closeTo: double-vs-float32 solver rounding, see UPSTREAM.md.
-      expect(b.getTop(), closeTo(367, 1));
-      expect(c.getTop(), closeTo(533, 1));
+      expect(b.getTop(), 367);
+      expect(c.getTop(), 533);
 
       b.setVerticalChainStyle(ConstraintWidget.CHAIN_SPREAD_INSIDE);
       root.layout();

@@ -215,6 +215,8 @@ void main() {
       expect(b.getTop(), a.getTop());
       expect(c.getLeft(), 350);
       expect(c.getRight(), 450);
+      // closeTo mirrors upstream's assertEquals delta (CenterWrapTest.java
+      // 243).
       expect(c.getTop(), closeTo(379, 1));
 
       root.setVerticalDimensionBehaviour(DimensionBehaviour.wrapContent);

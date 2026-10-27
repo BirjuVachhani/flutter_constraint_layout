@@ -27,6 +27,7 @@ class DimensionDependency extends DependencyNode {
     }
     resolved = true;
     this.value = value;
+    // Iterates a copy, as DependencyNode.resolve does.
     for (final node in List<Dependency>.of(mDependencies)) {
       node.update(node);
     }

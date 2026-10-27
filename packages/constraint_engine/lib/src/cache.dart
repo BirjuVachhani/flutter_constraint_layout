@@ -18,4 +18,12 @@ class Cache {
     32,
     null,
   );
+
+  /// Not upstream: set when a row that uses this cache stores a variable
+  /// that is not [mIndexedVariables]' entry for its id (an id two variables
+  /// share, or a variable that no system registered). While it is clear,
+  /// every stored id k of every row belongs to `mIndexedVariables[k]`, which
+  /// LinearSystem's column-indexed ratio test relies on; LinearSystem.reset
+  /// clears it with the rows.
+  bool mUnregisteredEntry = false;
 }

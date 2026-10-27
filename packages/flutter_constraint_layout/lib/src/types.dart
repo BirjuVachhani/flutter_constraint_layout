@@ -50,10 +50,12 @@ enum BarrierEdge {
   /// The bottommost bottom edge.
   bottom,
 
-  /// The start-most start edge (RTL-aware).
+  /// The start-most start edge (RTL-aware): the left edge in left-to-right
+  /// text, the right edge in right-to-left text.
   start,
 
-  /// The end-most end edge (RTL-aware).
+  /// The end-most end edge (RTL-aware): the right edge in left-to-right
+  /// text, the left edge in right-to-left text.
   end,
 }
 
@@ -79,8 +81,8 @@ enum HelperKind {
   /// columns.
   grid,
 
-  /// A group: sets the visibility of referenced widgets. It has no position
-  /// or size and takes no part in the layout.
+  /// A group: sets the visibility of referenced widgets. Its own engine
+  /// widget is an unlinked widget measured at 0 x 0, as Android's Group's.
   group,
 }
 

@@ -460,6 +460,7 @@ void main() {
       expect(barrier.getTop(), a.getBottom());
       final actual = barrier.getBottom() +
           (root.getBottom() - barrier.getBottom() - b.getHeight()) / 2.0;
+      // closeTo mirrors upstream's assertEquals delta (BarrierTest.java 510).
       expect(b.getTop(), closeTo(actual, 1));
     });
 
@@ -592,6 +593,9 @@ void main() {
 
       root.layout();
 
+      // closeTo mirrors upstream's assertEquals delta (BarrierTest.java
+      // 651-655): Java lays C and E out one pixel right of the integer
+      // division (313 and 338).
       expect(a.getLeft(), closeTo((root.getWidth() - a.getWidth()) ~/ 2, 1));
       expect(b.getLeft(), closeTo((root.getWidth() - b.getWidth()) ~/ 2, 1));
       expect(c.getLeft(), closeTo((root.getWidth() - c.getWidth()) ~/ 2, 1));

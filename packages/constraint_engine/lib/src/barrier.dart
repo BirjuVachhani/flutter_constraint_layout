@@ -41,6 +41,10 @@ class Barrier extends HelperWidget {
 
   /// The offset added to the barrier's position; see [setMargin].
   int mMargin = 0;
+
+  /// Whether [allSolved] resolved the barrier's position for the next solve.
+  /// [addToSolver] holds the position and clears it. Like Android's,
+  /// [resetMeasureState] keeps it: `reset()` (CW 557-621) does not touch it.
   bool mResolved = false;
 
   /// Creates a [left] barrier that references no widgets.
@@ -70,6 +74,18 @@ class Barrier extends HelperWidget {
 
   /// Find if this barrier supports gone widgets; see [setAllowsGoneWidget].
   bool getAllowsGoneWidget() => mAllowsGoneWidget;
+
+  /// Whether [allSolved] resolved the barrier and no solve has consumed it
+  /// yet: [mResolved] (upstream BR 91-93), whatever the axis. The final
+  /// values [allSolved] leaves on the barrier's anchors do not count, so a
+  /// barrier that references this one sees it resolved only until this
+  /// one's [addToSolver] has run.
+  @override
+  bool isResolvedHorizontally() => mResolved;
+
+  /// Same as [isResolvedHorizontally] (upstream BR 96-98).
+  @override
+  bool isResolvedVertically() => mResolved;
 
   /// Set the offset added to the barrier's position: a positive margin moves
   /// the barrier right or down, whatever its type.

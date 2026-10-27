@@ -147,9 +147,10 @@ void main() {
       c.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
       root.layout();
       expect(a.getLeft(), 40);
+      // The closeTo calls in this test mirror upstream's assertEquals delta
+      // (OptimizationsTest.java 117-151); upstream asserts C's left exactly.
       expect(b.getLeft(), closeTo(217, 1));
-      // closeTo: double-vs-float32 solver rounding, see UPSTREAM.md.
-      expect(c.getLeft(), closeTo(393, 1));
+      expect(c.getLeft(), 393);
       expect(a.getWidth(), closeTo(177, 1));
       expect(b.getWidth(), closeTo(176, 1));
       expect(c.getWidth(), closeTo(177, 1));
@@ -202,6 +203,8 @@ void main() {
       root.setOptimizationLevel(Optimizer.OPTIMIZATION_STANDARD);
       root.layout();
       expect(a.getLeft(), 133);
+      // closeTo mirrors upstream's assertEquals delta (OptimizationsTest.java
+      // 180 and 191).
       expect(b.getLeft(), closeTo(367, 1));
 
       final c = ConstraintWidget.size(100, 20);
@@ -434,6 +437,8 @@ void main() {
       root.add(a);
       root.setOptimizationLevel(Optimizer.OPTIMIZATION_STANDARD);
       root.layout();
+      // closeTo mirrors upstream's assertEquals delta (OptimizationsTest.java
+      // 476-477).
       expect(a.getLeft(), closeTo(270, 1));
       expect(a.getTop(), closeTo(303, 1));
     });
@@ -799,17 +804,13 @@ void main() {
         d.connect(ConstraintAnchorType.right, c, ConstraintAnchorType.right, 20);
         root.layout();
         expect(a.getLeft(), 250);
-        // closeTo: double-vs-float32 solver rounding, see UPSTREAM.md.
-        expect(a.getTop(), closeTo(197, 1));
+        expect(a.getTop(), 197);
         expect(b.getLeft(), 250);
-        // closeTo: double-vs-float32 solver rounding, see UPSTREAM.md.
-        expect(b.getTop(), closeTo(393, 1));
+        expect(b.getTop(), 393);
         expect(c.getLeft(), 230);
-        // closeTo: double-vs-float32 solver rounding, see UPSTREAM.md.
-        expect(c.getTop(), closeTo(413, 1));
+        expect(c.getTop(), 413);
         expect(d.getLeft(), 210);
-        // closeTo: double-vs-float32 solver rounding, see UPSTREAM.md.
-        expect(d.getTop(), closeTo(433, 1));
+        expect(d.getTop(), 433);
       }
 
       testDependency5(Optimizer.OPTIMIZATION_NONE);

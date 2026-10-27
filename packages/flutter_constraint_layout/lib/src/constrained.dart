@@ -77,20 +77,33 @@ class Constrained extends ParentDataWidget<ConstraintParentData> {
   final VerticalLink? bottom;
 
   /// Positions this widget's text baseline.
+  ///
+  /// As on Android, a baseline link to a sibling replaces this widget's
+  /// [top] and [bottom] links (their margins still count for a
+  /// [Dimension.matchParent] height), and a baseline link to `parent` is
+  /// ignored: the layout itself has no baseline to align with.
   final VerticalLink? baseline;
 
   /// Centers this widget on a circle around a target's center.
+  ///
+  /// As on Android, a circle replaces every other link of this widget: with
+  /// a [circle], [left], [right], [start], [end], [top], [bottom] and
+  /// [baseline] are ignored, and so are the biases.
   final CircularLink? circle;
 
   /// Horizontal position between opposing links: 0.0 = left, 1.0 = right.
   ///
   /// As on Android, a right-to-left layout mirrors the bias of a child with a
-  /// [start] or [end] link: it uses `1 - horizontalBias`, so the bias is
-  /// measured from the start and 0.0 is the right. A child linked only with
-  /// [left] and [right] keeps the bias as given in both text directions.
+  /// [start] or [end] link: it uses `1 - horizontalBias`, computed in single
+  /// precision as Android computes it, so the bias is measured from the
+  /// start and 0.0 is the right. A child linked only with [left] and [right]
+  /// keeps the bias as given in both text directions. A bias that resolves
+  /// to a negative value is ignored (the default 0.5 applies), as Android
+  /// ignores one.
   final double horizontalBias;
 
   /// Vertical position between opposing links: 0.0 = top, 1.0 = bottom.
+  /// A negative bias is ignored (the default 0.5 applies), as on Android.
   final double verticalBias;
 
   /// How the width is determined.

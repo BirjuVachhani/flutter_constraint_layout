@@ -23,6 +23,24 @@
 >   extractor draws nothing for a group, and painting, hit testing, and a
 >   box's `invisible` flag read a child's effective visibility (its group's,
 >   when a group references it) instead of `pd.visibility`.
+> - Every child now has an engine widget in child order, a `ConstraintGroup`
+>   included: a group's widget is a plain, unlinked 0 x 0 widget at the
+>   origin, as Android's `Group` view is, and it still draws nothing.
+> - Guidelines and barriers are now gone widgets with 0 x 0 frames, as
+>   Android's view helpers are. The extractor draws each one's line from its
+>   position alone (`getX()` for a vertical line, `getY()` for a horizontal
+>   one) across the layout, and a link into one ends on that line, not on the
+>   helper's frame (`_targetRectOf`). `test/debug/goldens/blueprint_helpers.png`
+>   was regenerated for this: the guideline's own frame went from 0 x 600 to
+>   0 x 0, and the link from `#below` now runs straight up to the barrier
+>   line, where it used to curve to the barrier's frame at x = 0.
+> - The engine now runs Android's pipeline (the `Direct` pass, then the
+>   solver) at `OPTIMIZATION_STANDARD` by default, and the dependency graph
+>   only at the opt-in graph levels. The chain rule in section 3.2 still
+>   holds, for another reason: `ChainHead` is the solver's working state, so
+>   the extractor keeps deriving chains from anchor topology.
+> - `debugFastPasses` (section 3.1) went with the fast tier; a layout that
+>   repeats its last result is replayed instead (`debugReplayPasses`).
 
 All phases below are complete. Final layout of the feature:
 

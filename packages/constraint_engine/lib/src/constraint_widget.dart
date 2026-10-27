@@ -6,6 +6,7 @@
 // (upstream pinned in UPSTREAM.md; debug output omitted).
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'barrier.dart';
 import 'cache.dart';
@@ -16,6 +17,7 @@ import 'analyzer/horizontal_widget_run.dart';
 import 'analyzer/vertical_widget_run.dart';
 import 'analyzer/widget_run.dart';
 import 'guideline.dart';
+import 'jfloat.dart';
 import 'linear_system.dart';
 import 'solver_variable.dart';
 import 'virtual_layout.dart';
@@ -166,6 +168,17 @@ class ConstraintWidget {
   /// The match-constraint mode of the height, one of the `MATCH_CONSTRAINT_`
   /// constants; see [setVerticalMatchStyle].
   int mMatchConstraintDefaultHeight = MATCH_CONSTRAINT_SPREAD;
+
+  /// The modes [mMatchConstraintDefaultWidth] and
+  /// [mMatchConstraintDefaultHeight] as the last [setHorizontalMatchStyle] and
+  /// [setVerticalMatchStyle] calls left them (port only), which
+  /// [resetMeasureState] restores. At the OPTIMIZATION_GRAPH levels the
+  /// dependency graph reclassifies the modes in place (to
+  /// [MATCH_CONSTRAINT_PERCENT] or [MATCH_CONSTRAINT_RATIO]) as upstream's
+  /// does, and Android sets them again from the layout params on every
+  /// measure that rebuilds the hierarchy.
+  int _configuredMatchConstraintDefaultWidth = MATCH_CONSTRAINT_SPREAD;
+  int _configuredMatchConstraintDefaultHeight = MATCH_CONSTRAINT_SPREAD;
   List<int> mResolvedMatchConstraintDefault = [0, 0];
 
   /// The minimum of a match-constraint width, or 0 for none.
@@ -328,7 +341,13 @@ class ConstraintWidget {
 
   /// The chain weights, indexed by [HORIZONTAL] and [VERTICAL], or [UNKNOWN]
   /// (-1) when unset; see [setHorizontalWeight].
-  List<double> mWeight = [UNKNOWN.toDouble(), UNKNOWN.toDouble()];
+  ///
+  /// Upstream's `float[]`: a [Float32List], so every store keeps the
+  /// binary32 value Android holds.
+  List<double> mWeight = Float32List.fromList([
+    UNKNOWN.toDouble(),
+    UNKNOWN.toDouble(),
+  ]);
 
   // Solver integration state (see addToSolver).
   /// Value of [mHorizontalResolution] or [mVerticalResolution] for an axis
@@ -363,6 +382,19 @@ class ConstraintWidget {
   bool mAnimated = false;
   bool mResolvedHorizontal = false;
   bool mResolvedVertical = false;
+
+  // Upstream's mHorizontalSolvingPass and mVerticalSolvingPass (CW 102-103):
+  // the Direct pass marks an axis whose solving pass ran (see
+  // markHorizontalSolvingPassDone), and resetFinalResolution clears both.
+  bool _horizontalSolvingPass = false;
+  bool _verticalSolvingPass = false;
+
+  // Upstream's mLastHorizontalMeasureSpec and mLastVerticalMeasureSpec
+  // (CW 428-429): the specs of the widget's last view measure, as
+  // MeasureSpec ints, 0 until the first one (see setLastMeasureSpec).
+  int _lastHorizontalMeasureSpec = 0;
+  int _lastVerticalMeasureSpec = 0;
+
   int mWidthOverride = -1;
   int mHeightOverride = -1;
   final bool _optimizeWrapO = false;
@@ -467,6 +499,31 @@ class ConstraintWidget {
   /// is not [GONE].
   bool isMeasureRequested() => mMeasureRequested && mVisibility != GONE;
 
+  /// Request a measure of this widget again (upstream's
+  /// `ensureMeasureRequested`, CW 235-237): [isMeasureRequested] is then true
+  /// unless the widget is [GONE].
+  void ensureMeasureRequested() => mMeasureRequested = true;
+
+  /// The horizontal spec of the widget's last view measure, as Android's
+  /// `MeasureSpec` int (mode in the top two bits, held unsigned), or 0 before
+  /// any; see [setLastMeasureSpec].
+  int getLastHorizontalMeasureSpec() => _lastHorizontalMeasureSpec;
+
+  /// The vertical spec of the widget's last view measure, or 0 before any;
+  /// see [setLastMeasureSpec].
+  int getLastVerticalMeasureSpec() => _lastVerticalMeasureSpec;
+
+  /// Record the specs of a view measure of this widget (upstream CW 440-444):
+  /// stores [horizontal] and [vertical], then clears the measure request
+  /// ([setMeasureRequested] false). Android's view measurer calls it after
+  /// every measure of the child view, and its CACHE_MEASURES test compares
+  /// the next specs with these.
+  void setLastMeasureSpec(int horizontal, int vertical) {
+    _lastHorizontalMeasureSpec = horizontal;
+    _lastVerticalMeasureSpec = vertical;
+    setMeasureRequested(false);
+  }
+
   /// Returns true if the widget is the root widget (it has no parent).
   bool isRoot() => mParent == null;
 
@@ -551,6 +608,16 @@ class ConstraintWidget {
   /// Return the bottom position of the widget: [getY] plus the stored
   /// height.
   int getBottom() => getY() + mHeight;
+
+  /// The raw horizontal margins, `mLeft.mMargin + mRight.mMargin` (upstream
+  /// CW 1264-1273): unlike [ConstraintAnchor.getMargin], no visibility or gone
+  /// margin rule, and counted whether or not the anchor is connected.
+  /// Android's view measurer subtracts it from a match-parent child's spec.
+  int getHorizontalMargin() => mLeft.mMargin + mRight.mMargin;
+
+  /// The raw vertical margins, `mTop.mMargin + mBottom.mMargin` (upstream
+  /// CW 1278-1287), with the rules of [getHorizontalMargin].
+  int getVerticalMargin() => mTop.mMargin + mBottom.mMargin;
 
   /// Return the horizontal bias, used when both horizontal sides are
   /// constrained; see [setHorizontalBiasPercent].
@@ -660,15 +727,19 @@ class ConstraintWidget {
     int max,
     double percent,
   ) {
+    // Upstream's parameter is a float: the binary32 value is both the one
+    // stored and the one compared below.
+    final percentF = f32(percent);
     mMatchConstraintDefaultWidth = horizontalMatchStyle;
     mMatchConstraintMinWidth = min;
     mMatchConstraintMaxWidth = (max == intMaxValue) ? 0 : max;
-    mMatchConstraintPercentWidth = percent;
-    if (percent > 0 &&
-        percent < 1 &&
+    mMatchConstraintPercentWidth = percentF;
+    if (percentF > 0 &&
+        percentF < 1 &&
         mMatchConstraintDefaultWidth == MATCH_CONSTRAINT_SPREAD) {
       mMatchConstraintDefaultWidth = MATCH_CONSTRAINT_PERCENT;
     }
+    _configuredMatchConstraintDefaultWidth = mMatchConstraintDefaultWidth;
   }
 
   /// Set how a [DimensionBehaviour.matchConstraint] height is sized.
@@ -685,15 +756,18 @@ class ConstraintWidget {
     int max,
     double percent,
   ) {
+    // A float parameter upstream, as in setHorizontalMatchStyle.
+    final percentF = f32(percent);
     mMatchConstraintDefaultHeight = verticalMatchStyle;
     mMatchConstraintMinHeight = min;
     mMatchConstraintMaxHeight = (max == intMaxValue) ? 0 : max;
-    mMatchConstraintPercentHeight = percent;
-    if (percent > 0 &&
-        percent < 1 &&
+    mMatchConstraintPercentHeight = percentF;
+    if (percentF > 0 &&
+        percentF < 1 &&
         mMatchConstraintDefaultHeight == MATCH_CONSTRAINT_SPREAD) {
       mMatchConstraintDefaultHeight = MATCH_CONSTRAINT_PERCENT;
     }
+    _configuredMatchConstraintDefaultHeight = mMatchConstraintDefaultHeight;
   }
 
   /// Set the dimension ratio from a string: `width:height` (such as `16:9`)
@@ -705,6 +779,10 @@ class ConstraintWidget {
   /// A null or empty [ratio] removes the ratio, and one that does not parse
   /// to a positive value is ignored. The ratio applies when at least one
   /// axis is [DimensionBehaviour.matchConstraint]; see [setDimensionRatio].
+  ///
+  /// Each number is read as Java's `Float.parseFloat` reads it (so `2f` and
+  /// hexadecimal floats are numbers too), and `a:b` is the float quotient of
+  /// the two, as upstream computes it.
   void setDimensionRatioString(String? ratio) {
     if (ratio == null || ratio.isEmpty) {
       mDimensionRatio = 0;
@@ -730,23 +808,25 @@ class ConstraintWidget {
       final nominator = ratio.substring(commaIndex, colonIndex);
       final denominator = ratio.substring(colonIndex + 1);
       if (nominator.isNotEmpty && denominator.isNotEmpty) {
-        final nominatorValue = double.tryParse(nominator);
-        final denominatorValue = double.tryParse(denominator);
+        // Upstream parses both inside one try: a part that does not parse
+        // leaves the ratio at 0.
+        final nominatorValue = tryParseFloat32(nominator);
+        final denominatorValue = tryParseFloat32(denominator);
         if (nominatorValue != null &&
             denominatorValue != null &&
             nominatorValue > 0 &&
             denominatorValue > 0) {
           if (dimensionRatioSide == VERTICAL) {
-            dimensionRatio = (denominatorValue / nominatorValue).abs();
+            dimensionRatio = fdiv(denominatorValue, nominatorValue).abs();
           } else {
-            dimensionRatio = (nominatorValue / denominatorValue).abs();
+            dimensionRatio = fdiv(nominatorValue, denominatorValue).abs();
           }
         }
       }
     } else {
       final r = ratio.substring(commaIndex);
       if (r.isNotEmpty) {
-        final v = double.tryParse(r);
+        final v = tryParseFloat32(r);
         if (v != null) {
           dimensionRatio = v;
         }
@@ -765,9 +845,10 @@ class ConstraintWidget {
   /// the other one. [dimensionRatioSide] is [HORIZONTAL] (derive the width),
   /// [VERTICAL] (derive the height), or [UNKNOWN] (let the engine pick).
   /// [ratio] is width / height, except with [VERTICAL], where it is
-  /// height / width. A ratio of 0 removes it.
+  /// height / width. A ratio of 0 removes it. The ratio is kept as the
+  /// binary32 value upstream's float holds.
   void setDimensionRatio(double ratio, int dimensionRatioSide) {
-    mDimensionRatio = ratio;
+    mDimensionRatio = f32(ratio);
     mDimensionRatioSide = dimensionRatioSide;
   }
 
@@ -781,14 +862,16 @@ class ConstraintWidget {
   /// Set the horizontal bias to apply when both horizontal sides are
   /// constrained: 0 puts the widget against the left target, 1 against the
   /// right one, and 0.5 (the default) centers it. The head of a packed chain
-  /// places the whole chain with it.
-  void setHorizontalBiasPercent(double v) => mHorizontalBiasPercent = v;
+  /// places the whole chain with it. The bias is kept as the binary32 value
+  /// upstream's float holds.
+  void setHorizontalBiasPercent(double v) => mHorizontalBiasPercent = f32(v);
 
   /// Set the vertical bias to apply when both vertical sides are
   /// constrained: 0 puts the widget against the top target, 1 against the
   /// bottom one, and 0.5 (the default) centers it. The head of a packed
-  /// chain places the whole chain with it.
-  void setVerticalBiasPercent(double v) => mVerticalBiasPercent = v;
+  /// chain places the whole chain with it. The bias is kept as the binary32
+  /// value upstream's float holds.
+  void setVerticalBiasPercent(double v) => mVerticalBiasPercent = f32(v);
 
   /// Set the minimum width of the widget (a negative value becomes 0).
   /// [setWidth] and the layout raise smaller widths to it.
@@ -887,15 +970,17 @@ class ConstraintWidget {
 
   /// Set the horizontal weight (only used in chains): the match-constraint
   /// members of a chain share its leftover space in proportion to their
-  /// weights.
+  /// weights. The weight is kept as the binary32 value upstream's float
+  /// holds.
   void setHorizontalWeight(double horizontalWeight) =>
-      mWeight[HORIZONTAL] = horizontalWeight;
+      mWeight[HORIZONTAL] = f32(horizontalWeight);
 
   /// Set the vertical weight (only used in chains): the match-constraint
   /// members of a chain share its leftover space in proportion to their
-  /// weights.
+  /// weights. The weight is kept as the binary32 value upstream's float
+  /// holds.
   void setVerticalWeight(double verticalWeight) =>
-      mWeight[VERTICAL] = verticalWeight;
+      mWeight[VERTICAL] = f32(verticalWeight);
 
   /// Set the style of the horizontal chain this widget heads:
   /// [CHAIN_SPREAD] (the default), [CHAIN_SPREAD_INSIDE], or [CHAIN_PACKED].
@@ -1306,33 +1391,108 @@ class ConstraintWidget {
 
   /// Whether the horizontal position and width are already resolved: set by
   /// [setFinalHorizontal], or final values on both the left and right
-  /// anchors.
+  /// anchors. [Guideline] and [Barrier] answer with their own resolved flag
+  /// instead.
   bool isResolvedHorizontally() =>
       mResolvedHorizontal || (mLeft.hasFinalValue() && mRight.hasFinalValue());
 
   /// Whether the vertical position and height are already resolved: set by
-  /// [setFinalVertical], or final values on both the top and bottom anchors.
+  /// [setFinalVertical] or [setFinalBaseline], or final values on both the
+  /// top and bottom anchors. [Guideline] and [Barrier] answer with their own
+  /// resolved flag instead.
   bool isResolvedVertically() =>
       mResolvedVertical || (mTop.hasFinalValue() && mBottom.hasFinalValue());
 
-  /// Forget the positions [setFinalHorizontal] and [setFinalVertical] gave
-  /// this widget, and the final value of every anchor. Upstream's
-  /// ConstraintWidget.resetFinalResolution, less the solving-pass flags of
-  /// the Direct pass this port has no use for.
-  /// [ConstraintWidgetContainer.layout] calls it on the container and on
-  /// every child first, as upstream's Direct pass does on every measure at
-  /// Android's default optimization level.
+  /// Forget the positions the `setFinal` methods gave this widget, its
+  /// solving-pass flags, and the final value of every anchor in [mAnchors]
+  /// (upstream CW 223-232). Upstream's Direct pass calls it on the container
+  /// and on every child at the start of each measure at Android's default
+  /// optimization level. A [Guideline]'s and a [Barrier]'s own resolved flag
+  /// is not touched: their `addToSolver` consumes it.
   void resetFinalResolution() {
     mResolvedHorizontal = false;
     mResolvedVertical = false;
+    _horizontalSolvingPass = false;
+    _verticalSolvingPass = false;
     for (final anchor in mAnchors) {
       anchor.resetFinalResolution();
     }
   }
 
+  /// Clear both solving-pass flags (upstream CW 142-145); see
+  /// [markHorizontalSolvingPassDone].
+  void resetSolvingPassFlag() {
+    _horizontalSolvingPass = false;
+    _verticalSolvingPass = false;
+  }
+
+  /// Whether the Direct pass already ran this widget's horizontal solving
+  /// pass since the last [resetFinalResolution] (upstream CW 147-149).
+  bool isHorizontalSolvingPassDone() => _horizontalSolvingPass;
+
+  /// Whether the Direct pass already ran this widget's vertical solving pass
+  /// since the last [resetFinalResolution] (upstream CW 151-153).
+  bool isVerticalSolvingPassDone() => _verticalSolvingPass;
+
+  /// Record that the Direct pass ran this widget's horizontal solving pass
+  /// (upstream CW 156-158), so that it is not run again in the same pass.
+  void markHorizontalSolvingPassDone() => _horizontalSolvingPass = true;
+
+  /// Record that the Direct pass ran this widget's vertical solving pass
+  /// (upstream CW 161-163).
+  void markVerticalSolvingPassDone() => _verticalSolvingPass = true;
+
+  /// Place the widget at [left], [top], [right] and [bottom] through
+  /// [setFrame], set its baseline distance to [baseline]
+  /// ([setBaselineDistance]), and mark the axes [orientation] names as
+  /// resolved: [HORIZONTAL], [VERTICAL], [BOTH], or neither for any other
+  /// value (upstream CW 106-127). Unlike [setFinalHorizontal], no anchor gets
+  /// a final value.
+  void setFinalFrame(
+    int left,
+    int top,
+    int right,
+    int bottom,
+    int baseline,
+    int orientation,
+  ) {
+    setFrame(left, top, right, bottom);
+    setBaselineDistance(baseline);
+    if (orientation == HORIZONTAL) {
+      mResolvedHorizontal = true;
+      mResolvedVertical = false;
+    } else if (orientation == VERTICAL) {
+      mResolvedHorizontal = false;
+      mResolvedVertical = true;
+    } else if (orientation == BOTH) {
+      mResolvedHorizontal = true;
+      mResolvedVertical = true;
+    } else {
+      mResolvedHorizontal = false;
+      mResolvedVertical = false;
+    }
+  }
+
+  /// Resolve the left edge alone to [x1]: a final value on the left anchor,
+  /// and the x position (upstream CW 130-133). The axis is not marked
+  /// resolved.
+  void setFinalLeft(int x1) {
+    mLeft.setFinalValue(x1);
+    mX = x1;
+  }
+
+  /// Resolve the top edge alone to [y1]: a final value on the top anchor, and
+  /// the y position (upstream CW 136-139). The axis is not marked resolved.
+  void setFinalTop(int y1) {
+    mTop.setFinalValue(y1);
+    mY = y1;
+  }
+
   /// Resolve the horizontal axis to the left edge [x1] and the right edge
-  /// [x2], as final values on the anchors. [addToSolver] then adds them as
-  /// constants. Ignored once the axis was resolved this way.
+  /// [x2], as final values on the anchors (upstream CW 166-179). The width
+  /// becomes `x2 - x1` as is: no minimum applies, and it can be negative.
+  /// [addToSolver] then adds the edges as constants. Ignored once the axis
+  /// was resolved this way: the first resolution wins.
   void setFinalHorizontal(int x1, int x2) {
     if (mResolvedHorizontal) {
       return;
@@ -1345,8 +1505,11 @@ class ConstraintWidget {
   }
 
   /// Resolve the vertical axis to the top edge [y1] and the bottom edge
-  /// [y2], as final values on the anchors. [addToSolver] then adds them as
-  /// constants. Ignored once the axis was resolved this way.
+  /// [y2], as final values on the anchors, and, when the widget has a
+  /// baseline ([hasBaseline]), the baseline at `y1` plus the baseline
+  /// distance (upstream CW 182-198). The height becomes `y2 - y1` as is.
+  /// [addToSolver] then adds the edges as constants. Ignored once the axis
+  /// was resolved this way, or by [setFinalBaseline].
   void setFinalVertical(int y1, int y2) {
     if (mResolvedVertical) {
       return;
@@ -1355,7 +1518,169 @@ class ConstraintWidget {
     mBottom.setFinalValue(y2);
     mY = y1;
     mHeight = y2 - y1;
+    if (mHasBaseline) {
+      mBaseline.setFinalValue(y1 + mBaselineDistance);
+    }
     mResolvedVertical = true;
+  }
+
+  /// Resolve the vertical axis from the baseline position [baselineValue]
+  /// (upstream CW 201-212): the top at `baselineValue` minus the baseline
+  /// distance, the bottom at the top plus the stored height ([mHeight], not
+  /// [getHeight]), and final values on the top, bottom and baseline anchors.
+  /// Does nothing when the widget has no baseline ([hasBaseline]). Unlike
+  /// [setFinalVertical], it applies even when the axis is already resolved.
+  void setFinalBaseline(int baselineValue) {
+    if (!mHasBaseline) {
+      return;
+    }
+    final y1 = baselineValue - mBaselineDistance;
+    final y2 = y1 + mHeight;
+    mY = y1;
+    mTop.setFinalValue(y1);
+    mBottom.setFinalValue(y2);
+    mBaseline.setFinalValue(baselineValue);
+    mResolvedVertical = true;
+  }
+
+  /// Whether [orientation] has fewer than two connected anchors (upstream
+  /// CW 251-261): the left and right for [HORIZONTAL]; for any other value
+  /// the top, bottom and baseline, so a baseline link counts as one of two.
+  bool hasDanglingDimension(int orientation) {
+    if (orientation == HORIZONTAL) {
+      final horizontalTargets =
+          (mLeft.mTarget != null ? 1 : 0) + (mRight.mTarget != null ? 1 : 0);
+      return horizontalTargets < 2;
+    }
+    final verticalTargets =
+        (mTop.mTarget != null ? 1 : 0) +
+        (mBottom.mTarget != null ? 1 : 0) +
+        (mBaseline.mTarget != null ? 1 : 0);
+    return verticalTargets < 2;
+  }
+
+  /// Whether both targets of [orientation] ([HORIZONTAL], or the top and
+  /// bottom for any other value) have final values that leave at least
+  /// [size] between them once this widget's margins
+  /// ([ConstraintAnchor.getMargin]) are taken off (upstream CW 264-279).
+  /// False when a target is missing or not final.
+  bool hasResolvedTargets(int orientation, int size) {
+    if (orientation == HORIZONTAL) {
+      final leftTarget = mLeft.mTarget;
+      final rightTarget = mRight.mTarget;
+      if (leftTarget != null &&
+          leftTarget.hasFinalValue() &&
+          rightTarget != null &&
+          rightTarget.hasFinalValue()) {
+        return ((rightTarget.getFinalValue() - mRight.getMargin()) -
+                (leftTarget.getFinalValue() + mLeft.getMargin())) >=
+            size;
+      }
+    } else {
+      final topTarget = mTop.mTarget;
+      final bottomTarget = mBottom.mTarget;
+      if (topTarget != null &&
+          topTarget.hasFinalValue() &&
+          bottomTarget != null &&
+          bottomTarget.hasFinalValue()) {
+        return ((bottomTarget.getFinalValue() - mBottom.getMargin()) -
+                (topTarget.getFinalValue() + mTop.getMargin())) >=
+            size;
+      }
+    }
+    return false;
+  }
+
+  /// Bring the widget's measure state to what Android's dirty measure leaves
+  /// it: the per-measure reset that `ViewHost` applies to every child,
+  /// Android's `reset()` (CW 557-621) less what the view layer configures
+  /// again from the layout params (CL 1354-1597), which
+  /// `ConstraintLayout.setChildrenConstraints` runs on every child of a
+  /// hierarchy in which a child requested layout (CL 1249-1351).
+  ///
+  /// It clears what `reset()` clears and the layout params do not set
+  /// again:
+  ///
+  /// * the final value of every anchor;
+  /// * the position (x, y and the offsets), and the width and the height of
+  ///   each axis that is not [DimensionBehaviour.fixed];
+  /// * the baseline distance;
+  /// * what the solver derives: the match-parent resolutions, the resolved
+  ///   ratio and match-constraint defaults, the terminal and in-barrier
+  ///   marks, and any pending size override;
+  /// * the virtual-layout membership (the host marks the members again).
+  ///
+  /// It also requests a measure ([isMeasureRequested]).
+  ///
+  /// It keeps what `reset()` keeps, so the widget carries it from one
+  /// measure to the next as Android's does: both resolved flags
+  /// ([mResolvedHorizontal], [mResolvedVertical]) and both solving-pass
+  /// flags, [hasBaseline], the last measure specs
+  /// ([getLastHorizontalMeasureSpec]) and the dependency-graph runs. At the
+  /// levels without `OPTIMIZATION_DIRECT` nothing else clears a resolved
+  /// flag that `addToSolver` does not consume, so a flag outlives the
+  /// position it was set with: a barrier that [Barrier.allSolved] resolved
+  /// in one measure keeps its flag while this reset zeroes its x, its next
+  /// [setFinalHorizontal] returns at once, and the barrier stays at 0, as
+  /// on Android's views. The Direct pass clears every flag in the first
+  /// solver pass of each measure ([resetFinalResolution]).
+  ///
+  /// It keeps the configuration, which Android's layout params set again:
+  /// the links (the host rebuilds the dependents, see
+  /// `rebuildViewDependents`), the behaviours, a fixed axis's size, match
+  /// styles, ratio, biases, weights, chain styles, visibility and wrap
+  /// behaviour; and the minimums and maximums, which only a caller of the
+  /// engine sets (Android's view layer leaves a child's at 0 and unbounded,
+  /// as `reset()` sets them). The match modes go back to what the last
+  /// [setHorizontalMatchStyle] and [setVerticalMatchStyle] calls set, undoing
+  /// the dependency graph's reclassification at the OPTIMIZATION_GRAPH
+  /// levels, as Android's layout params set them again. A fixed size that a
+  /// solve widened ([setFrame]) stays widened: the caller sets its fixed
+  /// sizes again, as Android's layout params do.
+  ///
+  /// Fields are written directly, without the setters' clamps.
+  void resetMeasureState() {
+    // Every anchor the widget owns, as reset() resets all eight: a
+    // guideline's mAnchors holds only the anchor of its orientation.
+    mLeft.resetFinalResolution();
+    mTop.resetFinalResolution();
+    mRight.resetFinalResolution();
+    mBottom.resetFinalResolution();
+    mBaseline.resetFinalResolution();
+    mCenterX.resetFinalResolution();
+    mCenterY.resetFinalResolution();
+    mCenter.resetFinalResolution();
+    mX = 0;
+    mY = 0;
+    mOffsetX = 0;
+    mOffsetY = 0;
+    if (mListDimensionBehaviors[HORIZONTAL] != DimensionBehaviour.fixed) {
+      mWidth = 0;
+    }
+    if (mListDimensionBehaviors[VERTICAL] != DimensionBehaviour.fixed) {
+      mHeight = 0;
+    }
+    mBaselineDistance = 0;
+    mHorizontalResolution = UNKNOWN;
+    mVerticalResolution = UNKNOWN;
+    mResolvedHasRatio = false;
+    mResolvedDimensionRatioSide = UNKNOWN;
+    mResolvedDimensionRatio = 1;
+    isTerminalWidget[HORIZONTAL] = true;
+    isTerminalWidget[VERTICAL] = true;
+    mInVirtualLayout = false;
+    mIsInBarrier[HORIZONTAL] = false;
+    mIsInBarrier[VERTICAL] = false;
+    mMeasureRequested = true;
+    mResolvedMatchConstraintDefault[HORIZONTAL] = 0;
+    mResolvedMatchConstraintDefault[VERTICAL] = 0;
+    mWidthOverride = -1;
+    mHeightOverride = -1;
+    // The match styles as configured: Android applies the layout params'
+    // match styles again (setHorizontalMatchStyle, setVerticalMatchStyle),
+    // which undoes the dependency graph's reclassification of the modes.
+    mMatchConstraintDefaultWidth = _configuredMatchConstraintDefaultWidth;
+    mMatchConstraintDefaultHeight = _configuredMatchConstraintDefaultHeight;
   }
 
   /// Reset the solver variables of the anchors.
@@ -1386,10 +1711,9 @@ class ConstraintWidget {
   /// [WRAP_BEHAVIOR_VERTICAL_ONLY], or [WRAP_BEHAVIOR_SKIPPED]. Other values
   /// are ignored.
   ///
-  /// The solver ([addToSolver]) applies it. The dependency graph does not
-  /// model it, so a layout where it has an effect, a parent that wraps its
-  /// content on an axis this widget does not count toward, is resolved by
-  /// the solver.
+  /// The solver ([addToSolver]) applies it. The dependency graph, which runs
+  /// only at the `OPTIMIZATION_GRAPH` levels, does not read it, as upstream's
+  /// does not.
   void setWrapBehaviorInParent(int behavior) {
     if (behavior >= 0 && behavior <= WRAP_BEHAVIOR_SKIPPED) {
       mWrapBehaviorInParent = behavior;
@@ -1432,6 +1756,9 @@ class ConstraintWidget {
 
   /// Connect the center of this widget to the center of [target], positioned
   /// on a circle at [angle] (degrees) and [radius].
+  ///
+  /// The angle is kept as the binary32 value upstream's float holds, as
+  /// given: Android's view layer takes it modulo 360 before it gets here.
   void connectCircularConstraint(
     ConstraintWidget target,
     double angle,
@@ -1444,7 +1771,7 @@ class ConstraintWidget {
       radius,
       0,
     );
-    mCircleConstraintAngle = angle;
+    mCircleConstraintAngle = f32(angle);
   }
 
   /// Determine if the widget is the first element of a chain in a given
@@ -1480,7 +1807,7 @@ class ConstraintWidget {
         mResolvedDimensionRatioSide = VERTICAL;
         if (mDimensionRatioSide == UNKNOWN) {
           // need to reverse the ratio as the parsing is done in horizontal mode
-          mResolvedDimensionRatio = 1 / mResolvedDimensionRatio;
+          mResolvedDimensionRatio = fdiv(1, mResolvedDimensionRatio);
         }
       }
     }
@@ -1503,7 +1830,7 @@ class ConstraintWidget {
         if (mTop.isConnected() && mBottom.isConnected()) {
           mResolvedDimensionRatioSide = HORIZONTAL;
         } else if (mLeft.isConnected() && mRight.isConnected()) {
-          mResolvedDimensionRatio = 1 / mResolvedDimensionRatio;
+          mResolvedDimensionRatio = fdiv(1, mResolvedDimensionRatio);
           mResolvedDimensionRatioSide = VERTICAL;
         }
       }
@@ -1514,7 +1841,7 @@ class ConstraintWidget {
         mResolvedDimensionRatioSide = HORIZONTAL;
       } else if (mMatchConstraintMinWidth == 0 &&
           mMatchConstraintMinHeight > 0) {
-        mResolvedDimensionRatio = 1 / mResolvedDimensionRatio;
+        mResolvedDimensionRatio = fdiv(1, mResolvedDimensionRatio);
         mResolvedDimensionRatioSide = VERTICAL;
       }
     }
@@ -1743,7 +2070,9 @@ class ConstraintWidget {
               DimensionBehaviour.matchConstraint &&
           matchConstraintDefaultWidth == MATCH_CONSTRAINT_RATIO) {
         mResolvedDimensionRatioSide = HORIZONTAL;
-        width = (mResolvedDimensionRatio * mHeight).toInt();
+        // (int) (mResolvedDimensionRatio * mHeight): a float product,
+        // truncated.
+        width = jint(fmul(mResolvedDimensionRatio, fi(mHeight)));
         if (mListDimensionBehaviors[VERTICAL] !=
             DimensionBehaviour.matchConstraint) {
           matchConstraintDefaultWidth = MATCH_CONSTRAINT_RATIO_RESOLVED;
@@ -1755,9 +2084,9 @@ class ConstraintWidget {
         mResolvedDimensionRatioSide = VERTICAL;
         if (mDimensionRatioSide == UNKNOWN) {
           // need to reverse the ratio as the parsing is done in horizontal mode
-          mResolvedDimensionRatio = 1 / mResolvedDimensionRatio;
+          mResolvedDimensionRatio = fdiv(1, mResolvedDimensionRatio);
         }
-        height = (mResolvedDimensionRatio * mWidth).toInt();
+        height = jint(fmul(mResolvedDimensionRatio, fi(mWidth)));
         if (mListDimensionBehaviors[HORIZONTAL] !=
             DimensionBehaviour.matchConstraint) {
           matchConstraintDefaultHeight = MATCH_CONSTRAINT_RATIO_RESOLVED;
@@ -1998,14 +2327,16 @@ class ConstraintWidget {
       }
     }
 
-    if (mCenter.isConnected() && !mCircleConstraintAngle.isNaN) {
-      // Upstream does not guard on NaN; the angle is only ever set through
-      // connectCircularConstraint, and plain center connects would otherwise
-      // inject NaN rows (a path no upstream test exercises).
+    if (mCenter.isConnected()) {
+      // (float) Math.toRadians(mCircleConstraintAngle + 90): a float sum,
+      // converted in double, rounded back to float. A center link without an
+      // angle (a plain center connect) keeps the NaN angle, so its two rows
+      // get a NaN constant, as upstream's do (Java's (int) cast reads a NaN
+      // value back as 0).
       system.addCenterPoint(
         this,
         mCenter.mTarget!.mOwner,
-        _toRadians(mCircleConstraintAngle + 90),
+        f32(toRadians(fadd(mCircleConstraintAngle, 90))),
         mCenter.getMargin(),
       );
     }
@@ -2013,8 +2344,6 @@ class ConstraintWidget {
     mResolvedHorizontal = false;
     mResolvedVertical = false;
   }
-
-  static double _toRadians(double degrees) => degrees * math.pi / 180;
 
   /// Apply the constraints in the system depending on the existing anchors,
   /// in one dimension. Returns the (possibly updated) applyPosition value for

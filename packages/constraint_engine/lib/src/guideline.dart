@@ -8,6 +8,7 @@
 import 'constraint_anchor.dart';
 import 'constraint_widget.dart';
 import 'constraint_widget_container.dart';
+import 'jfloat.dart';
 import 'linear_system.dart';
 import 'solver_variable.dart';
 
@@ -58,6 +59,10 @@ class Guideline extends ConstraintWidget {
   /// The orientation, [horizontal] (the default) or [vertical].
   int mOrientation = horizontal;
   int mMinimumPosition = 0;
+
+  /// Whether [setFinalValue] resolved the guideline's position for the next
+  /// solve. [addToSolver] holds the position and clears it. Like Android's,
+  /// [resetMeasureState] keeps it: `reset()` (CW 557-621) does not touch it.
   bool mResolved = false;
 
   /// Creates a horizontal guideline with no position set.
@@ -150,17 +155,22 @@ class Guideline extends ConstraintWidget {
 
   /// Position the guideline at the fraction [value] (0 to 1) of the parent's
   /// width for a vertical guideline, or of its height for a horizontal one.
-  /// Values of -1 or less are ignored.
+  /// Values of -1 or less are ignored. The fraction is kept as the binary32
+  /// value upstream's float holds.
   void setGuidePercent(double value) {
-    if (value > -1) {
-      mRelativePercent = value;
+    // Upstream's parameter is a float: the binary32 value is both the one
+    // compared and the one stored.
+    final percent = f32(value);
+    if (percent > -1) {
+      mRelativePercent = percent;
       mRelativeBegin = -1;
       mRelativeEnd = -1;
     }
   }
 
-  /// Same as [setGuidePercent], with [value] as a percentage (0 to 100).
-  void setGuidePercentInt(int value) => setGuidePercent(value / 100.0);
+  /// Same as [setGuidePercent], with [value] as a percentage (0 to 100):
+  /// upstream's `value / 100f`, a float quotient.
+  void setGuidePercentInt(int value) => setGuidePercent(fdiv(fi(value), 100));
 
   /// Position the guideline [value] from the parent's left edge for a
   /// vertical guideline, or from its top edge for a horizontal one. Negative
@@ -199,6 +209,35 @@ class Guideline extends ConstraintWidget {
   /// Whether the guideline is positioned by percent ([setGuidePercent]).
   bool isPercent() =>
       mRelativePercent != -1 && mRelativeBegin == -1 && mRelativeEnd == -1;
+
+  /// Resolve the guideline at [position]: a final value on its anchor, and
+  /// [mResolved] (upstream GL 213-219). The next [addToSolver] holds the
+  /// guideline there and clears [mResolved]. Upstream's Direct pass calls
+  /// it.
+  void setFinalValue(int position) {
+    mAnchor.setFinalValue(position);
+    mResolved = true;
+  }
+
+  /// Whether [setFinalValue] resolved the guideline and no solve has
+  /// consumed it yet: [mResolved] (upstream GL 223-225), whatever the axis.
+  @override
+  bool isResolvedHorizontally() => mResolved;
+
+  /// Same as [isResolvedHorizontally] (upstream GL 228-230).
+  @override
+  bool isResolvedVertically() => mResolved;
+
+  /// [ConstraintWidget.resetMeasureState], then the size set to 0 x 0, as
+  /// Android's `reset()` sets it: a guideline's size is never configuration
+  /// (Android's view layer sets none, and [updateFromSolver] writes it from
+  /// the parent's). [mResolved] is kept, as `reset()` keeps it.
+  @override
+  void resetMeasureState() {
+    super.resetMeasureState();
+    mWidth = 0;
+    mHeight = 0;
+  }
 
   @override
   void addToSolver(LinearSystem system, bool optimize) {

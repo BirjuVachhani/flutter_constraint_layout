@@ -463,6 +463,8 @@ void main() {
 
       expect(root.getWidth(), a.getWidth() * 2);
       expect(root.getHeight(), a.getHeight() + 8);
+      // Upstream compares floats with a delta of 0 (WrapTest.java 530 and
+      // 577): closeTo(x, 0) is that exact comparison against a double.
       expect(guideline.getLeft(), closeTo(root.getWidth() / 2, 0));
       expect(a.getWidth(), 100);
       expect(a.getHeight(), 20);
@@ -505,6 +507,8 @@ void main() {
 
       expect(root.getWidth(), a.getWidth() * 2);
       expect(root.getHeight(), a.getHeight());
+      // Upstream compares floats with a delta of 0 (WrapTest.java 530 and
+      // 577): closeTo(x, 0) is that exact comparison against a double.
       expect(guideline.getLeft(), closeTo(root.getWidth() / 2, 0));
       expect(a.getWidth(), 100);
       expect(a.getHeight(), 20);

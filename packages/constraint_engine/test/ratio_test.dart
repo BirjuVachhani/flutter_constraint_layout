@@ -6,6 +6,7 @@
 // (upstream pinned in UPSTREAM.md).
 
 import 'package:constraint_engine/constraint_engine.dart';
+import 'package:constraint_engine/src/jfloat.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -810,8 +811,12 @@ void main() {
       root.setHorizontalDimensionBehaviour(DimensionBehaviour.wrapContent);
       root.layout();
 
-      expect(verticalGuideline.getLeft(), closeTo(0.34 * root.getWidth(), 1));
-      expect(horizontalGuideline.getTop(), closeTo(0.66 * root.getHeight(), 1));
+      // 0.34f * root.getWidth() and 0.66f * root.getHeight(), in float as
+      // upstream computes them.
+      expect(verticalGuideline.getLeft(),
+          closeTo(fmul(f32(0.34), fi(root.getWidth())), 1));
+      expect(horizontalGuideline.getTop(),
+          closeTo(fmul(f32(0.66), fi(root.getHeight())), 1));
       expect(a.getLeft() >= 0, isTrue);
       expect(b.getLeft() >= 0, isTrue);
       expect(a.getLeft(), verticalGuideline.getLeft() - a.getWidth() ~/ 2);
@@ -1039,7 +1044,8 @@ void main() {
       a.setHorizontalMatchStyle(ConstraintWidget.MATCH_CONSTRAINT_PERCENT, 0, 0, 0.7);
       root.setOptimizationLevel(Optimizer.OPTIMIZATION_NONE);
       root.layout();
-      final w = (0.7 * root.getWidth()).toInt();
+      // (int) (0.7 * root.getWidth()): a double literal upstream, cast.
+      final w = jint(0.7 * root.getWidth());
       expect(a.getWidth(), w);
       expect(a.getHeight(), w);
       expect(a.getLeft(), (root.getWidth() - w) ~/ 2);
@@ -1498,6 +1504,74 @@ void main() {
       expect(b.getWidth(), b.getHeight());
       expect(root.getWidth(), c.getWidth());
       expect(root.getHeight(), a.getHeight() + b.getHeight() + c.getHeight());
+    });
+  });
+
+  // Not upstream tests: upstream reads a ratio as Java floats
+  // (Float.parseFloat, then a float quotient) and sizes the derived axis of
+  // a ratio widget with a float product, truncated:
+  // (int) (mResolvedDimensionRatio * mHeight), after the float inversion
+  // 1 / ratio for a height derived without a side. Expected values come from
+  // upstream at the pin, run on the JDK with the same layouts at
+  // OPTIMIZATION_NONE (the solver alone, as layout() at that level here);
+  // the old double arithmetic gives the values in the comments.
+  group('Java float ratios', () {
+    ConstraintWidget ratioWidget(String ratio, int other, {required bool width}) {
+      final root = ConstraintWidgetContainer.rect(0, 0, 4000, 4000)
+        ..setOptimizationLevel(Optimizer.OPTIMIZATION_NONE);
+      final a = ConstraintWidget.size(0, 0);
+      root.add(a);
+      a.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
+      a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
+      if (width) {
+        a.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
+        a.setHeight(other);
+      } else {
+        a.setVerticalDimensionBehaviour(DimensionBehaviour.matchConstraint);
+        a.setWidth(other);
+      }
+      a.setDimensionRatioString(ratio);
+      root.layout();
+      return a;
+    }
+
+    test('a ratio string is parsed into floats', () {
+      final a = ConstraintWidget.size(100, 20);
+      ({int bits, int side}) parsed(String ratio) {
+        a.setDimensionRatio(0, ConstraintWidget.UNKNOWN);
+        a.setDimensionRatioString(ratio);
+        return (
+          bits: f32Bits(a.getDimensionRatio()),
+          side: a.getDimensionRatioSide(),
+        );
+      }
+
+      // 16f / 9f, one float division.
+      expect(parsed('16:9'), (bits: 0x3fe38e39, side: ConstraintWidget.UNKNOWN));
+      expect(parsed('W,16:9'), (bits: 0x3fe38e39, side: ConstraintWidget.HORIZONTAL));
+      expect(parsed('H,16:9'), (bits: 0x3f100000, side: ConstraintWidget.VERTICAL));
+      // Float.parseFloat's syntax (a suffix, hexadecimal); a double parse
+      // rejected both, which left no ratio.
+      expect(parsed('2f'), (bits: 0x40000000, side: ConstraintWidget.UNKNOWN));
+      expect(parsed('0x1p-2'), (bits: 0x3e800000, side: ConstraintWidget.UNKNOWN));
+      // 1e40 overflows a float to infinity, so 1 / infinity is 0, not a
+      // positive ratio: none is set (a double parse set 1e-40).
+      expect(parsed('H,1e40:1'), (bits: 0, side: ConstraintWidget.UNKNOWN));
+    });
+
+    test('a ratio-derived width is a float product, truncated', () {
+      expect(ratioWidget('0.29', 100, width: true).getWidth(), 29); // 28
+      expect(ratioWidget('0.57', 100, width: true).getWidth(), 57); // 56
+      expect(ratioWidget('29.4:24.5', 100, width: true).getWidth(), 119); // 120
+    });
+
+    test('a ratio-derived height is a float product, truncated', () {
+      // H, keeps the ratio as height / width: 23f / 2.5f times 100.
+      expect(ratioWidget('H,2.5:23', 100, width: false).getHeight(), 920); // 919
+      // Without a side the ratio is inverted first: 1f / 1.7777778f is
+      // 0.5625 exactly in float.
+      expect(ratioWidget('1.7777778', 640, width: false).getHeight(), 360); // 359
+      expect(ratioWidget('1.7777778', 128, width: false).getHeight(), 72); // 71
     });
   });
 }

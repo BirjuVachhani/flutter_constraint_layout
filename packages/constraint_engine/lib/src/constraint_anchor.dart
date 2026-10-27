@@ -94,6 +94,14 @@ class ConstraintAnchor {
   /// Whether an anchor connected to this one belongs to a widget that is
   /// also connected on the opposite side of the same axis (so it is centered
   /// between two targets).
+  ///
+  /// As upstream, the dependents are read in order and every one must have
+  /// an opposite anchor: a dependent without one (a baseline, or a center
+  /// anchor) that is reached before a centered dependent fails the null
+  /// check, Java's `NullPointerException` at the same call
+  /// (ConstraintAnchor.java 68). Only `Barrier.addToSolver` asks, inside the
+  /// solver loop of `ConstraintWidgetContainer.layout`, which catches and
+  /// prints it as Java's does.
   bool hasCenteredDependents() {
     final dependents = mDependents;
     if (dependents == null) {
@@ -101,7 +109,7 @@ class ConstraintAnchor {
     }
     for (final anchor in dependents) {
       final opposite = anchor.getOpposite();
-      if (opposite != null && opposite.isConnected()) {
+      if (opposite!.isConnected()) {
         return true;
       }
     }

@@ -3,9 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 //
 // Ported from androidx.constraintlayout.core.widgets.Optimizer (upstream
-// pinned in UPSTREAM.md). The Direct/Grouping optimizer passes are not ported
-// (the dependency graph plays that role in this engine); the optimization
-// level constants, solver flags, and checkMatchParent are.
+// pinned in UPSTREAM.md): the optimization level constants, the solver flags,
+// and checkMatchParent.
 
 import 'constraint_widget.dart';
 import 'constraint_widget_container.dart';
@@ -14,51 +13,63 @@ import 'linear_system.dart';
 /// The optimization levels of [ConstraintWidgetContainer.setOptimizationLevel]
 /// and the solver's match-parent shortcut ([checkMatchParent]).
 ///
-/// Upstream's Direct and Grouping resolution passes are not ported (the
-/// dependency graph plays their role), so several flags are kept only for
-/// parity and not read by the engine.
+/// The flags apply where upstream reads them. Upstream reads several of them
+/// nowhere, and its Grouping and dependency-ordering passes are not ported,
+/// so those flags are kept only for parity.
 class Optimizer {
   /// No optimization.
   static const int OPTIMIZATION_NONE = 0;
 
-  /// Direct resolution. Upstream's direct pass is not ported; here the flag
-  /// only lets [BasicMeasure] skip measuring the match-constraint children
-  /// that the solver sizes.
+  /// Direct resolution. Read by [ConstraintWidgetContainer.layout], which in
+  /// the first measure pass runs the Direct pass and then measures every
+  /// child Direct left with a measure request, by
+  /// [BasicMeasure.measureChildren], which leaves the children Direct may
+  /// size unmeasured, and by Android's view measurer, which measures a ratio
+  /// itself only without it.
   static const int OPTIMIZATION_DIRECT = 1;
 
-  /// Barrier optimization. Not read by this port.
+  /// Barrier optimization. Upstream reads it nowhere.
   static const int OPTIMIZATION_BARRIER = 1 << 1;
 
-  /// Chain optimization. Not read by this port.
+  /// Chain optimization. Upstream reads it nowhere.
   static const int OPTIMIZATION_CHAIN = 1 << 2;
 
-  /// Dimension optimization. Not read by this port.
+  /// Dimension optimization. Upstream reads it nowhere.
   static const int OPTIMIZATION_DIMENSIONS = 1 << 3;
 
-  /// Ratio optimization. Not read by this port.
+  /// Ratio optimization. Upstream reads it nowhere.
   static const int OPTIMIZATION_RATIO = 1 << 4;
 
-  /// Group optimization. Not read by this port.
+  /// Group optimization. Upstream reads it nowhere.
   static const int OPTIMIZATION_GROUPS = 1 << 5;
 
-  /// Dependency-graph resolution on the [ConstraintWidgetContainer.measure]
-  /// path; with it, the solver also takes positions the graph resolved as
-  /// constants ([ConstraintWidget.addToSolver]).
+  /// Dependency-graph resolution, in [BasicMeasure.solverMeasure] only:
+  /// the graph runs first when no child is in a chain or is a virtual
+  /// layout and both measure modes are [BasicMeasure.EXACTLY], and the
+  /// solver then runs only when the graph left an axis unresolved. With it,
+  /// [ConstraintWidgetContainer.layout] also passes `optimize` to
+  /// [ConstraintWidget.addToSolver] and [ConstraintWidget.updateFromSolver].
   static const int OPTIMIZATION_GRAPH = 1 << 6;
 
-  /// Dependency-graph resolution on the [ConstraintWidgetContainer.measure]
-  /// path, including wrap-content sizes, which the graph then computes
-  /// itself.
+  /// Dependency-graph resolution as [OPTIMIZATION_GRAPH], in
+  /// [BasicMeasure.solverMeasure] only, but whatever the measure modes: the
+  /// graph resolves the [BasicMeasure.EXACTLY] axes (on one where the
+  /// container's own behaviour is wrap content, it computes the container's
+  /// size itself when its runs allow it), and the solver runs as well when a
+  /// mode is not EXACTLY.
   static const int OPTIMIZATION_GRAPH_WRAP = 1 << 7;
 
-  /// Measure caching, read by upstream's Android measurer. Not read by the
-  /// engine itself.
+  /// Measure caching, read by Android's view measurer: a child measured
+  /// before under similar specs keeps its size without a new measure. The
+  /// core passes do not read it.
   static const int OPTIMIZATION_CACHE_MEASURES = 1 << 8;
 
-  /// Dependency ordering. Not read by this port.
+  /// Dependency ordering: upstream adds the widgets to the solver in
+  /// dependency order. Not ported; the engine ignores it.
   static const int OPTIMIZATION_DEPENDENCY_ORDERING = 1 << 9;
 
-  /// Grouping. Not read by this port.
+  /// Grouping: upstream's Grouping pass for wrap-content containers. Not
+  /// ported; the engine ignores it.
   static const int OPTIMIZATION_GROUPING = 1 << 10;
 
   /// The default level: [OPTIMIZATION_DIRECT] and

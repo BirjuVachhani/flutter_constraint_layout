@@ -142,6 +142,11 @@ class CircularLink {
   final Symbol target;
 
   /// Angle in degrees, clockwise, with 0 pointing straight up.
+  ///
+  /// Used as given, as Android uses an angle set in code
+  /// (`LayoutParams.circleAngle`, `ConstraintSet.constrainCircle`): -30 is
+  /// the same direction as 330. (Only Android's XML parser reduces the
+  /// attribute, turning a negative angle `a` into `(360 - a) % 360`.)
   final double angle;
 
   /// Distance between the two centers in logical pixels.

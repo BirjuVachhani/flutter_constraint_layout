@@ -45,8 +45,9 @@ class ConstraintParentData extends ContainerBoxParentData<RenderBox> {
   CircularLink? circle;
 
   /// Horizontal position between opposing links as given: 0.0 = left,
-  /// 1.0 = right. A right-to-left layout applies `1 - horizontalBias` to a
-  /// child with a [start] or [end] link.
+  /// 1.0 = right. A right-to-left layout applies `1 - horizontalBias`,
+  /// computed in single precision as Android computes it, to a child with a
+  /// [start] or [end] link.
   double horizontalBias = 0.5;
 
   /// Vertical position between opposing links: 0.0 = top, 1.0 = bottom.
@@ -106,7 +107,7 @@ class ConstraintParentData extends ContainerBoxParentData<RenderBox> {
 
   /// Guideline: fraction of the parent size from the left/top edge, or null.
   /// A vertical guideline in a right-to-left layout measures it from the
-  /// right.
+  /// right (`1 - percent`, in single precision as on Android).
   double? guidelinePercent;
 
   /// Barrier: which edge of the referenced widgets to track.
@@ -116,8 +117,8 @@ class ConstraintParentData extends ContainerBoxParentData<RenderBox> {
   List<Symbol> barrierReferenced = const <Symbol>[];
 
   /// Barrier: offset in logical pixels added to the barrier's position. A
-  /// positive value moves it right or down, except that a `start` or `end`
-  /// barrier in a right-to-left layout applies it with the opposite sign.
+  /// positive value moves it right or down, whatever its edge and the text
+  /// direction, as on Android.
   double barrierMargin = 0;
 
   /// Barrier: whether gone widgets still contribute their (collapsed)
@@ -196,7 +197,8 @@ class ConstraintParentData extends ContainerBoxParentData<RenderBox> {
   /// Group: ids of the widgets whose visibility this group sets.
   List<Symbol> groupReferenced = const <Symbol>[];
 
-  /// Group: the visibility applied to every widget in [groupReferenced].
+  /// Group: the visibility applied to every widget in [groupReferenced], and
+  /// to the group's own engine widget.
   ConstraintVisibility groupVisibility = ConstraintVisibility.visible;
 
   /// Set by the parent-data widget when a layout-affecting field changed;

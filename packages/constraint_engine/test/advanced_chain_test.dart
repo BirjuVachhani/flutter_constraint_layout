@@ -143,6 +143,8 @@ void main() {
       root.setOptimizationLevel(Optimizer.OPTIMIZATION_NONE);
       root.layout();
 
+      // closeTo mirrors upstream's assertEquals delta (AdvancedChainTest.java
+      // 191-194).
       expect(a.getWidth(), closeTo(800, 1));
       expect(b.getWidth(), closeTo(0, 1));
       expect(a.getLeft(), closeTo(0, 1));
@@ -322,6 +324,8 @@ void main() {
       b.connect(ConstraintAnchorType.right, root, ConstraintAnchorType.right, 0);
       a.setHorizontalChainStyle(ConstraintWidget.CHAIN_PACKED);
       root.layout();
+      // closeTo mirrors upstream's assertEquals delta (AdvancedChainTest.java
+      // 399-400).
       expect(a.getLeft() - root.getLeft(),
           closeTo(root.getRight() - b.getRight(), 1));
       expect(b.getLeft() - a.getRight(), closeTo(0, 1));
@@ -346,6 +350,8 @@ void main() {
       b.connect(ConstraintAnchorType.bottom, root, ConstraintAnchorType.bottom, 0);
       a.setVerticalChainStyle(ConstraintWidget.CHAIN_PACKED);
       root.layout();
+      // closeTo mirrors upstream's assertEquals delta (AdvancedChainTest.java
+      // 428-429).
       expect(a.getTop() - root.getTop(),
           closeTo(root.getBottom() - b.getBottom(), 1));
       expect(b.getTop() - a.getBottom(), closeTo(0, 1));

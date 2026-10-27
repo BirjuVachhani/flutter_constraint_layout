@@ -28,6 +28,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'layout_fixtures.dart';
 
+/// Whether the suite runs with `--dart-define=cl.verifyReplay=true`, under
+/// which a replayed layout also runs the engine to check itself.
+const verifyReplay = bool.fromEnvironment('cl.verifyReplay');
+
 RenderConstraintLayout layoutOf(WidgetTester tester) =>
     tester.renderObject<RenderConstraintLayout>(
       find.byType(ConstraintLayout).first,
@@ -502,9 +506,12 @@ void main() {
       expect(ro.getMaxIntrinsicWidth(100), 0);
       expect(ro.getMinIntrinsicHeight(100), 0);
       expect(ro.getMaxIntrinsicHeight(double.infinity), 0);
+      // An empty layout fills its bounded axes, as Android's fills an
+      // EXACTLY spec. Java J257: root 50 x 0 (VOpDriver view, p4a:empty50,
+      // E50 x U0 without a child).
       expect(
         ro.getDryLayout(const BoxConstraints(minWidth: 10, maxWidth: 50)),
-        const Size(10, 0),
+        const Size(50, 0),
       );
       expect(
         ro.getDryBaseline(const BoxConstraints(), TextBaseline.alphabetic),
@@ -959,6 +966,11 @@ void main() {
     ];
 
     for (final fixture in [...featureFixtures, ...goldenFixtures]) {
+      // One persistent layout across the variants, grids included: a grid
+      // creates its cells before the first measure of a model (see 'a grid
+      // in a wrapping axis is right on its first layout' below), so a dry
+      // layout, always the first measure of a new model, agrees with a
+      // layout laid out again.
       testWidgets(fixture.name, (tester) async {
         await withIntrinsicChecks(() async {
           for (final constraints in variantsOf(fixture.size)) {
@@ -982,14 +994,69 @@ void main() {
     }
   });
 
+  testWidgets(
+    'a grid in a wrapping axis is right on its first layout',
+    (tester) async {
+      Widget cell(Symbol id) => Constrained(
+        id: id,
+        width: .fixed(10),
+        height: .fixed(10),
+        child: SizedBox(key: ValueKey(id)),
+      );
+      await tester.pumpWidget(
+        under(
+          const BoxConstraints.tightFor(width: 800),
+          ConstraintLayout(
+            children: [
+              cell(#a),
+              cell(#b),
+              cell(#c),
+              cell(#d),
+              ConstraintGrid(
+                id: #grid,
+                referenced: const [#a, #b, #c, #d],
+                rows: 2,
+                columns: 2,
+                start: .startOf(parent),
+                end: .endOf(parent),
+                top: .topOf(parent),
+                bottom: .bottomOf(parent),
+              ),
+            ],
+          ),
+        ),
+      );
+      // Two rows of two cells, on the first layout as on every later one (and
+      // as the adapter's earlier graph-first design gave). The engine's grid
+      // creates its cells' box widgets in its own measure, and Android's
+      // measure skips a widget that is a match constraint (spread) on both
+      // axes until the solver has sized it, so without the cells created
+      // before the first measure (as Android's view Grid creates its box views
+      // when it is attached) the first solve would run without them: every
+      // cell at the origin and the layout one cell tall. Grid has no Android
+      // oracle: it is outside the parity contract.
+      final ro = layoutOf(tester);
+      expect(ro.size, const Size(800, 20));
+      expect(rectOf(tester, #d), const Rect.fromLTWH(595, 10, 10, 10));
+      expect(
+        ro.getDryLayout(const BoxConstraints.tightFor(width: 800)),
+        ro.size,
+      );
+      final first = rectOf(tester, #d);
+      ro.markNeedsLayout();
+      await tester.pump();
+      expect(rectOf(tester, #d), first);
+      expect(ro.size, const Size(800, 20));
+    },
+  );
+
   group('dry queries leave the layout as it was', () {
-    ({int layouts, int builds, int engine, int fast, int applies}) countersOf(
-      RenderConstraintLayout ro,
-    ) => (
+    ({int layouts, int builds, int engine, int replays, int applies})
+    countersOf(RenderConstraintLayout ro) => (
       layouts: ro.debugLayoutPasses,
       builds: ro.debugModelBuilds,
       engine: ro.debugEnginePasses,
-      fast: ro.debugFastPasses,
+      replays: ro.debugReplayPasses,
       applies: ro.debugConfigApplies,
     );
 
@@ -1020,9 +1087,7 @@ void main() {
         child.localToGlobal(Offset.zero, ancestor: ro) & child.size,
     ];
 
-    testWidgets('a layout that takes the fast path still takes it', (
-      tester,
-    ) async {
+    testWidgets('a layout that replays still replays', (tester) async {
       await tester.pumpWidget(
         topLeft(
           SizedBox(
@@ -1033,6 +1098,10 @@ void main() {
         ),
       );
       final ro = layoutOf(tester);
+      // The second identical layout confirms the first one's run, so the
+      // third may replay it.
+      ro.markNeedsLayout();
+      await tester.pump();
       final before = countersOf(ro);
       final container = ro.debugEngineContainer;
       final rects = childRects(tester, ro);
@@ -1043,13 +1112,15 @@ void main() {
       expect(ro.debugNeedsLayout, isFalse);
       expect(childRects(tester, ro), rects);
 
-      // The persistent model is still the one the last layout resolved, so
-      // the next layout under the same constraints skips the engine.
+      // The persistent model and its last run are still the ones the last
+      // layout left, so the next layout under the same constraints replays
+      // that run (with cl.verifyReplay, it also runs the engine to check).
       ro.markNeedsLayout();
       await tester.pump();
       final after = countersOf(ro);
-      expect(after.fast, before.fast + 1);
-      expect(after.engine, before.engine);
+      expect(after.replays, before.replays + 1);
+      expect(after.engine, before.engine + (verifyReplay ? 1 : 0));
+      expect(ro.debugReplayMismatches, 0);
       expect(after.builds, before.builds);
       expect(childRects(tester, ro), rects);
     });
@@ -1157,6 +1228,185 @@ void main() {
       await tester.pump();
       expect(ro.debugConfigApplies, before.applies + 1);
       expect(rectOf(tester, #a), const Rect.fromLTWH(10, 0, 300, 40));
+    });
+  });
+
+  // A dry query that repeats the last one that ran the engine (the same
+  // configuration, constraints and kind) asks every child again for each
+  // measure that query asked of it, and when every answer is the same, gives
+  // that query's result without running the engine. Under cl.verifyReplay
+  // every replayed query also runs in full and compares.
+  group('dry replay', () {
+    /// A title (wrapping text, start to end), a box under it, and a value
+    /// on the title's baseline: the layout's height comes from the engine.
+    List<Widget> titled({String title = 'A title that wraps'}) => [
+      Constrained(
+        id: #title,
+        start: .startOf(parent, margin: 8),
+        end: .endOf(parent, margin: 60),
+        top: .topOf(parent, margin: 8),
+        width: const Dimension.constrainedWrap(),
+        horizontalBias: 0,
+        child: Text(title, key: const ValueKey(#title)),
+      ),
+      Constrained(
+        id: #value,
+        end: .endOf(parent, margin: 8),
+        baseline: .baselineOf(#title),
+        child: const Text('42', key: ValueKey(#value)),
+      ),
+      Constrained(
+        id: #box,
+        start: .startOf(parent, margin: 8),
+        top: .bottomOf(#title, margin: 4),
+        bottom: .bottomOf(parent, margin: 8),
+        width: .fixed(40),
+        height: .fixed(30),
+        child: const SizedBox(key: ValueKey(#box)),
+      ),
+    ];
+
+    Widget app(List<Widget> children) => topLeft(
+      SizedBox(width: 240, child: ConstraintLayout(children: children)),
+    );
+
+    testWidgets('a repeated query replays the last one', (tester) async {
+      await tester.pumpWidget(app(titled()));
+      final ro = layoutOf(tester);
+      final height = ro.getMaxIntrinsicHeight(240);
+      expect(ro.debugDryEnginePasses, 1);
+      expect(ro.debugDryReplayPasses, 0);
+
+      // The layout's own markNeedsLayout clears Flutter's cache of its
+      // intrinsic sizes, without changing anything the query reads.
+      for (var i = 1; i <= 3; i++) {
+        ro.markNeedsLayout();
+        expect(ro.getMaxIntrinsicHeight(240), height);
+        expect(ro.debugDryReplayPasses, i);
+        expect(ro.debugDryEnginePasses, 1 + (verifyReplay ? i : 0));
+      }
+      // The minimum asks two kinds of query: one that measures each
+      // content-sized child at its minimum intrinsic size, which runs in
+      // full the first time, and the maximum's, which replays. Each kind is
+      // kept, so the next minimum replays both.
+      ro.markNeedsLayout();
+      final minimum = ro.getMinIntrinsicHeight(240);
+      expect(ro.debugDryReplayPasses, 4);
+      ro.markNeedsLayout();
+      expect(ro.getMinIntrinsicHeight(240), minimum);
+      expect(ro.debugDryReplayPasses, 6);
+      expect(ro.debugDryReplayMismatches, 0);
+      await tester.pump();
+
+      // A fresh tree answers the same.
+      await tester.pumpWidget(app(titled()));
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(app(titled()));
+      expect(layoutOf(tester).getMaxIntrinsicHeight(240), height);
+    });
+
+    testWidgets('a child whose answer changes runs the query in full', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(titled()));
+      final ro = layoutOf(tester);
+      final height = ro.getMaxIntrinsicHeight(240);
+      final engine = ro.debugDryEnginePasses;
+
+      // A longer title wraps to more lines: its dry layout differs, so the
+      // query runs the engine again, and gives the fresh tree's height.
+      const longer = 'A much longer title that wraps over several lines';
+      await tester.pumpWidget(app(titled(title: longer)));
+      final taller = ro.getMaxIntrinsicHeight(240);
+      expect(taller, greaterThan(height));
+      expect(ro.debugDryReplayPasses, 0);
+      expect(ro.debugDryEnginePasses, engine + 1);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(app(titled(title: longer)));
+      expect(layoutOf(tester).getMaxIntrinsicHeight(240), taller);
+    });
+
+    testWidgets('a pending configuration change is never replayed', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(titled()));
+      final ro = layoutOf(tester);
+      final height = ro.getMaxIntrinsicHeight(240);
+      final engine = ro.debugDryEnginePasses;
+
+      // A change the next layout will apply in place, as Constrained makes
+      // it: the queries before that layout read it, each in full.
+      final box = ro.lastChild!.parentData! as ConstraintParentData;
+      box
+        ..height = const Dimension.fixed(50)
+        ..configDirty = true;
+      ro.markNeedsLayout();
+      expect(ro.getMaxIntrinsicHeight(240), height + 20);
+      ro.markNeedsLayout();
+      expect(ro.getMaxIntrinsicHeight(240), height + 20);
+      expect(ro.debugDryReplayPasses, 0);
+      expect(ro.debugDryEnginePasses, engine + 2);
+
+      // Once the layout applied it, a query runs in full and is kept, and
+      // the one after it replays.
+      await tester.pump();
+      ro.markNeedsLayout();
+      expect(ro.getMaxIntrinsicHeight(240), height + 20);
+      expect(ro.debugDryEnginePasses, engine + 3);
+      ro.markNeedsLayout();
+      expect(ro.getMaxIntrinsicHeight(240), height + 20);
+      expect(ro.debugDryReplayPasses, 1);
+      expect(ro.debugDryReplayMismatches, 0);
+      await tester.pump();
+    });
+
+    testWidgets('IntrinsicHeight replays the query while the answers hold', (
+      tester,
+    ) async {
+      final typed = ValueNotifier<String>('a');
+      addTearDown(typed.dispose);
+      await tester.pumpWidget(
+        topLeft(
+          SizedBox(
+            width: 240,
+            child: IntrinsicHeight(
+              child: ConstraintLayout(
+                children: [
+                  ...titled(),
+                  Constrained(
+                    id: #field,
+                    start: .startOf(parent, margin: 60),
+                    end: .endOf(parent, margin: 8),
+                    top: .bottomOf(#value, margin: 4),
+                    width: .matchConstraint,
+                    child: ValueListenableBuilder<String>(
+                      valueListenable: typed,
+                      builder: (context, value, _) =>
+                          Text(value, key: const ValueKey(#field), maxLines: 1),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      final ro = layoutOf(tester);
+      final size = ro.size;
+      final engine = ro.debugDryEnginePasses;
+      // A keystroke relays the field out at the same size: IntrinsicHeight
+      // asks the layout again, which replays its last query.
+      for (final text in ['ab', 'abc', 'abcd']) {
+        typed.value = text;
+        await tester.pump();
+        expect(ro.size, size);
+      }
+      expect(ro.debugDryReplayPasses, greaterThanOrEqualTo(2));
+      expect(
+        ro.debugDryEnginePasses - engine,
+        lessThanOrEqualTo(1 + (verifyReplay ? 3 : 0)),
+      );
+      expect(ro.debugDryReplayMismatches, 0);
     });
   });
 

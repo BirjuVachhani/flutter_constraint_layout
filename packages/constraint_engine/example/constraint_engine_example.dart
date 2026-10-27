@@ -72,12 +72,11 @@ void main() {
   root.addAll([logo, title, banner, prev, play, next, badge]);
 
   // The title wraps its content, so the engine has to ask the host how big
-  // that content is. Without a measurer, layout() installs a default under
-  // which a wrap-content widget keeps its stored size, which only works when
-  // every size is known up front.
+  // that content is: measure() asks the measurer for the size of the
+  // children, then solves the layout (layout() alone measures nothing).
   root.setMeasurer(TextMeasurer({title: 'Pure Dart layout'}));
 
-  root.layout();
+  measureLayout(root);
   printLayout(root);
   // Prints:
   //   400 x 300 container
@@ -102,7 +101,7 @@ void main() {
   // container grows to 600 px wide. The banner stretches, the chain spreads
   // over the new width, and the badge keeps its bias.
   root.setWidth(600);
-  root.layout();
+  measureLayout(root);
   printLayout(root);
   // Prints "600 x 300 container" and the same rectangles as before, except:
   //     banner  x  16  y  80  w 568  h  40
@@ -153,10 +152,27 @@ class TextMeasurer implements Measurer {
     measure.measuredHasBaseline = false;
   }
 
-  // Called after a batch of measures on the measure(...) entry point; this
-  // measurer keeps no per-batch state, so there is nothing to do.
+  // Called after measure() has measured the children; this measurer keeps
+  // no per-batch state, so there is nothing to do.
   @override
   void didMeasures() {}
+}
+
+/// Measures and lays out [root] at its own size, as Android's ConstraintLayout
+/// does when its parent gives it an exact size: [BasicMeasure.EXACTLY] on
+/// both axes, at the container's optimization level.
+void measureLayout(ConstraintWidgetContainer root) {
+  root.measure(
+    root.getOptimizationLevel(),
+    BasicMeasure.EXACTLY,
+    root.getWidth(),
+    BasicMeasure.EXACTLY,
+    root.getHeight(),
+    0,
+    0,
+    0,
+    0,
+  );
 }
 
 /// Prints the solved rectangle of every widget in [root].

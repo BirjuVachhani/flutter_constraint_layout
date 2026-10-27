@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 //
 // Ported from androidx.constraintlayout.core.widgets.analyzer.BasicMeasure
-// (upstream pinned in UPSTREAM.md). VirtualLayout handling and Metrics are
-// omitted.
+// (upstream pinned in UPSTREAM.md). Metrics are omitted.
+
+import 'dart:math' as math;
 
 import '../barrier.dart';
 import '../constraint_widget.dart';
@@ -147,7 +148,14 @@ class BasicMeasure {
   static const int FIXED = -3;
 
   final List<ConstraintWidget> _variableDimensionsWidgets = [];
-  final Measure _measure = Measure();
+
+  /// The one [Measure] that [measure] fills for every request of
+  /// [measureChildren] and of the re-measure passes of [solverMeasure]
+  /// (upstream's BasicMeasure.mMeasure). Each request writes only the
+  /// request fields and [Measure.measuredNeedsSolverPass], so the other
+  /// outputs of the previous measure stay visible to the measurer, as in
+  /// upstream.
+  final Measure mMeasure = Measure();
 
   final ConstraintWidgetContainer _constraintWidgetContainer;
 
@@ -174,20 +182,39 @@ class BasicMeasure {
     layout.invalidateGraph();
   }
 
-  /// Public entry for the solver fallback: measure all measurable children
-  /// through the host measurer (upstream does this in solverMeasure before
-  /// solving).
-  void measureChildren(ConstraintWidgetContainer layout) {
-    if (layout.getMeasurer() == null) {
-      return;
+  /// The measurer of [layout], which the measure passes require: upstream
+  /// dereferences it without a check and throws a NullPointerException.
+  static Measurer _measurerOf(ConstraintWidgetContainer layout) {
+    final measurer = layout.getMeasurer();
+    if (measurer == null) {
+      throw StateError(
+        'ConstraintWidgetContainer.measure needs a Measurer to measure the '
+        'children: call setMeasurer first.',
+      );
     }
-    _measureChildren(layout);
+    return measurer;
   }
 
-  void _measureChildren(ConstraintWidgetContainer layout) {
+  /// Measure the children of [layout] before its first solve, as
+  /// [solverMeasure] does (upstream's BasicMeasure.measureChildren), with
+  /// [Measure.SELF_DIMENSIONS], then call [Measurer.didMeasures].
+  ///
+  /// Guidelines, barriers and the widgets of a [VirtualLayout] are not
+  /// measured, nor are children the solver sizes on its own: match
+  /// constraint on both axes (unless in the
+  /// [ConstraintWidget.MATCH_CONSTRAINT_WRAP] style). At
+  /// [Optimizer.OPTIMIZATION_DIRECT], children other than virtual layouts
+  /// that upstream's Direct pass may size are left for it too: a spread
+  /// match-constraint axis against a non-match-constraint one (outside a
+  /// horizontal chain, as upstream checks both axes), and any
+  /// match-constraint axis with a ratio. At
+  /// [Optimizer.OPTIMIZATION_GRAPH], a child whose size the dependency graph
+  /// resolved is not measured either. Throws a [StateError] when [layout]
+  /// has no [Measurer].
+  void measureChildren(ConstraintWidgetContainer layout) {
     final childCount = layout.mChildren.length;
     final optimize = layout.optimizeFor(Optimizer.OPTIMIZATION_GRAPH);
-    final measurer = layout.getMeasurer()!;
+    final measurer = _measurerOf(layout);
     for (var i = 0; i < childCount; i++) {
       final child = layout.mChildren[i];
       if (child is Guideline) {
@@ -223,7 +250,9 @@ class BasicMeasure {
           child.mMatchConstraintDefaultHeight !=
               ConstraintWidget.MATCH_CONSTRAINT_WRAP;
 
-      if (!skip && layout.optimizeFor(Optimizer.OPTIMIZATION_DIRECT)) {
+      if (!skip &&
+          layout.optimizeFor(Optimizer.OPTIMIZATION_DIRECT) &&
+          child is! VirtualLayout) {
         if (widthBehavior == DimensionBehaviour.matchConstraint &&
             child.mMatchConstraintDefaultWidth ==
                 ConstraintWidget.MATCH_CONSTRAINT_SPREAD &&
@@ -275,15 +304,25 @@ class BasicMeasure {
     layout.setMinWidth(minWidth);
     layout.setMinHeight(minHeight);
     _constraintWidgetContainer.setPass(pass);
-    // Children were already measured by solverMeasure; the layout() solver
-    // fallback must not measure them again.
-    _constraintWidgetContainer.mSkipFallbackRemeasure = true;
     _constraintWidgetContainer.layout();
-    _constraintWidgetContainer.mSkipFallbackRemeasure = false;
   }
 
-  /// Called by the host's onMeasure equivalent, through
-  /// [ConstraintWidgetContainer.measure].
+  /// Measure and lay out [layout] (upstream's BasicMeasure.solverMeasure,
+  /// BM 181-453), called through [ConstraintWidgetContainer.measure].
+  ///
+  /// At the [Optimizer.OPTIMIZATION_GRAPH] levels, the dependency graph runs
+  /// first when no child is in a chain or is a [VirtualLayout], and both
+  /// [widthMode] and [heightMode] are [EXACTLY] (or the level has
+  /// [Optimizer.OPTIMIZATION_GRAPH_WRAP]); when it resolves both axes,
+  /// nothing else runs. Otherwise the children are measured
+  /// ([measureChildren]) and the layout solved ([ConstraintWidgetContainer.layout],
+  /// pass 0). The virtual layouts with a match-constraint axis are then
+  /// measured again with [Measure.TRY_GIVEN_DIMENSIONS], and the other
+  /// match-constraint children twice, with [Measure.TRY_GIVEN_DIMENSIONS]
+  /// then [Measure.USE_GIVEN_DIMENSIONS], each round followed by another
+  /// solve (passes 1 and 2) when a size, a baseline or the measurer's
+  /// [Measure.measuredNeedsSolverPass] changed. Every solve starts from the
+  /// size [layout] had on entry.
   void solverMeasure(
     ConstraintWidgetContainer layout,
     int optimizationLevel,
@@ -329,6 +368,10 @@ class BasicMeasure {
           optimize = false;
           break;
         }
+        if (child is VirtualLayout) {
+          optimize = false;
+          break;
+        }
         if (child.isInHorizontalChain() || child.isInVerticalChain()) {
           optimize = false;
           break;
@@ -347,12 +390,8 @@ class BasicMeasure {
     if (optimize) {
       // For non-optimizer this doesn't seem to be a problem; for both cases,
       // having the width address max size early seems to work.
-      widthSize = widthSize < layout.getMaxWidth()
-          ? widthSize
-          : layout.getMaxWidth();
-      heightSize = heightSize < layout.getMaxHeight()
-          ? heightSize
-          : layout.getMaxHeight();
+      widthSize = math.min(layout.getMaxWidth(), widthSize);
+      heightSize = math.min(layout.getMaxHeight(), heightSize);
 
       if (widthMode == EXACTLY && layout.getWidth() != widthSize) {
         layout.setWidth(widthSize);
@@ -367,22 +406,21 @@ class BasicMeasure {
         computations = 2;
       } else {
         allSolved = layout.directMeasureSetup(optimizeWrap);
+        // Java's `allSolved &= x` evaluates x whatever allSolved is.
         if (widthMode == EXACTLY) {
-          allSolved =
-              allSolved &&
-              layout.directMeasureWithOrientation(
-                optimizeWrap,
-                ConstraintWidget.HORIZONTAL,
-              );
+          final resolved = layout.directMeasureWithOrientation(
+            optimizeWrap,
+            ConstraintWidget.HORIZONTAL,
+          );
+          allSolved = allSolved && resolved;
           computations++;
         }
         if (heightMode == EXACTLY) {
-          allSolved =
-              allSolved &&
-              layout.directMeasureWithOrientation(
-                optimizeWrap,
-                ConstraintWidget.VERTICAL,
-              );
+          final resolved = layout.directMeasureWithOrientation(
+            optimizeWrap,
+            ConstraintWidget.VERTICAL,
+          );
+          allSolved = allSolved && resolved;
           computations++;
         }
       }
@@ -393,8 +431,8 @@ class BasicMeasure {
 
     if (!allSolved || computations != 2) {
       final optimizations = layout.getOptimizationLevel();
-      if (childCount > 0 && measurer != null) {
-        _measureChildren(layout);
+      if (childCount > 0) {
+        measureChildren(layout);
       }
 
       updateHierarchy(layout);
@@ -413,7 +451,10 @@ class BasicMeasure {
         );
       }
 
-      if (sizeDependentWidgetsCount > 0 && measurer != null) {
+      if (sizeDependentWidgetsCount > 0) {
+        // measureChildren ran (there are children) and threw when the
+        // measurer is missing, so it is set here.
+        final sizeMeasurer = measurer ?? _measurerOf(layout);
         var needSolverPass = false;
         final containerWrapWidth =
             layout.getHorizontalDimensionBehaviour() ==
@@ -421,14 +462,14 @@ class BasicMeasure {
         final containerWrapHeight =
             layout.getVerticalDimensionBehaviour() ==
             DimensionBehaviour.wrapContent;
-        var minWidth =
-            layout.getWidth() > _constraintWidgetContainer.getMinWidth()
-            ? layout.getWidth()
-            : _constraintWidgetContainer.getMinWidth();
-        var minHeight =
-            layout.getHeight() > _constraintWidgetContainer.getMinHeight()
-            ? layout.getHeight()
-            : _constraintWidgetContainer.getMinHeight();
+        var minWidth = math.max(
+          layout.getWidth(),
+          _constraintWidgetContainer.getMinWidth(),
+        );
+        var minHeight = math.max(
+          layout.getHeight(),
+          _constraintWidgetContainer.getMinHeight(),
+        );
 
         // Let's first apply sizes for VirtualLayouts if any
         for (var i = 0; i < sizeDependentWidgetsCount; i++) {
@@ -439,7 +480,7 @@ class BasicMeasure {
           final preWidth = widget.getWidth();
           final preHeight = widget.getHeight();
           final hasMeasure = measure(
-            measurer,
+            sizeMeasurer,
             widget,
             Measure.TRY_GIVEN_DIMENSIONS,
           );
@@ -450,7 +491,7 @@ class BasicMeasure {
             widget.setWidth(measuredWidth);
             if (containerWrapWidth && widget.getRight() > minWidth) {
               final w = widget.getRight() + widget.mRight.getMargin();
-              minWidth = w > minWidth ? w : minWidth;
+              minWidth = math.max(minWidth, w);
             }
             needSolverPass = true;
           }
@@ -458,11 +499,12 @@ class BasicMeasure {
             widget.setHeight(measuredHeight);
             if (containerWrapHeight && widget.getBottom() > minHeight) {
               final h = widget.getBottom() + widget.mBottom.getMargin();
-              minHeight = h > minHeight ? h : minHeight;
+              minHeight = math.max(minHeight, h);
             }
             needSolverPass = true;
           }
-          needSolverPass = needSolverPass || widget.needSolverPass();
+          final needsPass = widget.needSolverPass();
+          needSolverPass = needSolverPass || needsPass;
         }
 
         const maxIterations = 2;
@@ -495,7 +537,7 @@ class BasicMeasure {
             if (j == maxIterations - 1) {
               measureStrategy = Measure.USE_GIVEN_DIMENSIONS;
             }
-            final hasMeasure = measure(measurer, widget, measureStrategy);
+            final hasMeasure = measure(sizeMeasurer, widget, measureStrategy);
             needSolverPass = needSolverPass || hasMeasure;
 
             final measuredWidth = widget.getWidth();
@@ -505,7 +547,7 @@ class BasicMeasure {
               widget.setWidth(measuredWidth);
               if (containerWrapWidth && widget.getRight() > minWidth) {
                 final w = widget.getRight() + widget.mRight.getMargin();
-                minWidth = w > minWidth ? w : minWidth;
+                minWidth = math.max(minWidth, w);
               }
               needSolverPass = true;
             }
@@ -513,7 +555,7 @@ class BasicMeasure {
               widget.setHeight(measuredHeight);
               if (containerWrapHeight && widget.getBottom() > minHeight) {
                 final h = widget.getBottom() + widget.mBottom.getMargin();
-                minHeight = h > minHeight ? h : minHeight;
+                minHeight = math.max(minHeight, h);
               }
               needSolverPass = true;
             }
@@ -540,24 +582,27 @@ class BasicMeasure {
     }
   }
 
-  /// Measure a widget through the host measurer using the given strategy.
-  /// Returns true if another solver pass is needed.
+  /// Measure [widget] through [measurer] with [measureStrategy] into
+  /// [mMeasure], and copy the result onto [widget] (upstream's
+  /// BasicMeasure.measure, BM 463-498). A match-constraint ratio axis that
+  /// the solver already resolved from the ratio is measured fixed. Returns
+  /// [Measure.measuredNeedsSolverPass].
   bool measure(
     Measurer measurer,
     ConstraintWidget widget,
     int measureStrategy,
   ) {
-    _measure.horizontalBehavior = widget.getHorizontalDimensionBehaviour();
-    _measure.verticalBehavior = widget.getVerticalDimensionBehaviour();
-    _measure.horizontalDimension = widget.getWidth();
-    _measure.verticalDimension = widget.getHeight();
-    _measure.measuredNeedsSolverPass = false;
-    _measure.measureStrategy = measureStrategy;
+    mMeasure.horizontalBehavior = widget.getHorizontalDimensionBehaviour();
+    mMeasure.verticalBehavior = widget.getVerticalDimensionBehaviour();
+    mMeasure.horizontalDimension = widget.getWidth();
+    mMeasure.verticalDimension = widget.getHeight();
+    mMeasure.measuredNeedsSolverPass = false;
+    mMeasure.measureStrategy = measureStrategy;
 
     final horizontalMatchConstraints =
-        _measure.horizontalBehavior == DimensionBehaviour.matchConstraint;
+        mMeasure.horizontalBehavior == DimensionBehaviour.matchConstraint;
     final verticalMatchConstraints =
-        _measure.verticalBehavior == DimensionBehaviour.matchConstraint;
+        mMeasure.verticalBehavior == DimensionBehaviour.matchConstraint;
     final horizontalUseRatio =
         horizontalMatchConstraints && widget.mDimensionRatio > 0;
     final verticalUseRatio =
@@ -566,22 +611,22 @@ class BasicMeasure {
     if (horizontalUseRatio) {
       if (widget.mResolvedMatchConstraintDefault[ConstraintWidget.HORIZONTAL] ==
           ConstraintWidget.MATCH_CONSTRAINT_RATIO_RESOLVED) {
-        _measure.horizontalBehavior = DimensionBehaviour.fixed;
+        mMeasure.horizontalBehavior = DimensionBehaviour.fixed;
       }
     }
     if (verticalUseRatio) {
       if (widget.mResolvedMatchConstraintDefault[ConstraintWidget.VERTICAL] ==
           ConstraintWidget.MATCH_CONSTRAINT_RATIO_RESOLVED) {
-        _measure.verticalBehavior = DimensionBehaviour.fixed;
+        mMeasure.verticalBehavior = DimensionBehaviour.fixed;
       }
     }
 
-    measurer.measure(widget, _measure);
-    widget.setWidth(_measure.measuredWidth);
-    widget.setHeight(_measure.measuredHeight);
-    widget.setHasBaseline(_measure.measuredHasBaseline);
-    widget.setBaselineDistance(_measure.measuredBaseline);
-    _measure.measureStrategy = Measure.SELF_DIMENSIONS;
-    return _measure.measuredNeedsSolverPass;
+    measurer.measure(widget, mMeasure);
+    widget.setWidth(mMeasure.measuredWidth);
+    widget.setHeight(mMeasure.measuredHeight);
+    widget.setHasBaseline(mMeasure.measuredHasBaseline);
+    widget.setBaselineDistance(mMeasure.measuredBaseline);
+    mMeasure.measureStrategy = Measure.SELF_DIMENSIONS;
+    return mMeasure.measuredNeedsSolverPass;
   }
 }

@@ -6,9 +6,19 @@
 // widget count. Deriving needs the widget count, which the host only knows
 // after it has added the referenced widgets, so this used to resolve to a zero
 // track count and take the layout down with a null-check error.
+//
+// A flow is measured as Android measures a view Flow: the view measurer runs
+// the flow's own measure, which measures each of its widgets through the view
+// measurer in turn. Those frames and requests are checked against VOpDriver
+// at the pin (view path, level 257; the `p4b:` probes are op lists of
+// test/parity/probes.in, with their output in test/parity/probes.J257.txt).
+// The grid has no Android oracle (it is outside the parity contract; see
+// "Limitations and differences from Android" in the README), so its tests
+// keep their own expectations.
 
 import 'package:flutter_constraint_layout/flutter_constraint_layout.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Widget host(List<Widget> children, {Size size = const Size(400, 300)}) =>
@@ -394,6 +404,88 @@ void main() {
   });
 
   group('flow', () {
+    for (final bounded in [true, false]) {
+      testWidgets('measures its widgets through the view measurer '
+          '(${bounded ? 'bounded' : 'unbounded'} height)', (tester) async {
+        // Java J257: a (33, 5) 150 x 20, b (217, 0) 150 x 30, c (125, 30)
+        // 150 x 20, F (0, 0) 400 x 50, in a root 400 x 100 (bounded) or
+        // 400 x 50 (VOpDriver view, p4b:flow and p4b:flow_u: a chain-wrapping
+        // horizontal flow, MC x WRAP between both parent edges, of three
+        // boxes 150 wide). The flow measures its widgets (F) inside its own
+        // request (M), then again, from the cache, inside the re-measure
+        // loop's (R).
+        RenderConstraintLayout.debugRecordTranscripts = true;
+        addTearDown(
+          () => RenderConstraintLayout.debugRecordTranscripts = false,
+        );
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: OverflowBox(
+                alignment: Alignment.topLeft,
+                minWidth: 400,
+                maxWidth: 400,
+                minHeight: bounded ? 100 : 0,
+                maxHeight: bounded ? 100 : double.infinity,
+                child: ConstraintLayout(
+                  children: [
+                    for (final (id, height) in const [
+                      (#a, 20.0),
+                      (#b, 30.0),
+                      (#c, 20.0),
+                    ])
+                      Constrained(
+                        id: id,
+                        child: SizedBox(
+                          key: ValueKey(id),
+                          width: 150,
+                          height: height,
+                        ),
+                      ),
+                    const ConstraintFlow(
+                      id: #F,
+                      referenced: [#a, #b, #c],
+                      left: .leftOf(parent),
+                      right: .rightOf(parent),
+                      top: .topOf(parent),
+                      width: .matchConstraint,
+                      wrap: FlowWrap.chain,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(rectOf(tester, #a), const Rect.fromLTWH(33, 5, 150, 20));
+        expect(rectOf(tester, #b), const Rect.fromLTWH(217, 0, 150, 30));
+        expect(rectOf(tester, #c), const Rect.fromLTWH(125, 30, 150, 20));
+        final ro = tester.renderObject<RenderConstraintLayout>(
+          find.byType(ConstraintLayout),
+        );
+        expect(ro.size, Size(400, bounded ? 100 : 50));
+        final flow = ro.getChildrenAsList().last;
+        expect(
+          (flow.parentData! as BoxParentData).offset & flow.size,
+          const Rect.fromLTWH(0, 0, 400, 50),
+        );
+        final h = bounded ? 'A100' : 'U0';
+        expect(
+          ro.debugViewHost!.measurer.transcript.toString(),
+          'F:a:0:WW:0,0:A400/$h:150,20,-1,01 '
+          'F:b:0:WW:0,0:A400/$h:150,30,-1,01 '
+          'F:c:0:WW:0,0:A400/$h:150,20,-1,01 '
+          'M:F:0:MW:0,0:A400/$h:300,50,-1,01 '
+          'F:a:0:WW:150,20:c:150,20,-1,01 '
+          'F:b:0:WW:150,30:c:150,30,-1,01 '
+          'F:c:0:WW:150,20:c:150,20,-1,01 '
+          'R:F:1:MW:400,50:E400/$h:400,50,-1,00',
+        );
+      });
+    }
+
     testWidgets('a flow with no referenced widgets is harmless', (
       tester,
     ) async {

@@ -9,7 +9,17 @@
 // every step.
 // Afterwards every recorded step is replayed as a freshly built tree and must
 // match exactly; the number of model rebuilds must also equal the number of
-// structural steps, proving mutations were applied in place.
+// structural steps, proving mutations were applied in place. The layouts run
+// at the default level, where Android's own views lay a layout changed in
+// place out as a fresh build; at the other levels a layout keeps what
+// Android's keeps from the layout before it (android_history_test.dart).
+//
+// After every step the persistent tree is also laid out again three times
+// with nothing changed: the second layout of a configuration confirms its
+// run and the next ones replay it (see "What a layout pass does" in the
+// README), and each must keep the step's geometry. Run with
+// --dart-define=cl.verifyReplay=true, every replay also runs the engine, and
+// no replay may differ from it.
 
 import 'dart:math';
 
@@ -27,8 +37,9 @@ class IntrinsicBox extends LeafRenderObjectWidget {
 
   @override
   void updateRenderObject(
-          BuildContext context, RenderIntrinsicBox renderObject) =>
-      renderObject.natural = natural;
+    BuildContext context,
+    RenderIntrinsicBox renderObject,
+  ) => renderObject.natural = natural;
 }
 
 class RenderIntrinsicBox extends RenderBox {
@@ -82,19 +93,19 @@ Dimension dimOf(
   double mcPercent,
   double? mcMin,
   double? mcMax,
-) =>
-    switch (kind) {
-      0 => Dimension.fixed(fixed),
-      1 => .wrapContent,
-      2 => switch (mcMode) {
-          1 => Dimension.constrainedWrap(min: mcMin, max: mcMax),
-          2 => Dimension.percent(mcPercent, min: mcMin, max: mcMax),
-          _ => (mcMin == null && mcMax == null)
-              ? Dimension.matchConstraint
-              : Dimension.spread(min: mcMin, max: mcMax),
-        },
-      _ => .matchParent,
-    };
+) => switch (kind) {
+  0 => Dimension.fixed(fixed),
+  1 => .wrapContent,
+  2 => switch (mcMode) {
+    1 => Dimension.constrainedWrap(min: mcMin, max: mcMax),
+    2 => Dimension.percent(mcPercent, min: mcMin, max: mcMax),
+    _ =>
+      (mcMin == null && mcMax == null)
+          ? Dimension.matchConstraint
+          : Dimension.spread(min: mcMin, max: mcMax),
+  },
+  _ => .matchParent,
+};
 
 HorizontalLink hLink(Anchor a, double margin) {
   final target = a.$1 < 0 ? parent : symOf(a.$1);
@@ -111,55 +122,56 @@ VerticalLink vLink(Anchor a, double margin) {
 }
 
 Widget widgetOf(ChildSpec s) => Constrained(
-      key: ValueKey(s.uid),
-      id: symOf(s.uid),
-      left: s.left == null ? null : hLink(s.left!, s.leftMargin),
-      right: s.right == null ? null : hLink(s.right!, s.rightMargin),
-      top: s.top == null ? null : vLink(s.top!, s.topMargin),
-      bottom: s.bottom == null ? null : vLink(s.bottom!, s.bottomMargin),
-      circle: s.circle == null
-          ? null
-          : CircularLink.around(
-              s.circle!.$1 < 0 ? parent : symOf(s.circle!.$1),
-              angle: s.circle!.$2,
-              radius: s.circle!.$3,
-            ),
-      horizontalBias: s.hBias,
-      verticalBias: s.vBias,
-      width: dimOf(s.dimW, s.fixedW, s.mcModeW, s.mcPercentW, s.mcMinW, s.mcMaxW),
-      height: dimOf(s.dimH, s.fixedH, s.mcModeH, s.mcPercentH, s.mcMinH, s.mcMaxH),
-      horizontalChainStyle: switch (s.chainStyleH) {
-        1 => ChainStyle.spreadInside,
-        2 => ChainStyle.packed,
-        _ => null,
-      },
-      horizontalWeight: s.weightH,
-      visibility: switch (s.visibility) {
-        1 => ConstraintVisibility.invisible,
-        2 => ConstraintVisibility.gone,
-        _ => ConstraintVisibility.visible,
-      },
-      child: IntrinsicBox(s.natural),
-    );
+  key: ValueKey(s.uid),
+  id: symOf(s.uid),
+  left: s.left == null ? null : hLink(s.left!, s.leftMargin),
+  right: s.right == null ? null : hLink(s.right!, s.rightMargin),
+  top: s.top == null ? null : vLink(s.top!, s.topMargin),
+  bottom: s.bottom == null ? null : vLink(s.bottom!, s.bottomMargin),
+  circle: s.circle == null
+      ? null
+      : CircularLink.around(
+          s.circle!.$1 < 0 ? parent : symOf(s.circle!.$1),
+          angle: s.circle!.$2,
+          radius: s.circle!.$3,
+        ),
+  horizontalBias: s.hBias,
+  verticalBias: s.vBias,
+  width: dimOf(s.dimW, s.fixedW, s.mcModeW, s.mcPercentW, s.mcMinW, s.mcMaxW),
+  height: dimOf(s.dimH, s.fixedH, s.mcModeH, s.mcPercentH, s.mcMinH, s.mcMaxH),
+  horizontalChainStyle: switch (s.chainStyleH) {
+    1 => ChainStyle.spreadInside,
+    2 => ChainStyle.packed,
+    _ => null,
+  },
+  horizontalWeight: s.weightH,
+  visibility: switch (s.visibility) {
+    1 => ConstraintVisibility.invisible,
+    2 => ConstraintVisibility.gone,
+    _ => ConstraintVisibility.visible,
+  },
+  child: IntrinsicBox(s.natural),
+);
 
 Widget host(List<ChildSpec> specs, Size size, {Key? key}) => Directionality(
-      textDirection: TextDirection.ltr,
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: SizedBox(
-          width: size.width,
-          height: size.height,
-          child: ConstraintLayout(
-            key: key,
-            children: [for (final s in specs) widgetOf(s)],
-          ),
-        ),
+  textDirection: TextDirection.ltr,
+  child: Align(
+    alignment: Alignment.topLeft,
+    child: SizedBox(
+      width: size.width,
+      height: size.height,
+      child: ConstraintLayout(
+        key: key,
+        children: [for (final s in specs) widgetOf(s)],
       ),
-    );
+    ),
+  ),
+);
 
 List<List<double>> geometryOf(WidgetTester tester) {
-  final ro =
-      tester.renderObject<RenderConstraintLayout>(find.byType(ConstraintLayout));
+  final ro = tester.renderObject<RenderConstraintLayout>(
+    find.byType(ConstraintLayout),
+  );
   return [
     [ro.size.width, ro.size.height],
     for (final child in ro.getChildrenAsList())
@@ -240,12 +252,14 @@ class FuzzState {
   Size rootSize = rootSizes.first;
   int structuralSteps = 0;
 
-  bool isReferenced(int uid) => specs.any((s) => [
-        s.left,
-        s.right,
-        s.top,
-        s.bottom,
-      ].any((a) => a != null && a.$1 == uid));
+  bool isReferenced(int uid) => specs.any(
+    (s) => [
+      s.left,
+      s.right,
+      s.top,
+      s.bottom,
+    ].any((a) => a != null && a.$1 == uid),
+  );
 
   /// A random spec eligible for general mutation (outside the chain).
   ChildSpec? randomMutable(Random rng) {
@@ -316,14 +330,15 @@ class FuzzState {
           return 'content uid=${s.uid} -> ${s.natural}';
         case 6: // add child
           final s = ChildSpec(nextUid++);
-          final anchorTarget =
-              rng.nextBool() ? -1 : specs[rng.nextInt(specs.length)].uid;
+          final anchorTarget = rng.nextBool()
+              ? -1
+              : specs[rng.nextInt(specs.length)].uid;
           s
             ..left = (anchorTarget, rng.nextInt(2))
             ..leftMargin = rng.nextInt(30).toDouble()
             ..top = (
               rng.nextBool() ? -1 : specs[rng.nextInt(specs.length)].uid,
-              rng.nextInt(2)
+              rng.nextInt(2),
             )
             ..topMargin = rng.nextInt(30).toDouble()
             ..dimW = rng.nextInt(2)
@@ -435,17 +450,23 @@ class FuzzState {
   }
 }
 
+/// Whether the suite runs with `--dart-define=cl.verifyReplay=true`, under
+/// which a replayed layout also runs the engine to check itself.
+const verifyReplay = bool.fromEnvironment('cl.verifyReplay');
+
 void main() {
   for (final seed in [7, 42, 99, 1337, 271828]) {
-    testWidgets('fuzzed mutation sequence matches fresh layouts (seed $seed)',
-        (tester) async {
+    testWidgets('fuzzed mutation sequence matches fresh layouts (seed $seed)', (
+      tester,
+    ) async {
       const steps = 50;
       final rng = Random(seed);
       final state = FuzzState();
 
       await tester.pumpWidget(host(state.specs, state.rootSize));
       final ro = tester.renderObject<RenderConstraintLayout>(
-          find.byType(ConstraintLayout));
+        find.byType(ConstraintLayout),
+      );
 
       // Mutate the persistent tree, recording configuration and geometry.
       final descriptions = <String>['initial'];
@@ -453,14 +474,31 @@ void main() {
         ([...state.specs.map(_copy)], state.rootSize),
       ];
       final snapshots = <List<List<double>>>[geometryOf(tester)];
+      Future<void> layOutAgain(String description) async {
+        for (var i = 0; i < 3; i++) {
+          ro.markNeedsLayout();
+          await tester.pump();
+          expect(
+            geometryOf(tester),
+            snapshots.last,
+            reason: 'seed $seed: layout ${i + 2} of "$description" moved',
+          );
+        }
+      }
+
+      await layOutAgain('initial');
       for (var step = 0; step < steps; step++) {
         final description = state.mutate(rng);
         await tester.pumpWidget(host(state.specs, state.rootSize));
-        expect(tester.takeException(), isNull,
-            reason: 'seed $seed step $step ($description) threw');
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'seed $seed step $step ($description) threw',
+        );
         descriptions.add(description);
         configs.add(([...state.specs.map(_copy)], state.rootSize));
         snapshots.add(geometryOf(tester));
+        await layOutAgain(description);
       }
 
       expect(
@@ -468,14 +506,32 @@ void main() {
         1 + state.structuralSteps,
         reason: 'seed $seed: only structural steps may rebuild the model',
       );
+      // Three layouts with nothing changed after each configuration: the
+      // second confirms the run, the third and fourth replay it. A content
+      // step whose child still answers the same (a fixed or gone child)
+      // replays on the step itself, so this is a lower bound.
+      expect(
+        ro.debugReplayPasses,
+        greaterThanOrEqualTo(2 * (steps + 1)),
+        reason: 'seed $seed: unchanged layouts replay',
+      );
+      expect(
+        ro.debugReplayMismatches,
+        0,
+        reason: 'seed $seed: a replay differed from its full run',
+      );
 
       // Replay every recorded configuration as a fresh tree.
       for (var i = 0; i < configs.length; i++) {
         final (specs, size) = configs[i];
         await tester.pumpWidget(host(specs, size, key: UniqueKey()));
-        expect(geometryOf(tester), snapshots[i],
-            reason: 'seed $seed: fresh replay of step $i '
-                '(${descriptions[i]}) diverged from the persistent tree');
+        expect(
+          geometryOf(tester),
+          snapshots[i],
+          reason:
+              'seed $seed: fresh replay of step $i '
+              '(${descriptions[i]}) diverged from the persistent tree',
+        );
       }
     });
   }

@@ -17,17 +17,11 @@ class HelperReferences extends WidgetRun {
   void clear() {
     mRunGroup = null;
     start.clear();
-    // Divergence from upstream, which only clears start: update() resolves
-    // end and the dimension as well.
-    end.clear();
-    mDimension.clear();
   }
 
   @override
   void reset() {
     start.resolved = false;
-    end.resolved = false;
-    mDimension.resolved = false;
   }
 
   @override
@@ -38,29 +32,20 @@ class HelperReferences extends WidgetRun {
     node.mTargets.add(start);
   }
 
-  /// Whether [barrier] positions itself from [reference]. Divergence from
-  /// upstream, which skips any GONE reference when gone widgets are not
-  /// allowed: this asks [ConstraintWidget.allowedInBarrier], as upstream's
-  /// Barrier.addToSolver does, so a gone barrier still counts inside another
-  /// barrier on both paths.
-  static bool counts(Barrier barrier, ConstraintWidget reference) =>
-      barrier.getAllowsGoneWidget() || reference.allowedInBarrier();
-
-  static bool _skips(Barrier barrier, ConstraintWidget refWidget) =>
-      !counts(barrier, refWidget);
-
   @override
   void apply() {
     if (mWidget is Barrier) {
       start.delegateToWidgetRun = true;
       final barrier = mWidget as Barrier;
       final type = barrier.getBarrierType();
+      final allowsGoneWidget = barrier.getAllowsGoneWidget();
       switch (type) {
         case Barrier.left:
           start.mType = DependencyNodeType.left;
           for (var i = 0; i < barrier.mWidgetsCount; i++) {
             final refWidget = barrier.mWidgets[i]!;
-            if (_skips(barrier, refWidget)) {
+            if (!allowsGoneWidget &&
+                refWidget.getVisibility() == ConstraintWidget.GONE) {
               continue;
             }
             final target = refWidget.mHorizontalRun!.start;
@@ -74,7 +59,8 @@ class HelperReferences extends WidgetRun {
           start.mType = DependencyNodeType.right;
           for (var i = 0; i < barrier.mWidgetsCount; i++) {
             final refWidget = barrier.mWidgets[i]!;
-            if (_skips(barrier, refWidget)) {
+            if (!allowsGoneWidget &&
+                refWidget.getVisibility() == ConstraintWidget.GONE) {
               continue;
             }
             final target = refWidget.mHorizontalRun!.end;
@@ -88,7 +74,8 @@ class HelperReferences extends WidgetRun {
           start.mType = DependencyNodeType.top;
           for (var i = 0; i < barrier.mWidgetsCount; i++) {
             final refWidget = barrier.mWidgets[i]!;
-            if (_skips(barrier, refWidget)) {
+            if (!allowsGoneWidget &&
+                refWidget.getVisibility() == ConstraintWidget.GONE) {
               continue;
             }
             final target = refWidget.mVerticalRun!.start;
@@ -102,7 +89,8 @@ class HelperReferences extends WidgetRun {
           start.mType = DependencyNodeType.bottom;
           for (var i = 0; i < barrier.mWidgetsCount; i++) {
             final refWidget = barrier.mWidgets[i]!;
-            if (_skips(barrier, refWidget)) {
+            if (!allowsGoneWidget &&
+                refWidget.getVisibility() == ConstraintWidget.GONE) {
               continue;
             }
             final target = refWidget.mVerticalRun!.end;
@@ -121,22 +109,12 @@ class HelperReferences extends WidgetRun {
     final barrier = mWidget as Barrier;
     final type = barrier.getBarrierType();
 
-    // Divergence from upstream, which seeds min with -1 as "unset" and max
-    // with 0: a reference at -1 was then forgotten, and references that all
-    // lie at negative positions resolved the barrier at 0. Seeding both from
-    // the first reference gives the outermost edge, as the solver does.
-    var min = 0;
+    // As upstream, min starts at -1 as "unset" and max at 0.
+    var min = -1;
     var max = 0;
-    var initialized = false;
     for (final node in start.mTargets) {
       final value = node.value;
-      if (!initialized) {
-        min = value;
-        max = value;
-        initialized = true;
-        continue;
-      }
-      if (value < min) {
+      if (min == -1 || value < min) {
         min = value;
       }
       if (max < value) {
@@ -148,13 +126,6 @@ class HelperReferences extends WidgetRun {
     } else {
       start.resolve(max + barrier.getMargin());
     }
-    // Divergence from upstream, which only ever resolves start: a barrier is
-    // a line, so its end is its start and its dimension is 0. Upstream leaves
-    // both unresolved, which fails DependencyGraph's all-resolved check for
-    // every layout that contains a barrier; its solver-first entry never
-    // needed them. Nothing depends on these two nodes.
-    end.resolve(start.value);
-    mDimension.resolve(0);
   }
 
   @override
@@ -162,15 +133,10 @@ class HelperReferences extends WidgetRun {
     if (mWidget is Barrier) {
       final barrier = mWidget as Barrier;
       final type = barrier.getBarrierType();
-      // Divergence from upstream, which leaves the other axis as it was: the
-      // solver never constrains a barrier across its axis, so it reports 0
-      // there, and the graph does the same.
       if (type == Barrier.left || type == Barrier.right) {
         mWidget.setX(start.value);
-        mWidget.setY(0);
       } else {
         mWidget.setY(start.value);
-        mWidget.setX(0);
       }
     }
   }

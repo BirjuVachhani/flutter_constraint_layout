@@ -63,6 +63,12 @@ class ConstraintFlow extends ParentDataWidget<ConstraintParentData> {
   final Symbol id;
 
   /// Ids of the sibling widgets this flow arranges, in order.
+  ///
+  /// The flow links each of them itself, at every layout, so a referenced
+  /// child's own links (its `left`, `top`, `start` and the rest) are
+  /// ignored. (Android applies them before its first pass and then lets the
+  /// flow replace them; where they could still pin the child in that pass,
+  /// this layout can differ from Android's.)
   final List<Symbol> referenced;
 
   /// The main axis widgets are laid out along.

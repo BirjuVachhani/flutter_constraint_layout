@@ -11,6 +11,7 @@
 import 'dart:math';
 
 import 'package:constraint_engine/constraint_engine.dart';
+import 'package:constraint_engine/src/jfloat.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -195,6 +196,25 @@ void main() {
       for (final variable in variables) {
         expect(values.get(variable), results[variable]);
       }
+    });
+
+    // Not upstream: Java floats and Java's null semantics in this class.
+    test('binary32 values and missing variables', () {
+      final cache = Cache();
+      final v = SolverVariable('v', SolverVariableType.slack)..id = 3;
+      cache.mIndexedVariables[3] = v;
+      final values = SolverVariableValues(null, cache);
+      // indexOf of a missing variable is "not found", as upstream's.
+      expect(values.get(null), 0);
+      expect(values.remove(null, true), 0);
+      expect(values.contains(null), isFalse);
+      values.add(null, f32(0.0005), true);
+      values.put(v, 0.1);
+      expect(values.get(v), f32(0.1));
+      values.add(v, f32(0.2), true);
+      expect(values.get(v), fadd(f32(0.1), f32(0.2)));
+      values.divideByAmount(f32(0.3));
+      expect(values.get(v), fdiv(fadd(f32(0.1), f32(0.2)), f32(0.3)));
     });
   });
 }

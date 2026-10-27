@@ -214,6 +214,30 @@ void main() {
       g.grid.setSpans('0:1x2');
       expect(() => resolve(g.root), returnsNormally);
     });
+
+    test('a negative position takes no cell (deliberate divergence)', () {
+      // Java's % keeps the sign of a negative position, so its column is
+      // -1; upstream then indexes the cell map with it and throws from
+      // measure() (ArrayIndexOutOfBoundsException, checked on the JDK with
+      // the released GridCore 1.1.1). Here the position is one the grid
+      // cannot take, like one past its last cell, so the skip or span stops
+      // there; Dart's % used to wrap it onto the last column instead.
+      const unskipped = [
+        [0, 0, 200, 200],
+        [200, 0, 200, 200],
+        [0, 200, 200, 200],
+        [200, 200, 200, 200],
+      ];
+      final skipped = buildGrid(count: 4, rows: 2, columns: 2);
+      skipped.grid.setSkips('-1:1x1');
+      resolve(skipped.root);
+      expect(frames(skipped.cells), unskipped);
+
+      final spanned = buildGrid(count: 4, rows: 2, columns: 2);
+      spanned.grid.setSpans('-1:1x1');
+      resolve(spanned.root);
+      expect(frames(spanned.cells), unskipped);
+    });
   });
 
   group('weights and gaps', () {
@@ -244,6 +268,23 @@ void main() {
       }
 
       expect(columnGapOf(20), greaterThan(columnGapOf(0)));
+    });
+
+    test('a fractional gap is stored as a float and truncated', () {
+      // Upstream keeps the gaps as floats and uses (int) gap as the margin.
+      // Frames from the released GridCore 1.1.1 on the JDK.
+      final g = buildGrid(count: 4, rows: 2, columns: 2);
+      g.grid.setHorizontalGaps(15.7);
+      g.grid.setVerticalGaps(10.2);
+      expect(g.grid.getHorizontalGaps(), 15.699999809265137);
+      expect(g.grid.getVerticalGaps(), 10.199999809265137);
+      resolve(g.root);
+      expect(frames(g.cells), [
+        [0, 0, 193, 195],
+        [208, 0, 192, 195],
+        [0, 205, 193, 195],
+        [208, 205, 192, 195],
+      ]);
     });
 
     // Rows of 112 and 28 px. A tile as tall as its row, or taller,
@@ -584,6 +625,18 @@ void main() {
     test('whitespace around an entry is ignored', () {
       // ' 2 , 1 ' pads to 2,1,1.
       expect(columnsWeighted(' 2 , 1 '), twoOneOne);
+    });
+
+    test('an entry in Java float syntax reads as its value', () {
+      // Float.parseFloat takes a type suffix and hexadecimal floats, which a
+      // double parse rejected (reading them as 1).
+      expect(columnsWeighted('2f,1,1'), twoOneOne);
+      expect(columnsWeighted('0x1p1,1,1'), twoOneOne);
+      expect(columnsWeighted('2D,1d,1F'), twoOneOne);
+      expect(rowsWeighted('3f,1'), [
+        [0, 0, 400, 300],
+        [0, 300, 400, 100],
+      ]);
     });
   });
 

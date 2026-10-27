@@ -6,6 +6,7 @@
 
 import '../constraint_widget.dart';
 import '../constraint_widget_container.dart';
+import '../jfloat.dart';
 import 'chain_run.dart';
 import 'dependency_node.dart';
 import 'helper_references.dart';
@@ -43,10 +44,11 @@ class RunGroup {
   }
 
   /// Whether the last [computeWrapSize] reached a node it was already inside
-  /// of. Upstream's traversals recurse until the stack overflows on such a
-  /// loop, which runs that depend on each other form (for example a widget
-  /// centered between the parent's left and a sibling's right, whose left is
-  /// linked to the widget's right). Once set, the traversals stop at once.
+  /// of. Port-only guard: upstream's traversals recurse until the stack
+  /// overflows on such a loop, which runs that depend on each other form (for
+  /// example a widget centered between the parent's left and a sibling's
+  /// right, whose left is linked to the widget's right). Once set, the
+  /// traversals stop at once.
   bool _cycle = false;
 
   /// Starts visiting [node]: false, and the traversal must stop, when the
@@ -183,15 +185,17 @@ class RunGroup {
       }
       final bias = first.mWidget.getBiasPercent(orientation);
       var gap = 0;
+      // Upstream's float arithmetic on long gaps: each long converts to a
+      // float, and each (long) cast turns NaN into 0 and saturates an
+      // infinite value (a bias of exactly 1 divides by zero here).
       if (bias > 0) {
-        // A bias of exactly 1 divides by zero here: NaN when the end gap is
-        // 0, infinite otherwise. Upstream's (long) casts turn those into 0
-        // and a saturated value; Dart's toInt() would throw.
-        gap = _toJavaLong((startGap / bias) + (endGap / (1 - bias)));
+        gap = _toJavaLong(
+          fadd(fdiv(fi(startGap), bias), fdiv(fi(endGap), fsub(1, bias))),
+        );
       }
 
-      startGap = _toJavaLong(0.5 + gap * bias);
-      endGap = _toJavaLong(0.5 + gap * (1 - bias));
+      startGap = _toJavaLong(fadd(0.5, fmul(fi(gap), bias)));
+      endGap = _toJavaLong(fadd(0.5, fmul(fi(gap), fsub(1, bias))));
 
       final runDimension = startGap + dimension + endGap;
       dimension = first.start.mMargin + runDimension - first.end.mMargin;
@@ -274,7 +278,8 @@ class RunGroup {
   /// Java's narrowing conversion of a floating-point value to `long` (JLS
   /// 5.1.3), which upstream's `(long)` casts rely on: NaN converts to 0 and
   /// an infinite value saturates, where Dart's toInt() throws for both.
-  /// Finite values convert as toInt() does, toward zero.
+  /// Finite values convert as toInt() does, toward zero, saturating at the
+  /// 64-bit bounds.
   static int _toJavaLong(double value) {
     if (value.isNaN) return 0;
     if (value.isInfinite) {

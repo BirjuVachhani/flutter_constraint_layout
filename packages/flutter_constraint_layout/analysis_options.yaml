@@ -8,3 +8,7 @@ formatter:
 analyzer:
   exclude:
     - build/**
+    # The parity tooling's Flutter harness is a package of its own
+    # (cl_fl_harness), set up outside the repository by its setup.sh: its
+    # imports resolve only there, so it is not analyzed as part of this one.
+    - tool/parity/fl_harness/**

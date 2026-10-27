@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import 'analyzer/basic_measure.dart';
 import 'constraint_widget.dart';
 import 'constraint_widget_container.dart';
+import 'jfloat.dart';
 import 'linear_system.dart';
 import 'virtual_layout.dart';
 
@@ -160,29 +161,37 @@ class GridCore extends VirtualLayout {
   /// Get the gap between columns; see [setHorizontalGaps].
   double getHorizontalGaps() => _horizontalGaps;
 
-  /// Set the gap between columns. Negative values are ignored.
+  /// Set the gap between columns. Negative values are ignored. The gap is
+  /// kept as the binary32 value upstream's float holds, and the grid uses
+  /// its integer part.
   void setHorizontalGaps(double horizontalGaps) {
-    if (horizontalGaps < 0) {
+    // Upstream's parameter is a float: the binary32 value is both the one
+    // compared and the one stored.
+    final gaps = f32(horizontalGaps);
+    if (gaps < 0) {
       return;
     }
-    if (_horizontalGaps == horizontalGaps) {
+    if (_horizontalGaps == gaps) {
       return;
     }
-    _horizontalGaps = horizontalGaps;
+    _horizontalGaps = gaps;
   }
 
   /// Get the gap between rows; see [setVerticalGaps].
   double getVerticalGaps() => _verticalGaps;
 
-  /// Set the gap between rows. Negative values are ignored.
+  /// Set the gap between rows. Negative values are ignored. The gap is kept
+  /// as the binary32 value upstream's float holds, and the grid uses its
+  /// integer part.
   void setVerticalGaps(double verticalGaps) {
-    if (verticalGaps < 0) {
+    final gaps = f32(verticalGaps);
+    if (gaps < 0) {
       return;
     }
-    if (_verticalGaps == verticalGaps) {
+    if (_verticalGaps == gaps) {
       return;
     }
-    _verticalGaps = verticalGaps;
+    _verticalGaps = gaps;
   }
 
   /// Get the row weights set by [setRowWeights], or null.
@@ -394,9 +403,12 @@ class GridCore extends VirtualLayout {
     }
   }
 
+  // Java's int `/` and `%`: both truncate toward zero, so a negative index
+  // (a negative position in the spans or skips) gives a negative row or
+  // column, which _invalidatePositions rejects.
   int _getRowByIndex(int index) {
     if (_orientation == 1) {
-      return index % _rows;
+      return index.remainder(_rows);
     } else {
       return index ~/ _columns;
     }
@@ -406,7 +418,7 @@ class GridCore extends VirtualLayout {
     if (_orientation == 1) {
       return index ~/ _rows;
     } else {
-      return index % _columns;
+      return index.remainder(_columns);
     }
   }
 
@@ -431,7 +443,12 @@ class GridCore extends VirtualLayout {
     final positionMatrix = _positionMatrix!;
     for (var i = startRow; i < startRow + rowSpan; i++) {
       for (var j = startColumn; j < startColumn + columnSpan; j++) {
-        if (i >= positionMatrix.length ||
+        // Divergence from upstream, which indexes the matrix with a negative
+        // row or column (from a negative position) and throws: such a
+        // position cannot be taken, like one past the last row or column.
+        if (i < 0 ||
+            j < 0 ||
+            i >= positionMatrix.length ||
             j >= positionMatrix[0].length ||
             !positionMatrix[i][j]) {
           // the position is already occupied.
@@ -459,12 +476,11 @@ class GridCore extends VirtualLayout {
     final arr = List<double>.filled(size, 0);
     for (var i = 0; i < arr.length; i++) {
       if (i < values.length) {
-        // Like Java's Float.parseFloat, double.tryParse ignores surrounding
-        // whitespace. Upstream also prints the parse error to System.err,
-        // which the port leaves out. Java's parser additionally accepts a
-        // trailing f or d and hexadecimal floats ("2f", "0x1p3"), which
-        // read as 1 here.
-        final parsed = double.tryParse(values[i]);
+        // Java's Float.parseFloat: surrounding whitespace is dropped, a
+        // trailing f or d and hexadecimal floats ("2f", "0x1p3") are
+        // numbers, and the value is rounded once to binary32. Upstream also
+        // prints the parse error to System.err, which the port leaves out.
+        final parsed = tryParseFloat32(values[i]);
         // Fallback to 1.
         arr[i] = parsed ?? 1;
       } else {
@@ -511,7 +527,8 @@ class GridCore extends VirtualLayout {
         _columns = (mWidgetsCount + _rowsSet - 1) ~/ _rowsSet; // round up
       } else {
         // as close to square as possible favoring more rows
-        _rows = (1.5 + math.sqrt(mWidgetsCount)).toInt();
+        // (int) (1.5 + Math.sqrt(mWidgetsCount)): double arithmetic, cast.
+        _rows = jint(1.5 + math.sqrt(mWidgetsCount));
         _columns = (mWidgetsCount + _rows - 1) ~/ _rows;
       }
     } else {
@@ -601,7 +618,7 @@ class GridCore extends VirtualLayout {
         widget.mRight.connect(mRight, 0);
       }
       if (i > 0) {
-        widget.mLeft.mMargin = _horizontalGaps.toInt();
+        widget.mLeft.mMargin = jint(_horizontalGaps);
       }
     }
     // excess boxes are connected to grid those sides are not use
@@ -647,7 +664,7 @@ class GridCore extends VirtualLayout {
         widget.mBottom.connect(mBottom, 0);
       }
       if (i > 0) {
-        widget.mTop.mMargin = _verticalGaps.toInt();
+        widget.mTop.mMargin = jint(_verticalGaps);
       }
     }
 
@@ -948,6 +965,11 @@ class GridCore extends VirtualLayout {
 
   @override
   void addToSolver(LinearSystem system, bool optimize) {
+    // Not in upstream: a container holding a grid keeps the priority goal
+    // row's tie epsilon (grid layouts have no Android oracle; see
+    // UPSTREAM.md). Every solve resets the system before adding the
+    // children, so the flag holds exactly while this container holds a grid.
+    system.goalTieEpsilon = true;
     super.addToSolver(system, optimize);
     // Divergence from upstream, which dereferences the box widgets
     // unconditionally: with nothing to place (no widgets, so a derived track

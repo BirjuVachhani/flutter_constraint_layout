@@ -1,7 +1,7 @@
 // A barrier is an invisible line that tracks the furthest edge of a group, so
 // the rest of the layout can clear "whichever of these is biggest" without
 // knowing which one that is. Each of the four types is a separate branch all
-// the way through measuring, solving, and the resolved fast path, and gone
+// the way through measuring, Direct's resolution and the solver, and gone
 // widgets change which members count. The existing barrier_test covers one
 // type against guidelines; this covers the matrix.
 

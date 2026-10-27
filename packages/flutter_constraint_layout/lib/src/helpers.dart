@@ -16,6 +16,12 @@ import 'types.dart';
 /// `end` from the left. A horizontal guideline is placed the same way in both
 /// text directions.
 ///
+/// Like Android's view Guideline, it is always gone: its child is laid out
+/// at 0 x 0 at the line's position, and a link with a `goneMargin` into the
+/// guideline uses that gone margin. In right-to-left text a vertical
+/// guideline's [percent] becomes `1 - percent`, computed in single precision
+/// as Android computes it.
+///
 /// ```dart
 /// Guideline.vertical(id: #middle, percent: 0.5),
 /// Constrained(id: #a, start: .rightOf(#middle), ...),
@@ -130,6 +136,10 @@ class Guideline extends ParentDataWidget<ConstraintParentData> {
 /// of the widgets in [referenced], so siblings can constrain against
 /// "whichever of these sticks out furthest". Android's `Barrier`.
 ///
+/// Like Android's view Barrier, it is always gone: its child is laid out at
+/// 0 x 0 at the barrier's position, and a link with a `goneMargin` into the
+/// barrier uses that gone margin.
+///
 /// ```dart
 /// Barrier(id: #labelsEnd, edge: .end, referenced: [#name, #email]),
 /// Constrained(id: #value, start: .rightOf(#labelsEnd, margin: 8), ...),
@@ -154,21 +164,19 @@ class Barrier extends ParentDataWidget<ConstraintParentData> {
   /// Ids of the widgets whose edges the barrier tracks.
   final List<Symbol> referenced;
 
-  /// Offset in logical pixels added to the barrier's position.
+  /// Offset in logical pixels added to the barrier's position, rounded to
+  /// whole logical pixels.
   ///
-  /// For a `.left`, `.right`, `.top`, or `.bottom` barrier, a positive value
-  /// moves it right or down in both text directions: past the tracked edge of
-  /// a right or bottom barrier, back over the referenced widgets for a left
-  /// or top one.
-  ///
-  /// A `.start` or `.end` barrier applies the margin along the text
-  /// direction, like its edge: a positive value moves it toward the end,
-  /// which is right in left-to-right text and left in right-to-left text. So
-  /// a positive margin always moves an `.end` barrier past the referenced
-  /// widgets and a `.start` barrier back over them, and a right-to-left
-  /// layout is the exact mirror of its left-to-right twin. This is a
-  /// deliberate difference from Android, where a positive margin moves every
-  /// barrier right or down.
+  /// As on Android, a positive value moves every barrier right or down,
+  /// whatever its edge and the text direction: past the tracked edge of a
+  /// right or bottom barrier, back over the referenced widgets for a left or
+  /// top one. A `.start` or `.end` barrier first resolves to the left or
+  /// right edge for the text direction and then takes the margin the same
+  /// way, so in right-to-left text a positive margin moves an `.end` barrier
+  /// (the left edge there) back over the referenced widgets and a `.start`
+  /// barrier (the right edge) past them. A right-to-left layout with a
+  /// directional barrier margin is therefore not the mirror of its
+  /// left-to-right twin; negate the margin in right-to-left text for that.
   final double margin;
 
   /// Whether gone widgets still contribute their (collapsed) position.
@@ -228,11 +236,17 @@ class Barrier extends ParentDataWidget<ConstraintParentData> {
 /// a `.visible` group shows them all. When several groups reference the same
 /// child, the group that comes last in the layout's children wins.
 ///
-/// A group has no position or size and takes no part in the layout, so it
-/// cannot be the target of a link or the `referenced` entry of a barrier,
-/// flow, or grid. It can reference a `Constrained` child, a
-/// `ConstraintFlow`, or a `ConstraintGrid`. Guidelines and barriers have no
-/// visibility, so a group leaves them as they are.
+/// A group cannot be the target of a link or the `referenced` entry of a
+/// barrier, flow, or grid. It can reference a `Constrained` child, a
+/// `ConstraintFlow`, or a `ConstraintGrid`. Guidelines and barriers are
+/// always gone, so a group leaves them as they are.
+///
+/// As Android's Group view is, the group is a child of the layout in its own
+/// right: an unlinked widget that wraps nothing, so it is laid out at 0 x 0
+/// at the layout's origin (or gone, with the group). It never moves or sizes
+/// anything, but it takes part in the solve where it stands in the child
+/// list, as Android's does, which can decide how a tie between equally good
+/// solutions is broken.
 ///
 /// ```dart
 /// ConstraintGroup(

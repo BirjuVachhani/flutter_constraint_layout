@@ -6,6 +6,7 @@
 
 import '../constraint_widget.dart';
 import '../guideline.dart';
+import '../jfloat.dart';
 import 'dependency.dart';
 import 'dependency_node.dart';
 import 'widget_run.dart';
@@ -46,8 +47,10 @@ class GuidelineReference extends WidgetRun {
     }
     final startTarget = start.mTargets[0];
     final guideline = mWidget as Guideline;
-    final startPos = (0.5 + startTarget.value * guideline.getRelativePercent())
-        .toInt();
+    // (int) (0.5f + startTarget.value * percent), in floats.
+    final startPos = jint(
+      fadd(0.5, fmul(fi(startTarget.value), guideline.getRelativePercent())),
+    );
     start.resolve(startPos);
   }
 
@@ -94,24 +97,10 @@ class GuidelineReference extends WidgetRun {
   @override
   void applyToWidget() {
     final guideline = mWidget as Guideline;
-    // Divergence from upstream, which only sets the position: the frame is
-    // set as Guideline.updateFromSolver sets it on the solver path, a line
-    // across the whole container, so both paths report the same geometry.
-    final parent = mWidget.getParent();
     if (guideline.getOrientation() == ConstraintWidget.VERTICAL) {
       mWidget.setX(start.value);
-      if (parent != null) {
-        mWidget.setY(0);
-        mWidget.setHeight(parent.getHeight());
-        mWidget.setWidth(0);
-      }
     } else {
       mWidget.setY(start.value);
-      if (parent != null) {
-        mWidget.setX(0);
-        mWidget.setWidth(parent.getWidth());
-        mWidget.setHeight(0);
-      }
     }
   }
 }

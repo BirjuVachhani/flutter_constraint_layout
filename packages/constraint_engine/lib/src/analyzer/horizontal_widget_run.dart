@@ -7,6 +7,7 @@
 import '../constraint_anchor.dart';
 import '../constraint_widget.dart';
 import '../helper.dart';
+import '../jfloat.dart';
 import 'dependency.dart';
 import 'dependency_node.dart';
 import 'widget_run.dart';
@@ -35,12 +36,6 @@ class HorizontalWidgetRun extends WidgetRun {
   @override
   void reset() {
     mResolved = false;
-    // Divergence from upstream, which keeps the run type of an earlier
-    // graph: apply() only sets it for a widget linked on both sides, so on a
-    // container laid out again a widget that lost one of those links since
-    // updates as centered and reads the missing target (a null check that
-    // throws out of layout()).
-    mRunType = RunType.none;
     start.clear();
     start.resolved = false;
     end.clear();
@@ -324,10 +319,11 @@ class HorizontalWidgetRun extends WidgetRun {
     final dy = y2 - y1;
     switch (side) {
       case ConstraintWidget.UNKNOWN:
-        final candidateX1 = (0.5 + dy * ratio).toInt();
+        // (int) (0.5f + dy * ratio) and (int) (0.5f + dx / ratio), in floats.
+        final candidateX1 = jint(fadd(0.5, fmul(fi(dy), ratio)));
         final candidateY1 = dy;
         final candidateX2 = dx;
-        final candidateY2 = (0.5 + dx / ratio).toInt();
+        final candidateY2 = jint(fadd(0.5, fdiv(fi(dx), ratio)));
         if (candidateX1 <= dx && candidateY1 <= dy) {
           dimensions[ConstraintWidget.HORIZONTAL] = candidateX1;
           dimensions[ConstraintWidget.VERTICAL] = candidateY1;
@@ -337,12 +333,12 @@ class HorizontalWidgetRun extends WidgetRun {
         }
         break;
       case ConstraintWidget.HORIZONTAL:
-        final horizontalSide = (0.5 + dy * ratio).toInt();
+        final horizontalSide = jint(fadd(0.5, fmul(fi(dy), ratio)));
         dimensions[ConstraintWidget.HORIZONTAL] = horizontalSide;
         dimensions[ConstraintWidget.VERTICAL] = dy;
         break;
       case ConstraintWidget.VERTICAL:
-        final verticalSide = (0.5 + dx * ratio).toInt();
+        final verticalSide = jint(fadd(0.5, fmul(fi(dx), ratio)));
         dimensions[ConstraintWidget.HORIZONTAL] = dx;
         dimensions[ConstraintWidget.VERTICAL] = verticalSide;
         break;
@@ -482,14 +478,14 @@ class HorizontalWidgetRun extends WidgetRun {
                       dx,
                       ConstraintWidget.HORIZONTAL,
                     );
-                    final dy = (0.5 + ldx * ratio).toInt();
+                    final dy = jint(fadd(0.5, fmul(fi(ldx), ratio)));
                     final ldy = getLimitedDimension(
                       dy,
                       ConstraintWidget.VERTICAL,
                     );
                     var fdx = ldx;
                     if (dy != ldy) {
-                      fdx = (0.5 + ldy / ratio).toInt();
+                      fdx = jint(fadd(0.5, fdiv(fi(ldy), ratio)));
                     }
                     mDimension.resolve(fdx);
                     mWidget.mVerticalRun!.mDimension.resolve(ldy);
@@ -500,14 +496,14 @@ class HorizontalWidgetRun extends WidgetRun {
                       dx,
                       ConstraintWidget.HORIZONTAL,
                     );
-                    final dy = (0.5 + ldx / ratio).toInt();
+                    final dy = jint(fadd(0.5, fdiv(fi(ldx), ratio)));
                     final ldy = getLimitedDimension(
                       dy,
                       ConstraintWidget.VERTICAL,
                     );
                     var fdx = ldx;
                     if (dy != ldy) {
-                      fdx = (0.5 + ldy * ratio).toInt();
+                      fdx = jint(fadd(0.5, fmul(fi(ldy), ratio)));
                     }
                     mDimension.resolve(fdx);
                     mWidget.mVerticalRun!.mDimension.resolve(ldy);
@@ -531,14 +527,14 @@ class HorizontalWidgetRun extends WidgetRun {
                       dy,
                       ConstraintWidget.VERTICAL,
                     );
-                    final dx = (0.5 + ldy / ratio).toInt();
+                    final dx = jint(fadd(0.5, fdiv(fi(ldy), ratio)));
                     final ldx = getLimitedDimension(
                       dx,
                       ConstraintWidget.HORIZONTAL,
                     );
                     var fdy = ldy;
                     if (dx != ldx) {
-                      fdy = (0.5 + ldx * ratio).toInt();
+                      fdy = jint(fadd(0.5, fmul(fi(ldx), ratio)));
                     }
                     mDimension.resolve(ldx);
                     mWidget.mVerticalRun!.mDimension.resolve(fdy);
@@ -549,14 +545,14 @@ class HorizontalWidgetRun extends WidgetRun {
                       dy,
                       ConstraintWidget.VERTICAL,
                     );
-                    final dx = (0.5 + ldy * ratio).toInt();
+                    final dx = jint(fadd(0.5, fmul(fi(ldy), ratio)));
                     final ldx = getLimitedDimension(
                       dx,
                       ConstraintWidget.HORIZONTAL,
                     );
                     var fdy = ldy;
                     if (dx != ldx) {
-                      fdy = (0.5 + ldx / ratio).toInt();
+                      fdy = jint(fadd(0.5, fdiv(fi(ldx), ratio)));
                     }
                     mDimension.resolve(ldx);
                     mWidget.mVerticalRun!.mDimension.resolve(fdy);
@@ -570,25 +566,37 @@ class HorizontalWidgetRun extends WidgetRun {
               final ratioSide = mWidget.getDimensionRatioSide();
               switch (ratioSide) {
                 case ConstraintWidget.HORIZONTAL:
-                  size =
-                      (0.5 +
-                              mWidget.mVerticalRun!.mDimension.value /
-                                  mWidget.getDimensionRatio())
-                          .toInt();
+                  size = jint(
+                    fadd(
+                      0.5,
+                      fdiv(
+                        fi(mWidget.mVerticalRun!.mDimension.value),
+                        mWidget.getDimensionRatio(),
+                      ),
+                    ),
+                  );
                   break;
                 case ConstraintWidget.VERTICAL:
-                  size =
-                      (0.5 +
-                              mWidget.mVerticalRun!.mDimension.value *
-                                  mWidget.getDimensionRatio())
-                          .toInt();
+                  size = jint(
+                    fadd(
+                      0.5,
+                      fmul(
+                        fi(mWidget.mVerticalRun!.mDimension.value),
+                        mWidget.getDimensionRatio(),
+                      ),
+                    ),
+                  );
                   break;
                 case ConstraintWidget.UNKNOWN:
-                  size =
-                      (0.5 +
-                              mWidget.mVerticalRun!.mDimension.value *
-                                  mWidget.getDimensionRatio())
-                          .toInt();
+                  size = jint(
+                    fadd(
+                      0.5,
+                      fmul(
+                        fi(mWidget.mVerticalRun!.mDimension.value),
+                        mWidget.getDimensionRatio(),
+                      ),
+                    ),
+                  );
                   break;
                 default:
                   break;
@@ -603,15 +611,11 @@ class HorizontalWidgetRun extends WidgetRun {
                 final percent = mWidget.mMatchConstraintPercentWidth;
                 final targetDimensionValue =
                     parent.mHorizontalRun!.mDimension.value;
-                final size = (0.5 + targetDimensionValue * percent).toInt();
-                // Divergence from upstream: percent is clamped by the
-                // matchConstraint min/max here. Upstream leaves this resolve
-                // unclamped and relies on its solver-first entry to apply the
-                // bounds; this engine resolves percent in the graph, so the
-                // clamp has to happen at the resolve site. See UPSTREAM.md.
-                mDimension.resolve(
-                  getLimitedDimension(size, ConstraintWidget.HORIZONTAL),
+                // (int) (0.5f + targetDimensionValue * percent), in floats.
+                final size = jint(
+                  fadd(0.5, fmul(fi(targetDimensionValue), percent)),
                 );
+                mDimension.resolve(size);
               }
             }
             break;
@@ -670,13 +674,11 @@ class HorizontalWidgetRun extends WidgetRun {
     if (!mDimension.resolved) {
       return;
     }
-    // Divergence from upstream, which centers unconditionally and throws
-    // here (IndexOutOfBoundsException) when an edge has no target: a chain
-    // member (whose run its ChainRun places, so its edges get no targets)
-    // with a percent width resolves its size through this update, which
-    // finds both edges ready. The vertical run has this guard upstream too.
-    // The edges stay unresolved, and DependencyGraph.directMeasure declines
-    // the layout unless the chain places them. UPSTREAM.md.
+    // Port-only guard: upstream centers unconditionally and throws an
+    // IndexOutOfBoundsException here when an edge has no target, as a chain
+    // member's edges have none (its ChainRun places them) when its percent
+    // width resolves through this update. The vertical run has this guard
+    // upstream too. The edges stay unresolved.
     if (start.mTargets.isEmpty || end.mTargets.isEmpty) {
       return;
     }
@@ -692,7 +694,10 @@ class HorizontalWidgetRun extends WidgetRun {
       bias = 0.5;
     }
     final distance = endPos - startPos - mDimension.value;
-    start.resolve((0.5 + startPos + distance * bias).toInt());
+    // (int) (0.5f + startPos + distance * bias), in floats.
+    start.resolve(
+      jint(fadd(fadd(0.5, fi(startPos)), fmul(fi(distance), bias))),
+    );
     end.resolve(start.value + mDimension.value);
   }
 

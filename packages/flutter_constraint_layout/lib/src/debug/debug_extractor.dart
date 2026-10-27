@@ -13,8 +13,13 @@ import 'debug_scene.dart';
 ///
 /// Chain membership is derived from anchor topology (a connection is a chain
 /// link iff the target anchor points back at the source anchor), never from
-/// the container's `ChainHead` bookkeeping, which is only populated on the
-/// solver fallback path.
+/// the container's `ChainHead` bookkeeping, which is the solver's working
+/// state.
+///
+/// Guidelines and barriers are gone widgets with 0 x 0 frames, as Android's
+/// view helpers are: they are drawn, and the links into them end, on their
+/// line across the layout, at their position. A group's widget draws
+/// nothing.
 DebugScene buildDebugScene({
   required ConstraintWidgetContainer container,
   required List<ConstraintWidget> widgets,
@@ -60,8 +65,9 @@ class _SceneExtractor {
           _addGuideline(i);
         case HelperKind.barrier:
           _addBarrier(w as Barrier);
-        // A group has no geometry to draw; its visibility already shows on
-        // the boxes of the children it references.
+        // A group's widget is a 0 x 0 point at the origin, with nothing to
+        // draw; its visibility already shows on the boxes of the children it
+        // references.
         case HelperKind.group:
           break;
       }
@@ -84,6 +90,45 @@ class _SceneExtractor {
     w.getWidth().toDouble(),
     w.getHeight().toDouble(),
   );
+
+  /// The rect a link into [owner] ends on: the layout's for the container,
+  /// the whole line for a guideline or a barrier, otherwise the widget's
+  /// frame.
+  ///
+  /// Guidelines and barriers are gone widgets with 0 x 0 frames, as
+  /// Android's view helpers are, so their line is drawn from their position
+  /// alone ([ConstraintWidget.getX] for a vertical line,
+  /// [ConstraintWidget.getY] for a horizontal one) across the layout, as
+  /// [_addGuideline] and [_addBarrier] draw it.
+  Rect _targetRectOf(ConstraintWidget owner) {
+    if (identical(owner, container)) return _containerRect;
+    final bool vertical;
+    if (owner is Guideline) {
+      vertical = owner.getOrientation() == Guideline.vertical;
+    } else if (owner is Barrier) {
+      final type = owner.getBarrierType();
+      vertical = type == Barrier.left || type == Barrier.right;
+    } else {
+      return _rectOf(owner);
+    }
+    return _lineRect(owner, vertical: vertical);
+  }
+
+  /// The line of a guideline or barrier [w] across the layout: a vertical
+  /// line at its x, or a horizontal one at its y.
+  Rect _lineRect(ConstraintWidget w, {required bool vertical}) => vertical
+      ? Rect.fromLTWH(
+          w.getX().toDouble(),
+          0,
+          0,
+          container.getHeight().toDouble(),
+        )
+      : Rect.fromLTWH(
+          0,
+          w.getY().toDouble(),
+          container.getWidth().toDouble(),
+          0,
+        );
 
   // ---------------------------------------------------------------- boxes --
 
@@ -162,9 +207,7 @@ class _SceneExtractor {
     }
     final target = w.mCenter.getTarget()!.getOwner();
     final sourceRect = _rectOf(w);
-    final targetRect = identical(target, container)
-        ? _containerRect
-        : _rectOf(target);
+    final targetRect = _targetRectOf(target);
     connections.add(
       DebugConnection(
         type: DebugConnectionType.circular,
@@ -372,9 +415,7 @@ class _SceneExtractor {
     final target = w.mBaseline.getTarget()!;
     final targetOwner = target.getOwner();
     final sourceRect = _rectOf(w);
-    final targetRect = identical(targetOwner, container)
-        ? _containerRect
-        : _rectOf(targetOwner);
+    final targetRect = _targetRectOf(targetOwner);
     connections.add(
       DebugConnection(
         type: DebugConnectionType.baseline,
@@ -424,8 +465,7 @@ class _SceneExtractor {
     required Offset crossAxis,
     required bool horizontal,
   }) {
-    final owner = target.getOwner();
-    final rect = identical(owner, container) ? _containerRect : _rectOf(owner);
+    final rect = _targetRectOf(target.getOwner());
     if (horizontal) {
       final x = switch (_edgeOf(target)) {
         DebugEdge.right => rect.right,
@@ -442,6 +482,8 @@ class _SceneExtractor {
 
   // ------------------------------------------------------------- helpers --
 
+  /// A guideline's line at its position (the guideline is a gone widget, so
+  /// its frame is 0 x 0), with the chip of its configured position.
   void _addGuideline(int i) {
     final w = widgets[i] as Guideline;
     final pd = parentData[i];
@@ -463,32 +505,24 @@ class _SceneExtractor {
     );
   }
 
+  /// A barrier's line across the layout, at its position (the barrier is a
+  /// gone widget, so its frame is 0 x 0), with the fade on the side it
+  /// faces.
   void _addBarrier(Barrier w) {
-    final width = container.getWidth().toDouble();
-    final height = container.getHeight().toDouble();
-    switch (w.getBarrierType()) {
-      case Barrier.left || Barrier.right:
-        final x = w.getLeft().toDouble();
-        barriers.add(
-          DebugBarrierInfo(
-            start: Offset(x, 0),
-            end: Offset(x, height),
-            fadeDirection: w.getBarrierType() == Barrier.left
-                ? const Offset(-1, 0)
-                : const Offset(1, 0),
-          ),
-        );
-      default:
-        final y = w.getTop().toDouble();
-        barriers.add(
-          DebugBarrierInfo(
-            start: Offset(0, y),
-            end: Offset(width, y),
-            fadeDirection: w.getBarrierType() == Barrier.top
-                ? const Offset(0, -1)
-                : const Offset(0, 1),
-          ),
-        );
-    }
+    final type = w.getBarrierType();
+    final vertical = type == Barrier.left || type == Barrier.right;
+    final line = _lineRect(w, vertical: vertical);
+    barriers.add(
+      DebugBarrierInfo(
+        start: line.topLeft,
+        end: line.bottomRight,
+        fadeDirection: switch (type) {
+          Barrier.left => const Offset(-1, 0),
+          Barrier.right => const Offset(1, 0),
+          Barrier.top => const Offset(0, -1),
+          _ => const Offset(0, 1),
+        },
+      ),
+    );
   }
 }

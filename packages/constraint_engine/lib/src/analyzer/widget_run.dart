@@ -6,6 +6,7 @@
 
 import '../constraint_anchor.dart';
 import '../constraint_widget.dart';
+import '../jfloat.dart';
 import 'dependency.dart';
 import 'dependency_node.dart';
 import 'dimension_dependency.dart';
@@ -174,7 +175,10 @@ abstract class WidgetRun implements Dependency {
     }
 
     final availableDistance = endPos - startPos - mDimension.value;
-    start.resolve((0.5 + startPos + availableDistance * bias).toInt());
+    // (int) (0.5f + startPos + availableDistance * bias), in floats.
+    start.resolve(
+      jint(fadd(fadd(0.5, fi(startPos)), fmul(fi(availableDistance), bias))),
+    );
     end.resolve(start.value + mDimension.value);
   }
 
@@ -194,7 +198,10 @@ abstract class WidgetRun implements Dependency {
                 ? mWidget.mMatchConstraintPercentWidth
                 : mWidget.mMatchConstraintPercentHeight;
             final targetDimensionValue = run.mDimension.value;
-            final size = (0.5 + targetDimensionValue * percent).toInt();
+            // (int) (0.5f + targetDimensionValue * percent), in floats.
+            final size = jint(
+              fadd(0.5, fmul(fi(targetDimensionValue), percent)),
+            );
             mDimension.resolve(getLimitedDimension(size, orientation));
           }
         }
@@ -223,10 +230,12 @@ abstract class WidgetRun implements Dependency {
           if (run.mDimension.resolved) {
             final ratio = mWidget.getDimensionRatio();
             int value;
+            // (int) (0.5f + value / ratio) and (int) (0.5f + ratio * value),
+            // in floats.
             if (orientation == ConstraintWidget.VERTICAL) {
-              value = (0.5 + run.mDimension.value / ratio).toInt();
+              value = jint(fadd(0.5, fdiv(fi(run.mDimension.value), ratio)));
             } else {
-              value = (0.5 + ratio * run.mDimension.value).toInt();
+              value = jint(fadd(0.5, fmul(ratio, fi(run.mDimension.value))));
             }
             mDimension.resolve(value);
           }
@@ -244,18 +253,16 @@ abstract class WidgetRun implements Dependency {
   @override
   void update(Dependency dependency) {}
 
-  // Divergence from upstream, which applies the max to the unbounded
-  // dimension (`value = Math.min(max, dimension)`) and so drops the min
-  // whenever a max is set: a spread size whose min exceeds the space between
-  // its anchors resolved to that space here, where the solver keeps the min.
-  // The max is applied to the value the min produced instead. UPSTREAM.md.
+  /// [dimension] within the widget's match-constraint min and max along
+  /// [orientation]. As upstream, a max that is set applies to [dimension]
+  /// itself, not to the value the min produced, so it drops the min.
   int getLimitedDimension(int dimension, int orientation) {
     if (orientation == ConstraintWidget.HORIZONTAL) {
       final max = mWidget.mMatchConstraintMaxWidth;
       final min = mWidget.mMatchConstraintMinWidth;
       var value = min > dimension ? min : dimension;
       if (max > 0) {
-        value = max < value ? max : value;
+        value = max < dimension ? max : dimension;
       }
       if (value != dimension) {
         dimension = value;
@@ -265,7 +272,7 @@ abstract class WidgetRun implements Dependency {
       final min = mWidget.mMatchConstraintMinHeight;
       var value = min > dimension ? min : dimension;
       if (max > 0) {
-        value = max < value ? max : value;
+        value = max < dimension ? max : dimension;
       }
       if (value != dimension) {
         dimension = value;
@@ -297,13 +304,6 @@ abstract class WidgetRun implements Dependency {
   int getWrapDimension() {
     if (mDimension.resolved) {
       return mDimension.value;
-    }
-    // An unresolved MATCH_CONSTRAINT dimension inside a wrapping parent cannot
-    // spread, so it collapses to its configured minimum (matches the solver).
-    if (mDimensionBehavior == DimensionBehaviour.matchConstraint) {
-      return orientation == ConstraintWidget.HORIZONTAL
-          ? mWidget.mMatchConstraintMinWidth
-          : mWidget.mMatchConstraintMinHeight;
     }
     return 0;
   }

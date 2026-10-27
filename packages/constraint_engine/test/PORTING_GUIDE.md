@@ -1,11 +1,12 @@
 # Test porting guide (Java JUnit -> Dart test)
 
 Convert Android ConstraintLayout `core` tests to Dart tests for `constraint_engine`.
-The engine resolves a layout with the dependency graph first and falls back to the
-ported `LinearSystem` (Cassowary) solver when the graph declines; UPSTREAM.md lists
-the decline rules. The asserted coordinates are engine-agnostic golden values, so a
-ported test must reproduce them whichever path resolves it. Tests that drive the
-solver directly (`LinearSystem`, `ArrayRow`, `SolverVariable`) are ported too.
+The engine runs upstream's own pipeline in Java's float arithmetic (the `Direct` pass
+and the ported `LinearSystem` (Cassowary) solver, with the dependency graph first at
+the `OPTIMIZATION_GRAPH` levels, as upstream's `BasicMeasure` decides), so a ported
+test reproduces upstream's asserted values at every optimization level it sets.
+Tests that drive the solver directly (`LinearSystem`, `ArrayRow`, `SolverVariable`)
+are ported too.
 
 Source tests live upstream at
 https://github.com/androidx/constraintlayout/tree/main/constraintlayout/core/src/test/java/androidx/constraintlayout/core
@@ -59,6 +60,8 @@ Test framework: `package:test/test.dart`.
 - `root.add(a); root.add(b);` -> unchanged (or `root.addAll([a, b])`)
 - `root.setMeasurer(sMeasurer)` -> unchanged
 - `root.measure(opt, EXACTLY, w, EXACTLY, h, 0,0,0,0)` -> `root.measure(opt, BasicMeasure.EXACTLY, w, BasicMeasure.EXACTLY, h, 0, 0, 0, 0)`
+- the static `ConstraintWidgetContainer.measure(level, widget, measurer, measure, strategy)`
+  -> `ConstraintWidgetContainer.measureWidget(level, widget, measurer, measure, strategy)`
 - `root.updateHierarchy()` -> unchanged
 - getters `getWidth/getHeight/getLeft/getTop/getRight/getBottom/getX/getY/getDebugName/getBaselineDistance` -> unchanged
 - `getGuidelineAnchor()`/no-arg guideline `getAnchor()` -> `guideline.getGuidelineAnchor()`

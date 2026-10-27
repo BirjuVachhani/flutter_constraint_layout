@@ -4,8 +4,11 @@
 //
 // Ported from androidx.constraintlayout.core.widgets.analyzer.ChainRun
 
+import 'dart:math' as math;
+
 import '../constraint_widget.dart';
 import '../constraint_widget_container.dart';
+import '../jfloat.dart';
 import 'dependency.dart';
 import 'widget_run.dart';
 
@@ -14,15 +17,16 @@ class ChainRun extends WidgetRun {
   int mChainStyle = 0;
 
   /// Whether walking the chain went round a loop, so that the chain has no
-  /// first or last member. A widget's neighbour in a chain is the owner of
-  /// an anchor its own anchor targets and that targets it straight back,
-  /// whatever the sides of the two anchors, so two widgets whose tops link to
-  /// each other, a widget whose left links to its own left, or two widgets
-  /// linked both ways on both sides form such a loop. Upstream's walk never
-  /// ends on one, but upstream never builds a chain run for these layouts:
-  /// `BasicMeasure.solverMeasure` keeps the graph off for any layout with a
-  /// chain member. `DependencyGraph` declines a layout with a cyclic chain,
-  /// and the solver lays it out as upstream's does.
+  /// first or last member (port-only guard). A widget's neighbour in a chain
+  /// is the owner of an anchor its own anchor targets and that targets it
+  /// straight back, whatever the sides of the two anchors, so two widgets
+  /// whose tops link to each other, a widget whose left links to its own
+  /// left, or two widgets linked both ways on both sides form such a loop.
+  /// Upstream's walk never ends on one (walking forward, it also grows its
+  /// member list until memory runs out); `BasicMeasure.solverMeasure` keeps
+  /// the graph off for any layout with a chain member, so only a direct
+  /// `DependencyGraph.directMeasure` call reaches it, and that declines a
+  /// layout with a cyclic chain.
   bool cyclic = false;
 
   ChainRun(ConstraintWidget widget, int orientation) : super(widget) {
@@ -147,7 +151,7 @@ class ChainRun extends WidgetRun {
     double weights = 0;
     var numVisibleWidgets = 0;
     final count = mWidgets.length;
-
+    // let's find the first visible widget...
     var firstVisibleWidget = -1;
     for (var i = 0; i < count; i++) {
       final run = mWidgets[i];
@@ -157,6 +161,7 @@ class ChainRun extends WidgetRun {
       firstVisibleWidget = i;
       break;
     }
+    // now the last visible widget...
     var lastVisibleWidget = -1;
     for (var i = count - 1; i >= 0; i--) {
       final run = mWidgets[i];
@@ -198,10 +203,11 @@ class ChainRun extends WidgetRun {
           treatAsFixed = true;
         }
         if (!treatAsFixed) {
+          // only for the first pass
           numMatchConstraints++;
           final weight = run.mWidget.mWeight[orientation];
           if (weight >= 0) {
-            weights += weight;
+            weights = fadd(weights, weight);
           }
         } else {
           size += dimension;
@@ -211,42 +217,34 @@ class ChainRun extends WidgetRun {
         }
       }
       if (size < distance || numMatchConstraints == 0) {
-        break;
+        break; // we are good to go!
       }
+      // otherwise, let's do another pass with using match_constraints
       numVisibleWidgets = 0;
       numMatchConstraints = 0;
       size = 0;
       weights = 0;
     }
 
-    // The solver puts every member edge at its exact position and reports
-    // each one as (int) (value + 0.5) (LinearSystem.getObjectVariableValue).
-    // Upstream's graph rounds each gap, match-constraint size and offset
-    // instead and adds the rounded values up, so its edges drift from the
-    // solver's: two match-constraint members in 375 px are 188 px each and
-    // overflow by 1 px, five fixed members in a spread chain can end 4 px
-    // short, and a right-to-left chain rounds the other way. Here positions
-    // and match-constraint sizes stay exact until each edge is resolved,
-    // with the solver's rounding, and a member's size is the distance between
-    // its rounded edges.
-    var position = (isInRtl ? end.value : start.value).toDouble();
+    var position = start.value;
+    if (isInRtl) {
+      position = end.value;
+    }
     if (size > distance) {
+      // (int) (0.5f + (size - distance) / 2f), in floats.
+      final offset = jint(fadd(0.5, fdiv(fi(size - distance), 2)));
       if (isInRtl) {
-        position += (size - distance) / 2;
+        position += offset;
       } else {
-        position -= (size - distance) / 2;
+        position -= offset;
       }
     }
-    // The exact sizes of the match-constraint members the chain sizes,
-    // resolved with their edges (null for every other member).
-    List<double?>? matchSizes;
-    // The total size of the members and margins once a min or max applied,
-    // exact as the sizes it adds up.
-    var sizeWithLimits = size.toDouble();
-    double matchConstraintsDimension = 0;
+    var matchConstraintsDimension = 0;
     if (numMatchConstraints > 0) {
-      matchSizes = List<double?>.filled(count, null);
-      matchConstraintsDimension = (distance - size) / numMatchConstraints;
+      // (int) (0.5f + (distance - size) / (float) numMatchConstraints).
+      matchConstraintsDimension = jint(
+        fadd(0.5, fdiv(fi(distance - size), fi(numMatchConstraints))),
+      );
 
       var appliedLimits = 0;
       for (var i = 0; i < count; i++) {
@@ -259,7 +257,10 @@ class ChainRun extends WidgetRun {
           var dimension = matchConstraintsDimension;
           if (weights > 0) {
             final weight = run.mWidget.mWeight[orientation];
-            dimension = weight * (distance - size) / weights;
+            // (int) (0.5f + weight * (distance - size) / weights).
+            dimension = jint(
+              fadd(0.5, fdiv(fmul(weight, fi(distance - size)), weights)),
+            );
           }
           int max;
           int min;
@@ -273,35 +274,34 @@ class ChainRun extends WidgetRun {
           }
           if (run.matchConstraintsType ==
               ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
-            value = value < run.mDimension.wrapValue
-                ? value
-                : run.mDimension.wrapValue.toDouble();
+            value = math.min(value, run.mDimension.wrapValue);
           }
-          value = min > value ? min.toDouble() : value;
+          value = math.max(min, value);
           if (max > 0) {
-            value = max < value ? max.toDouble() : value;
+            value = math.min(max, value);
           }
           if (value != dimension) {
             appliedLimits++;
             dimension = value;
           }
-          matchSizes[i] = dimension;
+          run.mDimension.resolve(dimension);
         }
       }
       if (appliedLimits > 0) {
         numMatchConstraints -= appliedLimits;
-        sizeWithLimits = 0;
+        // we have to recompute the sizes
+        size = 0;
         for (var i = 0; i < count; i++) {
           final run = mWidgets[i];
           if (run.mWidget.getVisibility() == ConstraintWidget.GONE) {
             continue;
           }
           if (i > 0 && i >= firstVisibleWidget) {
-            sizeWithLimits += run.start.mMargin;
+            size += run.start.mMargin;
           }
-          sizeWithLimits += matchSizes[i] ?? run.mDimension.value;
+          size += run.mDimension.value;
           if (i < count - 1 && i < lastVisibleWidget) {
-            sizeWithLimits += -run.end.mMargin;
+            size += -run.end.mMargin;
           }
         }
       }
@@ -310,35 +310,36 @@ class ChainRun extends WidgetRun {
       }
     }
 
-    if (sizeWithLimits > distance) {
+    if (size > distance) {
       mChainStyle = ConstraintWidget.CHAIN_PACKED;
     }
 
     if (numVisibleWidgets > 0 &&
         numMatchConstraints == 0 &&
         firstVisibleWidget == lastVisibleWidget) {
+      // only one widget of fixed size to display...
       mChainStyle = ConstraintWidget.CHAIN_PACKED;
     }
 
     if (mChainStyle == ConstraintWidget.CHAIN_SPREAD_INSIDE) {
-      double gap = 0;
+      var gap = 0;
       if (numVisibleWidgets > 1) {
-        gap = (distance - sizeWithLimits) / (numVisibleWidgets - 1);
+        gap = (distance - size) ~/ (numVisibleWidgets - 1);
       } else if (numVisibleWidgets == 1) {
-        gap = (distance - sizeWithLimits) / 2;
+        gap = (distance - size) ~/ 2;
       }
       if (numMatchConstraints > 0) {
         gap = 0;
       }
       for (var i = 0; i < count; i++) {
-        var indexValue = i;
+        var index = i;
         if (isInRtl) {
-          indexValue = count - (i + 1);
+          index = count - (i + 1);
         }
-        final run = mWidgets[indexValue];
+        final run = mWidgets[index];
         if (run.mWidget.getVisibility() == ConstraintWidget.GONE) {
-          run.start.resolve(_round(position));
-          run.end.resolve(_round(position));
+          run.start.resolve(position);
+          run.end.resolve(position);
           continue;
         }
         if (i > 0) {
@@ -356,14 +357,17 @@ class ChainRun extends WidgetRun {
           }
         }
 
-        final edge = position;
+        if (isInRtl) {
+          run.end.resolve(position);
+        } else {
+          run.start.resolve(position);
+        }
 
-        var dimension =
-            matchSizes?[indexValue] ?? run.mDimension.value.toDouble();
+        var dimension = run.mDimension.value;
         if (run.mDimensionBehavior == DimensionBehaviour.matchConstraint &&
             run.matchConstraintsType ==
                 ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
-          dimension = run.mDimension.wrapValue.toDouble();
+          dimension = run.mDimension.wrapValue;
         }
         if (isInRtl) {
           position -= dimension;
@@ -371,13 +375,11 @@ class ChainRun extends WidgetRun {
           position += dimension;
         }
 
-        _resolveEdges(
-          run,
-          edge,
-          position,
-          isInRtl,
-          sized: matchSizes?[indexValue] != null,
-        );
+        if (isInRtl) {
+          run.start.resolve(position);
+        } else {
+          run.end.resolve(position);
+        }
         run.mResolved = true;
         if (i < count - 1 && i < lastVisibleWidget) {
           if (isInRtl) {
@@ -388,19 +390,19 @@ class ChainRun extends WidgetRun {
         }
       }
     } else if (mChainStyle == ConstraintWidget.CHAIN_SPREAD) {
-      var gap = (distance - sizeWithLimits) / (numVisibleWidgets + 1);
+      var gap = (distance - size) ~/ (numVisibleWidgets + 1);
       if (numMatchConstraints > 0) {
         gap = 0;
       }
       for (var i = 0; i < count; i++) {
-        var indexValue = i;
+        var index = i;
         if (isInRtl) {
-          indexValue = count - (i + 1);
+          index = count - (i + 1);
         }
-        final run = mWidgets[indexValue];
+        final run = mWidgets[index];
         if (run.mWidget.getVisibility() == ConstraintWidget.GONE) {
-          run.start.resolve(_round(position));
-          run.end.resolve(_round(position));
+          run.start.resolve(position);
+          run.end.resolve(position);
           continue;
         }
         if (isInRtl) {
@@ -416,16 +418,17 @@ class ChainRun extends WidgetRun {
           }
         }
 
-        final edge = position;
+        if (isInRtl) {
+          run.end.resolve(position);
+        } else {
+          run.start.resolve(position);
+        }
 
-        var dimension =
-            matchSizes?[indexValue] ?? run.mDimension.value.toDouble();
+        var dimension = run.mDimension.value;
         if (run.mDimensionBehavior == DimensionBehaviour.matchConstraint &&
             run.matchConstraintsType ==
                 ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
-          dimension = dimension < run.mDimension.wrapValue
-              ? dimension
-              : run.mDimension.wrapValue.toDouble();
+          dimension = math.min(dimension, run.mDimension.wrapValue);
         }
 
         if (isInRtl) {
@@ -434,13 +437,11 @@ class ChainRun extends WidgetRun {
           position += dimension;
         }
 
-        _resolveEdges(
-          run,
-          edge,
-          position,
-          isInRtl,
-          sized: matchSizes?[indexValue] != null,
-        );
+        if (isInRtl) {
+          run.start.resolve(position);
+        } else {
+          run.end.resolve(position);
+        }
         if (i < count - 1 && i < lastVisibleWidget) {
           if (isInRtl) {
             position -= -run.end.mMargin;
@@ -454,9 +455,10 @@ class ChainRun extends WidgetRun {
           ? mWidget.getHorizontalBiasPercent()
           : mWidget.getVerticalBiasPercent();
       if (isInRtl) {
-        bias = 1 - bias;
+        bias = fsub(1, bias);
       }
-      var gap = (distance - sizeWithLimits) * bias;
+      // (int) (0.5f + (distance - size) * bias), in floats.
+      var gap = jint(fadd(0.5, fmul(fi(distance - size), bias)));
       if (gap < 0 || numMatchConstraints > 0) {
         gap = 0;
       }
@@ -466,14 +468,14 @@ class ChainRun extends WidgetRun {
         position += gap;
       }
       for (var i = 0; i < count; i++) {
-        var indexValue = i;
+        var index = i;
         if (isInRtl) {
-          indexValue = count - (i + 1);
+          index = count - (i + 1);
         }
-        final run = mWidgets[indexValue];
+        final run = mWidgets[index];
         if (run.mWidget.getVisibility() == ConstraintWidget.GONE) {
-          run.start.resolve(_round(position));
-          run.end.resolve(_round(position));
+          run.start.resolve(position);
+          run.end.resolve(position);
           continue;
         }
         if (i > 0 && i >= firstVisibleWidget) {
@@ -483,14 +485,17 @@ class ChainRun extends WidgetRun {
             position += run.start.mMargin;
           }
         }
-        final edge = position;
+        if (isInRtl) {
+          run.end.resolve(position);
+        } else {
+          run.start.resolve(position);
+        }
 
-        var dimension =
-            matchSizes?[indexValue] ?? run.mDimension.value.toDouble();
+        var dimension = run.mDimension.value;
         if (run.mDimensionBehavior == DimensionBehaviour.matchConstraint &&
             run.matchConstraintsType ==
                 ConstraintWidget.MATCH_CONSTRAINT_WRAP) {
-          dimension = run.mDimension.wrapValue.toDouble();
+          dimension = run.mDimension.wrapValue;
         }
         if (isInRtl) {
           position -= dimension;
@@ -498,13 +503,11 @@ class ChainRun extends WidgetRun {
           position += dimension;
         }
 
-        _resolveEdges(
-          run,
-          edge,
-          position,
-          isInRtl,
-          sized: matchSizes?[indexValue] != null,
-        );
+        if (isInRtl) {
+          run.start.resolve(position);
+        } else {
+          run.end.resolve(position);
+        }
         if (i < count - 1 && i < lastVisibleWidget) {
           if (isInRtl) {
             position -= -run.end.mMargin;
@@ -513,47 +516,6 @@ class ChainRun extends WidgetRun {
           }
         }
       }
-    }
-  }
-
-  /// An exact position as the solver reports it: (int) (value + 0.5).
-  ///
-  /// Adding up exact gaps and sizes can leave a position that is a whole
-  /// pixel and a half in theory a few units in the last place off it (three
-  /// gaps of 67 / 6 after 107 px come to 140.49999999999997), where the
-  /// solver, which places each edge directly, reports the half pixel
-  /// rounded. Such sums are snapped to the half pixel first.
-  static int _round(double position) {
-    var value = position + 0.5;
-    final whole = value.roundToDouble();
-    if ((value - whole).abs() < 1e-6) {
-      value = whole;
-    }
-    return value.toInt();
-  }
-
-  /// Resolves the edges of [run], which the walk passed at the exact
-  /// positions [from] and then [to] (end first in a right-to-left container),
-  /// and first, when the chain [sized] it, its size: the distance between
-  /// them.
-  void _resolveEdges(
-    WidgetRun run,
-    double from,
-    double to,
-    bool isInRtl, {
-    required bool sized,
-  }) {
-    final first = _round(from);
-    final second = _round(to);
-    if (sized) {
-      run.mDimension.resolve(isInRtl ? first - second : second - first);
-    }
-    if (isInRtl) {
-      run.end.resolve(first);
-      run.start.resolve(second);
-    } else {
-      run.start.resolve(first);
-      run.end.resolve(second);
     }
   }
 

@@ -467,6 +467,8 @@ void main() {
       expect(c.getWidth(), 100);
       expect(c.getHeight(), 30);
       expect(d.getLeft(), 432);
+      // closeTo mirrors upstream's assertEquals delta (BasicTest.java): Java
+      // computes -29 here.
       expect(d.getTop(), closeTo(-28, 2));
       expect(d.getWidth(), 100);
       expect(d.getHeight(), 30);
@@ -488,6 +490,8 @@ void main() {
       expect(c.getWidth(), 100);
       expect(c.getHeight(), 30);
       expect(d.getLeft(), 432);
+      // closeTo mirrors upstream's assertEquals delta (BasicTest.java): Java
+      // computes -29 here.
       expect(d.getTop(), closeTo(-28, 2));
       expect(d.getWidth(), 100);
       expect(d.getHeight(), 30);
@@ -556,6 +560,8 @@ void main() {
       expect(c.getWidth(), 100);
       expect(c.getHeight(), 30);
       expect(d.getLeft(), 276);
+      // closeTo mirrors upstream's assertEquals delta (BasicTest.java): Java
+      // computes -29 here.
       expect(d.getTop(), closeTo(-28, 2));
       expect(d.getWidth(), 100);
       expect(d.getHeight(), 30);
@@ -577,6 +583,8 @@ void main() {
       expect(c.getWidth(), 100);
       expect(c.getHeight(), 30);
       expect(d.getLeft(), 276);
+      // closeTo mirrors upstream's assertEquals delta (BasicTest.java): Java
+      // computes -29 here.
       expect(d.getTop(), closeTo(-28, 2));
       expect(d.getWidth(), 100);
       expect(d.getHeight(), 30);
@@ -645,6 +653,8 @@ void main() {
       expect(c.getWidth(), 100);
       expect(c.getHeight(), 30);
       expect(d.getLeft(), 289);
+      // closeTo mirrors upstream's assertEquals delta (BasicTest.java): Java
+      // computes -29 here.
       expect(d.getTop(), closeTo(-28, 2));
       expect(d.getWidth(), 100);
       expect(d.getHeight(), 30);
@@ -666,6 +676,8 @@ void main() {
       expect(c.getWidth(), 100);
       expect(c.getHeight(), 30);
       expect(d.getLeft(), 289);
+      // closeTo mirrors upstream's assertEquals delta (BasicTest.java): Java
+      // computes -29 here.
       expect(d.getTop(), closeTo(-28, 2));
       expect(d.getWidth(), 100);
       expect(d.getHeight(), 30);

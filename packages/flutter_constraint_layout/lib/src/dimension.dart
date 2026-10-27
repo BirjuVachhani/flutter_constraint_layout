@@ -28,20 +28,47 @@ sealed class Dimension {
   const Dimension();
 
   /// Size to the child's own content. Android `wrap_content`.
+  ///
+  /// The child is measured under the layout's size on the axis: up to that
+  /// size where the layout is bounded, and with unbounded constraints where it
+  /// is not (inside a scroll view, say). Its size rounds up to whole logical
+  /// pixels, as `max(0, (v - 0.001).ceil())`: an Android view measures in
+  /// whole pixels, and a text 99.4 wide is placed 100 wide rather than
+  /// clipped at 99.
   static const WrapContentDimension wrapContent = WrapContentDimension._();
 
   /// Fill the `ConstraintLayout`. Android `match_parent`.
+  ///
+  /// Measured as Android measures `match_parent`: where the layout is bounded
+  /// on the axis, at the layout's size less the child's margins on that axis
+  /// (the margins of its links there). Where the layout is unbounded on the
+  /// axis (inside a scroll view, say), there is no size to fill: the child is
+  /// measured with unbounded constraints, as Android measures `match_parent`
+  /// under an UNSPECIFIED measure spec, and takes its own size, rounded up to
+  /// whole logical pixels as [wrapContent]'s is. A child that cannot size
+  /// itself under unbounded constraints (a vertical `ListView` on an unbounded
+  /// height, a `TextField` across an unbounded width) then fails the layout
+  /// with an error that names the child and the axis, in every build. Give
+  /// such a child a [Dimension.fixed] size on that axis, bound the layout, or
+  /// use a child that sizes itself there (a `ListView` with `shrinkWrap`). The
+  /// same holds for [wrapContent], and for a match-constraint size measured
+  /// for its content on an unbounded axis.
   static const MatchParentDimension matchParent = MatchParentDimension._();
 
   /// Fill the space between the two opposing anchors. Android `0dp`.
   ///
   /// Needs both opposing anchors on the axis (start and end, or top and
   /// bottom) to fill anything: with only one of them, the child sizes to its
-  /// content.
+  /// content. A content size rounds up to whole logical pixels, as
+  /// [wrapContent]'s does.
   static const MatchConstraintDimension matchConstraint =
       MatchConstraintDimension._();
 
-  /// An exact size in logical pixels.
+  /// An exact size in logical pixels, rounded to the nearest whole pixel.
+  ///
+  /// `Dimension.fixed(0)` is a real size of 0: the child is laid out 0 wide
+  /// (or tall). Android's `0dp` is not a fixed size but [matchConstraint].
+  /// A negative size is 0.
   const factory Dimension.fixed(double pixels) = FixedDimension;
 
   /// Fill the space between the two opposing anchors, optionally bounded.
@@ -62,6 +89,8 @@ sealed class Dimension {
   /// [wrapContent], the content size is capped by the constraints. A capped
   /// child is measured again at the capped size, so its other dimension
   /// follows: text that wraps takes the height it needs at the capped width.
+  /// The content size rounds up to whole logical pixels, as [wrapContent]'s
+  /// does.
   const factory Dimension.constrainedWrap({double? min, double? max}) =
       MatchConstraintDimension.constrainedWrap;
 

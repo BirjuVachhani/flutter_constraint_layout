@@ -1,12 +1,19 @@
 # constraint_engine
 
-The layout engine behind Android's ConstraintLayout, in pure Dart. You describe
+The layout engine of Android's ConstraintLayout, in pure Dart. You describe
 widgets as rectangles and the constraints between their edges, and the engine
-works out the position and size of every widget. It is a line-faithful port of
-`androidx.constraintlayout.core` with both of its resolution strategies: a
-dependency-graph resolver handles most layouts directly, and the
-Cassowary-style `LinearSystem` solver takes over for the layouts the graph
-cannot resolve. No Flutter dependency.
+works out the position and size of every widget, as Android does. It is a
+literal port of Android's layout pipeline: upstream's core library
+(`androidx.constraintlayout.core`: the `Direct` pass, the Cassowary-style
+`LinearSystem` solver, the dependency graph, the widget model) and the measure
+pass of the ConstraintLayout view (`onMeasure`, its child measurer and
+`MeasureSpec`), computed in Java's 32-bit float arithmetic. Checked layout by
+layout against Android's own Java engine, on nearly 1.5 million distinct
+layouts (about 1.9 million runs at Android's default optimization level alone,
+through the core and view paths and as Flutter widget trees, and more at its
+other levels), it gives the same frames on every one, outside the few cases
+where Android itself has no single result (see
+[What parity means](#what-parity-means)). No Flutter dependency.
 
 > **Building a Flutter app?** Use
 > [flutter_constraint_layout](https://pub.dev/packages/flutter_constraint_layout)
@@ -149,17 +156,21 @@ class TextMeasurer implements Measurer {
 root.setMeasurer(TextMeasurer({title: 'Pure Dart layout'}));
 ```
 
-Without a measurer, `layout()` installs a default one under which a
-wrap-content widget keeps its stored size and a match-constraint size stays
-within its min and max. That is enough when every size is known up front and
-the layout has no `Flow` or `GridCore`, which only work through a measurer
-that runs their own measure pass. See [The measurer](#the-measurer) for the
-full contract.
+There is no default measurer, as upstream has none: `measure()` throws a
+`StateError` when a container with children has no measurer. See
+[The measurer](#the-measurer) for the full contract.
 
-### 6. Lay out and read the result
+### 6. Measure and read the result
 
 ```dart
-root.layout();
+root.measure(
+  root.getOptimizationLevel(),
+  BasicMeasure.EXACTLY,
+  root.getWidth(),
+  BasicMeasure.EXACTLY,
+  root.getHeight(),
+  0, 0, 0, 0,
+);
 
 for (final widget in root.getChildren()) {
   print(
@@ -175,6 +186,13 @@ title: x 76, y 30, 128 x 20
 banner: x 16, y 80, 368 x 40
 ```
 
+`measure(level, widthMode, widthSize, heightMode, heightSize, lastWidth,
+lastHeight, paddingX, paddingY)` is upstream's entry, the one Android's
+`onMeasure` calls: it measures the children, lays the layout out, and measures
+again the children whose size depends on the result (see
+[How the engine lays out](#how-the-engine-lays-out)). `BasicMeasure.EXACTLY`
+with the container's own size measures a fixed-size layout.
+
 Positions are relative to the container's top-left corner, and `getLeft()`,
 `getTop()`, `getRight()`, and `getBottom()` give the edges. Sizes, positions,
 and margins are integers, in whatever unit your renderer uses. The title's 16
@@ -183,21 +201,114 @@ characters measure 128 x 20, so centering it on the 48 px logo puts its top at
 
 ### Laying out again
 
-The model is persistent: change sizes, constraints, or visibility, then call
-`layout()` again. Each call rebuilds the dependency graph from the current
-model. Sizes are stored on the widgets in both directions, though: a `fixed`
-axis reads the stored size, and a layout writes resolved sizes back, including
-0 x 0 for a `GONE` widget. Set a size again (for example with
-`setDimension(width, height)`) when an earlier layout may have changed it,
-such as when a gone widget becomes visible.
+The model is persistent: change sizes, constraints, or visibility, then
+measure again. As upstream's core, a container measured directly keeps state
+from one measure to the next: the final values Direct gave the anchors are
+reset only by the next Direct pass, a size override the solver left pending is
+applied by the next solve, and a `fixed` axis keeps the size a solve widened
+it to. Set your fixed sizes again (for example with `setDimension(width,
+height)`) before measuring, as Android's layout params do. To get exactly what
+Android gives on every measure, measure through `ViewHost` (next section),
+which first resets every child's measure state as Android's view layer does.
 
 The full example also builds a chain and a biased widget, then widens the
-container and lays it out again. In a checkout of the repository, run it from
+container and measures it again. In a checkout of the repository, run it from
 `packages/constraint_engine`:
 
 ```sh
 dart run example/constraint_engine_example.dart
 ```
+
+## Android's entry: ViewHost
+
+`ViewHost` is the ConstraintLayout view's `onMeasure` (ConstraintLayout.java,
+the dirty path that runs whenever a child requested layout), ported over the
+engine. Give it the container and a `ViewMeasurer`, the port of the view's
+child measurer, and measure the layout under the `MeasureSpec`s its parent
+gives it:
+
+```dart
+import 'dart:math' as math;
+
+class LabelViews extends ViewMeasurer {
+  LabelViews(this.texts);
+
+  final Map<ConstraintWidget, String> texts;
+
+  // The child view's own onMeasure: the only hook a host implements.
+  @override
+  ({int width, int height, int baseline}) measureContent(
+    ConstraintWidget widget,
+    int widthSpec,
+    int heightSpec,
+  ) {
+    final text = texts[widget] ?? '';
+    final width = _resolve(text.length * 8, widthSpec);
+    final lines = width <= 0 ? 1 : (text.length * 8 + width - 1) ~/ width;
+    final height = _resolve(lines * 20, heightSpec);
+    return (width: width, height: height, baseline: text.isEmpty ? -1 : 15);
+  }
+
+  static int _resolve(int natural, int spec) =>
+      switch (MeasureSpec.getMode(spec)) {
+        MeasureSpec.EXACTLY => MeasureSpec.getSize(spec),
+        MeasureSpec.AT_MOST => math.min(natural, MeasureSpec.getSize(spec)),
+        _ => natural,
+      };
+}
+
+final host = ViewHost(root, LabelViews({title: 'Pure Dart layout'}));
+host.measure(
+  MeasureSpec.makeMeasureSpec(400, MeasureSpec.EXACTLY),
+  MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+);
+print('${host.getMeasuredWidth()} x ${host.getMeasuredHeight()}'); // 400 x 120
+```
+
+With the container and children of the walkthrough, the frames are the same,
+and the layout wraps its height around them under the unbounded height spec:
+120. Before every measure the host does what Android's view layer does:
+
+- it resets every child's measure state as Android's
+  `ConstraintWidget.reset()` does before the layout params are applied again
+  (`ConstraintWidget.resetMeasureState`), keeping the configuration and what
+  `reset()` keeps: the resolved flags, a guideline's and a barrier's own
+  flag, `hasBaseline`, the last measure specs and the dependency graph's runs
+  and nodes. So a layout measured again carries the same history as
+  Android's: at `OPTIMIZATION_STANDARD` none that changes a layout, but
+  without `OPTIMIZATION_DIRECT` a barrier that `allSolved` resolved stays at
+  0 from its second measure on, and at the `OPTIMIZATION_GRAPH` levels the
+  graph is wired from what its last run left (see `UPSTREAM.md`, "Android's
+  dirty measure");
+- it makes every `Guideline` and `Barrier` GONE, as Android's view helpers
+  always are (they report 0 x 0, and a link into one uses its gone margin);
+- it marks the members of each virtual layout, and rebuilds every anchor's
+  dependents from the links the widgets hold, in the order Android's
+  `setChildrenConstraints` makes them (`rebuildViewDependents`);
+- it marks the children a baseline link needs the baseline of.
+
+Then it sets the container's behaviours, size, minimum and maximum from the
+specs and from the host's own `paddingLeft`, `paddingTop`, `paddingRight`,
+`paddingBottom`, `minWidth`, `minHeight`, `maxWidth` and `maxHeight` (the
+layout view's), measures it at `optimizationLevel` (`OPTIMIZATION_STANDARD` by
+default) and resolves the layout's measured size, with Android's
+`MEASURED_STATE_TOO_SMALL` bit when a wrap-content axis did not fit
+(`measuredWidthAndState`). Read the children's
+frames from the widgets afterwards: `getX()` and `getY()` include the padding.
+A child the host has to keep in sync across measures, as the Flutter adapter
+does, is configured in place: change its links, sizes and styles as Android's
+layout params would set them, then measure again.
+
+`ViewMeasurer` implements every rule of Android's child measurer, in
+Android's order: the child's measure specs from its behaviour and the
+measure strategy, the measure cache (`OPTIMIZATION_CACHE_MEASURES`), the GONE
+and both-spread short cuts, the match-constraint minimum and maximum (with a
+second measure of the view when they change a size), the ratio branch without
+`OPTIMIZATION_DIRECT`, the baseline and `measuredNeedsSolverPass` rules. It
+keeps each child view's measured size and baseline between measures, as a
+`View` does. A `VirtualLayout` child is measured through its own `measure`.
+Set `transcript` to a `StringBuffer` to record every measure request in the
+parity oracle's format.
 
 ## Key concepts
 
@@ -222,14 +333,14 @@ ones. `connect` silently ignores an invalid pair such as `left` to `top`.
   degrees clockwise from the top. That is what the `center` anchor is for. A
   connected `center` anchor replaces the widget's edge constraints, so
   connecting `center` to `center` with `connect`, which sets no angle, does
-  not center a widget: it stays at (0, 0). Use the anchor pairs or `centerX`
-  and `centerY` instead.
+  not center a widget: as on Android, it lays out at (0, 0). Use the anchor
+  pairs or `centerX` and `centerY` instead.
 - **Baselines.** `connect(.baseline, other, .baseline)` aligns two widgets'
   text baselines. Both widgets must already have a baseline when you connect
   them (`setBaselineDistance` with a positive value), or the connection is
-  ignored. A measurer should report baselines as well, because the engine
-  copies `measuredBaseline` and `measuredHasBaseline` onto the widget after
-  every measure.
+  ignored. A measurer reports baselines as well, because the engine copies
+  `measuredBaseline` and `measuredHasBaseline` onto the widget after every
+  measure.
 
 ### Dimension behaviours
 
@@ -240,9 +351,10 @@ ones. `connect` silently ignores an invalid pair such as `left` to `top`.
 | `matchConstraint` | Derived from the constraints, according to the match-constraint mode (below). |
 | `matchParent` | The container's size minus the widget's margins on that axis. |
 
-A `wrapContent` container sizes itself around its children: call
-`root.setHorizontalDimensionBehaviour(.wrapContent)` (or the vertical one) and
-read `root.getWidth()` after `layout()`.
+A `wrapContent` container sizes itself around its children: measure it with
+`BasicMeasure.AT_MOST` (or `UNSPECIFIED`) on that axis, or through
+`ViewHost` with an `AT_MOST` or `UNSPECIFIED` spec, and read its size
+afterwards.
 
 ### Match-constraint modes
 
@@ -252,11 +364,7 @@ modes are `ConstraintWidget` constants:
 
 - `MATCH_CONSTRAINT_SPREAD` (the default) fills the space between the anchors.
 - `MATCH_CONSTRAINT_WRAP` uses the content's size, capped at the space between
-  the anchors. The measurer may be asked about such an axis as
-  `matchConstraint`, so check the widget's `mMatchConstraintDefaultWidth` (or
-  `mMatchConstraintDefaultHeight`) and report the content's size there too,
-  except when it is measured again after a solve (see
-  [the measurer](#the-measurer)).
+  the anchors.
 - `MATCH_CONSTRAINT_PERCENT` takes `percent` (0 to 1) of the container's size,
   even when the widget is anchored to siblings. Passing a `percent` between 0
   and 1 with the spread mode switches to this mode.
@@ -287,7 +395,8 @@ video.connect(.top, root, .top);
 
 When both axes are `matchConstraint`, prefix the side to compute: `'H,16:9'`
 derives the height from the width, `'W,16:9'` the width from the height.
-`setDimensionRatio(ratio, side)` is upstream's numeric form.
+`setDimensionRatio(ratio, side)` is upstream's numeric form. The ratio is held
+as Java's float quotient of its two parts.
 
 ### Chains
 
@@ -347,9 +456,12 @@ A `Guideline` sits at a fixed distance from the container's left or top edge
 (`setGuideBegin`) or its right or bottom edge (`setGuideEnd`), or at a
 fraction of its size (`setGuidePercent`). A `Guideline.vertical` guideline is a
 vertical line, so widgets constrain their `left` or `right` anchors to it, and
-a `Guideline.horizontal` one takes `top` and `bottom`. A `Barrier` follows the
-outermost `left`, `right`, `top`, or `bottom` edge of the widgets added to it,
-offset by `setMargin`.
+a `Guideline.horizontal` one takes `top` and `bottom`. Orient a guideline
+before linking to it: a guideline is horizontal until oriented, so a link into
+the `left` or `right` of an unoriented one finds no anchor and is dropped. A
+`Barrier` follows the outermost `left`, `right`, `top`, or `bottom` edge of the
+widgets added to it, offset by `setMargin`. Measured through `ViewHost`, both
+are GONE widgets of size 0 x 0, as on Android.
 
 ### Visibility and gone margins
 
@@ -364,220 +476,286 @@ b.connect(.left, a, .right, 8);
 b.setGoneMargin(.left, 32); // after connect: connecting resets it
 
 a.setVisibility(ConstraintWidget.GONE);
-root.layout();
-// a collapses at the container's left edge, so b.getX() is 32.
-// With a visible, b.getX() is 10 + a's width + 8.
+// After a measure, a collapses at the container's left edge, so b.getX()
+// is 32. With a visible, b.getX() is 10 + a's width + 8.
 ```
 
 ### The measurer
 
-`Measurer.measure(widget, measure)` is how the engine learns content sizes.
-The `Measure` carries the request:
+`Measurer.measure(widget, measure)` is how the engine learns content sizes,
+the core library's contract that upstream's own tests implement. The
+`Measure` carries the request:
 
 - `horizontalBehavior` and `verticalBehavior`: how each axis is being
   measured. The engine may pass a behaviour that differs from the widget's
-  own, for example `fixed` for a `matchConstraint` axis it has already
-  resolved.
+  own: `fixed` for an axis Direct or the solver has already resolved, or
+  `wrapContent` for a spread `matchConstraint` axis with fewer than two links.
 - `horizontalDimension` and `verticalDimension`: the size the engine proposes.
   On a `wrapContent` axis it is not a limit: it holds the widget's stored size
   or 0.
-- `measureStrategy`: `Measure.SELF_DIMENSIONS`, `TRY_GIVEN_DIMENSIONS`, or
-  `USE_GIVEN_DIMENSIONS`, the measure strategies of upstream's `BasicMeasure`.
+- `measureStrategy`: `Measure.SELF_DIMENSIONS` for a measure before a solve,
+  `TRY_GIVEN_DIMENSIONS` and `USE_GIVEN_DIMENSIONS` for the re-measures after
+  one, the measure strategies of upstream's `BasicMeasure`.
 
 Write the answer to `measuredWidth`, `measuredHeight`, `measuredBaseline`, and
-`measuredHasBaseline`. The engine reuses its `Measure` objects across calls,
-so set all four every time. Report the content's natural size on
-`wrapContent` axes (and on `MATCH_CONSTRAINT_WRAP` axes), and echo the
-proposed size on the others.
+`measuredHasBaseline`, and set `measuredNeedsSolverPass` when the answer
+differs from the proposed size and the layout should be solved again. The
+engine reuses its `Measure` objects across calls (`BasicMeasure.mMeasure`, and
+the one of the Direct pass), so set every output on every call; an output you
+leave is the previous request's, as on Android. The engine copies the answer
+onto the widget (`setWidth`, `setHeight`, `setHasBaseline`,
+`setBaselineDistance`).
 
-Then keep each size within the widget's match-constraint bounds, as Android's
-measurer does: raise it to `mMatchConstraintMinWidth` and lower it to
-`mMatchConstraintMaxWidth` (and the height ones), skipping a bound that is 0.
-When that changes a size, measure the content again at it, so that the other
-axis follows. The dependency graph measures a `matchConstraint` axis that has
-only one anchor as wrap content and resolves it at the size you report, while
-the solver applies the bounds itself; without the clamp, such an axis ignores
-its min and max on the graph. The default measurer clamps the same way.
-
-After the solver has run, `layout()` measures some children again (see
-[how resolution works](#how-resolution-works)), first with
-`TRY_GIVEN_DIMENSIONS` and then with `USE_GIVEN_DIMENSIONS`. On those passes
-the proposed size of a `MATCH_CONSTRAINT_WRAP` axis is the solver's, capped by
-the anchors and by the min and max. Measure the content at that size, so that
-content that reflows, such as wrapping text, sizes its other axis there.
-Android's measurer does so on `USE_GIVEN_DIMENSIONS`, and on
-`TRY_GIVEN_DIMENSIONS` once the other axis is stable (the content's last
-measured size on it is the widget's current size); until then it measures the
-content again.
+What else a measurer does is up to it, and decides whether the result is
+Android's. Android's child measurer turns each request into measure specs,
+keeps every size within the widget's match-constraint minimum and maximum
+(measuring the view again when that changes a size), asks for a
+`MATCH_CONSTRAINT_WRAP` axis's content again after a solve until the other
+axis is stable, and answers repeated similar requests from its cache. To get
+Android's results, extend `ViewMeasurer` and implement its one hook,
+`measureContent`, as in the [ViewHost](#androids-entry-viewhost) example, or
+copy those rules into your own `Measurer`.
 
 `Flow` and `GridCore` are virtual layouts: helpers that arrange the widgets
 added to them into wrapping rows or columns, or into a grid. They size
-themselves, and work out how to arrange their widgets, in a measure pass of
-their own that only your measurer can run: under the default measurer their
-widgets are left unplaced. Call their
-`measure(widthMode, widthSize, heightMode, heightSize)` with
-`BasicMeasure.EXACTLY` and the proposed size on an axis whose size is known,
-and `BasicMeasure.AT_MOST` and the space available to the layout (here
-`availableWidth` and `availableHeight`, for example the container's size) on
-the others, then report `getMeasuredWidth()` and `getMeasuredHeight()`. A
-`fixed` axis is known. So is a `matchConstraint` axis on a re-measure after a
-solve (`TRY_GIVEN_DIMENSIONS` or `USE_GIVEN_DIMENSIONS`): `layout()` measures
-a virtual layout with such an axis again at the size the solver gave it, so
-that a `Flow` narrower than the container wraps within its own bounds.
-
-```dart
-if (widget is VirtualLayout) {
-  final solved = measure.measureStrategy != Measure.SELF_DIMENSIONS;
-  bool known(DimensionBehaviour? behavior) =>
-      behavior == DimensionBehaviour.fixed ||
-      (solved && behavior == DimensionBehaviour.matchConstraint);
-  final fixedW = known(measure.horizontalBehavior);
-  final fixedH = known(measure.verticalBehavior);
-  widget.measure(
-    fixedW ? BasicMeasure.EXACTLY : BasicMeasure.AT_MOST,
-    fixedW ? measure.horizontalDimension : availableWidth,
-    fixedH ? BasicMeasure.EXACTLY : BasicMeasure.AT_MOST,
-    fixedH ? measure.verticalDimension : availableHeight,
-  );
-  measure.measuredWidth = widget.getMeasuredWidth();
-  measure.measuredHeight = widget.getMeasuredHeight();
-  measure.measuredBaseline = 0;
-  measure.measuredHasBaseline = false;
-  return;
-}
-```
-
-The virtual layout then measures the widgets added to it through the same
-measurer.
+themselves in a measure pass of their own, which only a measurer runs: call
+their `measure(widthMode, widthSize, heightMode, heightSize)` with
+`BasicMeasure.EXACTLY` and the proposed size on an axis whose size is known
+(a `fixed` axis, or a `matchConstraint` axis on a re-measure after a solve),
+and `BasicMeasure.AT_MOST` and the space available on the others, then report
+`getMeasuredWidth()` and `getMeasuredHeight()`. The virtual layout then
+measures the widgets added to it through the same measurer. `ViewMeasurer`
+does this itself, from the specs.
 
 A `GridCore` follows the container's direction: in a right-to-left container
-(`setRtl(true)`) its first column is the rightmost, so its cells fill from the
-right, while the cell positions in its spans and skips and its column weights
-still count from the first column. Upstream's `GridCore` leaves right-to-left
-unhandled; this one lays the grid out as the mirror image of its left-to-right
-layout.
+its first column is the rightmost, so its cells fill from the right, while the
+cell positions in its spans and skips and its column weights still count from
+the first column. Upstream's `GridCore` leaves right-to-left unhandled; this
+one lays the grid out as the mirror image of its left-to-right layout. Grid
+layouts are outside the parity contract: Android's view `Grid` is not core
+`GridCore`, so there is no Android result to compare with.
 
-`didMeasures()` marks the end of a batch of measures on the `measure(...)`
-entry point described below; `layout()` does not call it, and an empty body
-is typical.
+`didMeasures()` marks the end of the first batch of measures of a
+`measure(...)` call (upstream's `measureChildren`); an empty body is typical.
 
-## How resolution works
+## How the engine lays out
 
-`layout()` resolves in up to two stages:
+`ConstraintWidgetContainer.measure(level, ...)` runs upstream's
+`BasicMeasure.solverMeasure` at `level`, which is Android's pipeline:
 
-1. **Dependency graph.** Each edge and dimension becomes a node that depends
-   on others: a left edge on its target plus the margin, a match-constraint
-   width on both of its edges. The graph measures the children, then resolves
-   the nodes in dependency order. Most layouts finish here.
-2. **Cassowary solver.** When the graph cannot resolve a layout faithfully,
-   `layout()` restores the widget state from before the graph pass,
-   re-measures wrap-sized children, and solves the layout as a system of
-   linear equations and inequalities with the ported `LinearSystem`. The
-   solver gets the same input upstream's solver would. Then, as upstream's
-   `BasicMeasure.solverMeasure` does, a virtual layout with a
-   `matchConstraint` axis is measured again at the size the solver gave it,
-   and so is a child whose content size on one axis depends on a size the
-   solver set on the other (a `matchConstraint` axis, or a
-   `MATCH_CONSTRAINT_WRAP` axis the solver capped). Their changes share a
-   follow-up solve when a size or baseline changes, or the measurer requests
-   another solver pass.
+1. **Dependency graph** (only at the `OPTIMIZATION_GRAPH` levels). When no
+   child is in a chain or is a virtual layout and both modes are `EXACTLY`,
+   upstream's `DependencyGraph` tries to resolve the whole layout, and when it
+   resolves every widget nothing else runs. At `OPTIMIZATION_GRAPH_WRAP` it
+   runs whatever the modes, but resolves only the `EXACTLY` axes, and when a
+   mode is not `EXACTLY` the solver runs anyway. On an `EXACTLY` axis where
+   the container's own behaviour is `wrapContent`, the graph computes the
+   container's size itself when its runs allow it. `ViewHost` makes every
+   `EXACTLY` axis `fixed`, so through it the graph never computes a wrap
+   size.
+2. **Measure the children** (`measureChildren`), except those the solver sizes
+   on its own (match constraint on both axes) and, at
+   `OPTIMIZATION_DIRECT`, those Direct may size.
+3. **Pass 0** (`layout()`). At `OPTIMIZATION_DIRECT`, upstream's `Direct`
+   pass walks the constraints from the container's edges, its guidelines and
+   its barriers, and gives final positions, in whole pixels, to every axis it
+   can place without the solver, measuring each widget as soon as both of its
+   sizes can be known; then every child it left with a measure request is
+   measured. Then the solver: each iteration builds the `LinearSystem` from
+   the container and its children (holding what Direct resolved as
+   constants), minimizes it, and reads every frame back. It runs again, at
+   most 9 times in all, while a frame records a size override (a minimum or a
+   maximum changed a solved size), while the container's minimum raises its
+   size, and once when a wrap-content axis of the container came out larger
+   than the size the pass started from. An exception inside a solve is
+   caught and printed (`EXCEPTION : ...`), and the frames are read from what
+   was solved, as on Android.
+4. **Re-measures** (passes 1 and 2). The virtual layouts with a
+   `matchConstraint` axis are measured again (`TRY_GIVEN_DIMENSIONS`), then
+   the other `matchConstraint` children twice (`TRY_GIVEN_DIMENSIONS`, then
+   `USE_GIVEN_DIMENSIONS`), each round followed by another solve when a size,
+   a baseline or a measurer's `measuredNeedsSolverPass` changed.
 
-The graph declines, and hands the whole layout to the solver, for chains with
-`GONE`, ratio-sized, or percent members, chains along a `wrapContent` axis of
-the container, chains with margins in a right-to-left (`setRtl(true)`)
-container, chains with no first or last member (anchors that loop back on
-themselves, such as two widgets whose tops target each other),
-`MATCH_CONSTRAINT_WRAP` widgets, circular constraints, nested containers,
-widgets (gone ones included) centered between two anchors along a
-`wrapContent` axis, `matchParent` widgets along a `wrapContent` axis, wrap
-results whose children overflow the computed bounds, wrap results larger than
-the container's `setMaxWidth` or `setMaxHeight`, a `wrapContent` axis whose
-size it cannot compute (a guideline, a barrier, or a match-constraint widget
-that does not simply spread turns the computation off, and widgets that depend
-on each other in a loop along that axis defeat it), widgets that
-`setWrapBehaviorInParent` leaves out of a `wrapContent` axis,
-match-constraint widgets resolved below their `setMinWidth` or `setMinHeight`,
-a baseline link from a widget that has no baseline (a baseline distance of 0
-after its measure, as a widget without text measures; Android ignores such a
-link), a widget whose size resolved after the graph's last measure of it, a
-chain whose members the graph left unplaced or at their measured sizes, a size
-override that `setFrame` left pending from the last solve, and virtual
-layouts. It also hands over any layout it leaves partly unresolved, such as
-one with a cycle.
+`layout()` is one of those passes on its own: the Direct pass when the level
+has `OPTIMIZATION_DIRECT` and the pass is the first (`setPass(0)`), then the
+solver loop, with the sizes the children have by then. Without a measurer it
+measures nothing, and Direct resolves only what needs no measure.
 
-Barriers resolve on the graph, at the outermost edge of their widgets plus
-their margin, when the graph can tell that Android would lay the whole layout
-out the same way. Android's default level, `OPTIMIZATION_STANDARD`, runs
-upstream's `Direct` optimizer before its solver, and a barrier whose widgets
-`Direct` places is placed at that edge and held there. Any other barrier is
-the solver's, which bounds it by its widgets and pulls it towards them and
-towards one edge of the container (widgets centered against it pull too).
-When those pulls would move it off the edge of its widgets, for example a
-`left` or `top` barrier past the container's right or bottom edge, or when
-the check cannot tell, the layout goes to the solver. So does a barrier layout
-where `Direct` would place a widget elsewhere than the graph (it works a
-centered position out in floats, and truncates the offset of a widget that
-does not fit where the graph rounds it), and one where, in the part `Direct`
-leaves to the solver, the solver would: a fraction of a pixel that the graph
-rounds earlier (a percent or ratio size, a chain gap, a centered position
-that another widget is centered on), a chain that overflows or that a barrier
-pulls on, a centered widget with a negative margin, or a baseline link to a
-gone widget that has a baseline distance. And so does a barrier layout with a
-negative position or size anywhere, which Android rounds differently, or with
-a widget given a minimum size through `setMinWidth` or `setMinHeight`. A
-barrier layout on the solver comes out as it always has.
+Every float in the pipeline is a Java `float`: each operation is one binary32
+rounding in Java's evaluation order (`f32`, `fadd`, `fmul` and the rest, in
+`jfloat.dart`), each `(int)` cast truncates toward zero, inputs such as biases,
+percents and ratios are stored as binary32 values, and a position is read back
+from the solver as `(int) (value + 0.5f)`. That is what makes a widget land on
+Android's pixel, not one beside it.
 
-Outside barrier layouts the graph is not checked against Android's rounding,
-so a layout it keeps can come out differently from the solver, and from
-Android, usually by a pixel. Android's default level, `OPTIMIZATION_STANDARD`,
-runs upstream's `Direct` optimizer before its solver, and `Direct` places
-simply anchored and centered widgets in whole pixels, mostly as the graph
-does. So in three cases the graph gives Android's result, and the solver,
-which runs here without a `Direct` pass, does not: a widget centered on a
-widget whose own centered position falls on a half pixel (the solver puts it
-a pixel off), a centered widget with a negative margin (the solver drops that
-margin unless the one on the other side is positive), and a widget linked to
-the end of a gone match-parent widget (the solver places it as if that widget
-had not collapsed). Elsewhere the graph can differ from Android. It keeps a
-widget at a negative position (-7 for a margin of -7), where the solver and
-Android round it a pixel towards zero (-6), and keeps a frame with a negative
-size, which they report as 0 x 0 at 0, 0. It rounds a percent or ratio size,
-a chain gap, or a centered position that another widget is centered on, where
-Android's solver keeps the fraction and rounds once at the end, and it rounds
-a ratio size where Android truncates it, so a widget can land a pixel away.
-`Direct` itself works a centered position out in floats and truncates the
-offset of a widget that does not fit, where the graph rounds in doubles, so a
-centered widget it places can sit a pixel from the graph's position too. The
-solver can also size a match-constraint widget with a min or a max, or one
-between anchors that leave it no room, differently from the graph. The graph
-can collapse a gone widget that nothing references, or a gone match-parent
-widget, at another point; the widget has no size, so nothing shows. And it
-clamps a percent size by its min and max, which upstream's graph leaves to the
-solver, so it keeps a percent size anchored on both sides at its min when the
-min is above the percent, where the solver and Android fill the space between
-the anchors (see
-[UPSTREAM.md](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/UPSTREAM.md)).
-The barrier check above declines a barrier layout where the graph would
-differ from Android in any of these ways, but for a position exactly on a
-half pixel, which floating-point noise can round either way in Android and in
-the solver. It also keeps degenerate barrier layouts that the solver lays out
-as the graph does and Android does not, such as one with a widget whose links
-cross, since declining them would not give Android's result.
+### Optimization levels
 
-Upstream works the other way around: its default path is that `Direct` pass
-and the solver, with the graph as an optional optimization. The graph is the
-cheaper path. The bundled
+`setOptimizationLevel` takes a mask of `Optimizer` flags, and the
+`optimizationLevel` of `measure(...)` should be the same value:
+
+| Level | Flags | What runs |
+| --- | --- | --- |
+| 257, `OPTIMIZATION_STANDARD` (the default, as on Android) | `DIRECT`, `CACHE_MEASURES` | Direct, then the solver; `ViewMeasurer` answers repeated similar requests from its cache |
+| 0, `OPTIMIZATION_NONE` | none | the solver alone |
+| 321 | `STANDARD`, `GRAPH` | the dependency graph first where its rules let it run, else as 257 |
+| 449 | `STANDARD`, `GRAPH`, `GRAPH_WRAP` | the same, and the graph also runs when a mode is not `EXACTLY`, on the `EXACTLY` axes, before the solver |
+| 64, 192 | `GRAPH` (and `GRAPH_WRAP`) without Direct | the graph first, else the solver alone |
+
+The GRAPH levels are opt-in, as on Android, and at each of them the engine
+does exactly what Android does at the same level: the dependency graph is
+upstream's, with its rules for when it runs and its results, so those levels
+are checked against Android at the same level. They are not a faster default:
+on the benchmark screens below, the graph alone (321) takes longer than
+Direct and a trivial solve (257). `OPTIMIZATION_BARRIER`, `CHAIN`,
+`DIMENSIONS`, `RATIO` and `GROUPS` are read nowhere, upstream included;
+`OPTIMIZATION_DEPENDENCY_ORDERING` and `OPTIMIZATION_GROUPING` belong to
+passes this port leaves out (their flags are kept for parity).
+
+## What parity means
+
+The engine is checked against upstream's Java engine itself: upstream's core
+at the pinned commit, driven by a Java port of the ConstraintLayout view's
+measure pass (`VOpDriver`), which a check on real Android views (Robolectric,
+the released ConstraintLayout 2.2.1 view layer) matches on every layout that
+layout params can express. Both sides replay the same op lists, the exact
+sequence of engine calls that builds each layout, and every child's frame and
+the layout's size must be equal. The
+corpora: R, 319,827 realistic screens from 16 generators (lists, forms,
+settings, chat, toolbars, cards, nested layouts; half with barriers); VR2,
+the same with text and box content measured through the view path; T2,
+470,000 layouts in 15 families that target one mechanism each (percent sizes
+with minimums, crossed links, negative edges, odd biases, ratios, chains,
+wrap-content containers, gone widgets, circles, Flows, measure specs, in-place
+changes); T2core, the 379,995 T2 layouts the core path can run; and A,
+360,000 adversarial layouts from 18 generators. At
+`OPTIMIZATION_STANDARD`:
+
+| Corpus and path | Compared | Differ | Excluded |
+| --- | --- | --- | --- |
+| R, `measure()` | 319,827 | 0 (and Direct's state: 0) | none |
+| A, `measure()`, frames and printed exceptions | 359,617 | 0 | ND 154, HANG 8, SOE 110, JEXC 111 |
+| T2core, `measure()` | 379,995 | 0 (Direct's state: 0) | none |
+| VR2, `ViewHost` | 319,827 | 0 (Direct's state 0, measure requests 0) | none |
+| T2, `ViewHost` | 469,990 | 0 (Direct's state 0, measure requests 0) | ND 10 |
+| Solver trace, 2,000 layouts | 2,000 | 0: every variable, row, pivot, goal update and final value, bit for bit | none |
+| FL: 60,000 layouts as real Flutter widget trees, through flutter_constraint_layout | 60,000 | 0 (the dry layout too) | none |
+
+The excluded classes are Android's own limits, counted and reported:
+
+- **ND**: Android's result depends on identity hashes, which order its hash
+  sets and differ from launch to launch (found by running the oracle under
+  three hash settings). The engine iterates its sets in insertion order, the
+  order the oracle's hash setting gives up to ten entries.
+- **HANG**: Java never returns (8 layouts). The engine finishes: its bounded
+  `ArrayRow.updateFromSystem` and its chain walks stop where Java's loop
+  forever (see UPSTREAM.md).
+- **SOE**: Java's `Direct` recurses until its stack overflows (110 layouts).
+  The engine's guard stops the walk, and the solver lays the layout out.
+- **JEXC**: Java throws out of `onMeasure` (111 layouts, a null anchor or
+  target in Direct). The engine throws too, on each of them.
+
+At the GRAPH levels, R and T2core at 64, 321, 192 and 449 (core path) and VR2
+and T2 at 321, 192 and 449 (view path) differ from Java at the same level on
+0 layouts (T2core excludes 168 JEXC at every level: Java's graph throws on a
+baseline link from a widget without a baseline, where the engine's guard
+leaves the link to the solver). At `OPTIMIZATION_NONE`, R, A, T2core, VR2
+and T2 (frames and measure requests) differ on 0 layouts too (A excludes 6
+HANG and 1 JEXC), and the solver trace sample is identical event for event.
+At those levels T2's 50,000 in-place sequences are compared with Android's
+live views instead of Java's fresh builds.
+
+**In place, on Android's live views.** T2's in-place sequences, each state
+applied to the same live views (the layout params set again, so every
+measure takes Android's dirty path) and to the same engine widgets through
+`ViewHost`, differ on 0 at every level checked: 0, 64, 192, 256, 257, 321
+and 449, the second layout of each sequence included. The comparison leaves
+out the corpus's in-place `bl N 0` and `hbl N 0` ops, which model an earlier
+adapter that cleared the baseline flags between states, as neither Android
+nor the current adapter does; with them, 70 sequences at 64 and 321, and 79
+at 192 and 449, differ (see `UPSTREAM.md`). At 257 the live views lay every
+sequence out as a fresh build. At the other levels they keep what
+`reset()` keeps, a barrier's resolved flag and the dependency graph's runs
+and nodes, so 187, 429, 577, 187, 239 and 386 sequences there (at 0, 64,
+192, 256, 321 and 449) end unlike their fresh build, on the live views and
+in the engine alike, and 41 (64, 321) and 160 (192, 449) throw a
+`NullPointerException` in the graph, which the engine throws too, on the same
+sequences and at the same state.
+
+The contract has two more boundaries:
+
+- **A layout measured again in the same container** is compared with
+  Android's own second layout, not with a fresh build. On 28 degenerate T2
+  layouts Android's second layout differs from its first at 257 (27
+  match-constraint x match-constraint Flows, which keep the chain list of the
+  previous measure, and one chain whose anchors keep stale solver ids); the
+  engine gives Android's second layout on all 28. On one more, Java's second
+  layout never returns. At level 0, where a barrier keeps its resolved flag,
+  Android's second layout differs from its first on 6,469 VR2 and 1,239 T2
+  layouts, and the engine's equals it on every one.
+- **Grid layouts** (`GridCore`) are outside the contract (see
+  [The measurer](#the-measurer)).
+
+[UPSTREAM.md](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/UPSTREAM.md)
+lists every place where the engine's code differs from upstream's, each with
+its reason and the tests that pin it (or a note that none does). None of them
+changes a frame on the corpora outside the classes above. Upstream's null
+dereferences are kept: where Android's solve throws (on the corpora, and on
+links no corpus makes, such as a baseline linked to the top or bottom of a
+barrier that Direct does not place), the engine throws at the same
+operation, prints the exception as Android does, and reads back Android's
+frames. The tools and corpora that check all this are in
+[tool/parity](https://github.com/BirjuVachhani/flutter_constraint_layout/tree/main/packages/constraint_engine/tool/parity),
+with the commands that rebuild the Java oracle at the pin and rerun every
+check.
+
+## Performance
+
+AOT builds on an Apple M4 Mac, medians of three runs.
+
+**Realistic screens.** A sample of 4,781 layouts of the corpus R, each
+measured again in its own container:
+
+| Path | Total | Median per layout |
+| --- | --- | --- |
+| `measure()` at 257 | 34.5 ms | 4.2 us |
+| `ViewHost` at 257, with content views | 50.3 ms | 6.0 us |
+| `measure()` at 321 | 36.0 ms | 5.9 us |
+| `measure()` at 0 (the solver alone) | 192.3 ms | 16.8 us |
+
+The 3,241 layouts that Direct resolves completely take 13.9 ms of the 34.5
+(median 3.2 us). The engine's earlier design, which resolved through the
+dependency graph first in double arithmetic, took 560.9 ms on the same
+layouts; upstream's Java engine on the JVM takes about 31 ms at 257 on a
+similar sample of 4,861 layouts.
+
+**Large screens.** The bundled
 [resolver benchmark](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/benchmark/resolver_benchmark.dart)
-times both on generated screens of increasing size, and a solver-routed screen
-takes ten or more times as long as a graph-resolved one (run it with
-`dart run benchmark/resolver_benchmark.dart`).
+times stacked rows of 80 x 40 items in a 1080 px wide container, p50 in ms.
+"Resolve" measures a persistent container again, "cold" builds the model and
+measures it once, and "view" measures through `ViewHost`:
 
-`ConstraintWidgetContainer.measure(...)` is upstream's `onMeasure`-style entry
-point (it runs `BasicMeasure.solverMeasure`). It is kept for parity and many of
-the ported tests use it, but `layout()` is the simpler entry and the one
-flutter_constraint_layout calls. `setOptimizationLevel` and the `Optimizer`
-constants are ported as well; they tune the solver and the `measure(...)`
-path, but `layout()` always tries the graph first, whatever the level.
+| Widgets | 257, spread-chain rows: resolve / cold / view | 257, rows linked one way: resolve / cold | 321, one way: resolve / cold |
+| --- | --- | --- | --- |
+| 9 | 0.033 / 0.039 / 0.034 | 0.001 / 0.006 | 0.003 / 0.007 |
+| 48 | 0.317 / 0.356 / 0.319 | 0.010 / 0.031 | 0.017 / 0.034 |
+| 240 | 0.949 / 1.089 / 0.976 | 0.059 / 0.165 | 0.102 / 0.183 |
+| 600 | 3.228 / 3.602 / 3.316 | 0.157 / 0.412 | 0.277 / 0.470 |
+| 1,200 | 9.061 / 12.589 / 9.461 | 0.318 / 0.850 | 0.548 / 0.964 |
+
+Chains always go through the solver on Android, so they cost the most. On
+the parity tooling's screens of 600 widgets (`tool/parity/bench/rbench6.dart`,
+80 x 40 cells in spread chains, or 60 x 40 cells linked one way), the engine
+takes 3.2 ms with chains and 0.17 ms without at 257, and upstream's Java
+engine on the JVM 5.7 ms and 4.0 ms: Java's `addEquality` scans every variable
+for synonyms, which makes a flat screen quadratic, and the engine skips that
+scan, which is exact (see UPSTREAM.md). Run the benchmark with:
+
+```sh
+dart compile exe benchmark/resolver_benchmark.dart -o /tmp/bench && /tmp/bench AOT
+```
+
+Debug builds are slower: the engine checks its invariants in asserts there,
+and Dart's JIT does not inline as AOT does.
 
 ## API style
 
@@ -589,7 +767,10 @@ the same method names (`connect`, `setHorizontalDimensionBehaviour`,
 `getX()` and `getWidth()`, upstream's integer constants
 (`ConstraintWidget.MATCH_CONSTRAINT_SPREAD`, `ConstraintWidget.GONE`,
 `BasicMeasure.EXACTLY`), and upstream's public `m`-prefixed fields. Upstream
-documentation, tests, and code therefore translate almost line by line.
+documentation, tests, and code therefore translate almost line by line. The
+view-layer port follows Android's names too: `ViewHost` is the
+ConstraintLayout view, `ViewMeasurer` its child measurer, `MeasureSpec`
+Android's `View.MeasureSpec`.
 
 The differences come from Dart. Named constructors replace overloads
 (`ConstraintWidget.size`, `.rect`, `.named`, `.sizeNamed`), nested Java enums
@@ -599,58 +780,61 @@ become top-level Dart enums (`ConstraintAnchor.Type.LEFT` is
 `DimensionBehaviour.matchConstraint`), the `Guideline` and `Barrier`
 constants are lower case (`Guideline.vertical`, `Barrier.left`), a few
 overloads get their own names (`connectAnchors`, `setDimensionRatioString`,
-`setGuidePercentInt`), and `double` replaces `float`. The
+`setGuidePercentInt`, `ConstraintWidgetContainer.measureWidget`), and a Java
+`float` is a Dart `double` that holds a binary32 value. The
 [porting guide](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/test/PORTING_GUIDE.md)
 maps each of these.
 
 The library also exports the solver's building blocks (`LinearSystem`,
 `ArrayRow`, `SolverVariable`, `ChainHead`, and the rest), which the ported
-solver tests exercise directly.
+solver tests exercise directly, and `f32` and `fsub` from the float layer.
 
 ## Relation to upstream
 
 The port is pinned to upstream commit
 [`9cd4b5a`](https://github.com/androidx/constraintlayout/tree/9cd4b5a4079a14175f91dc897abd83270799364a),
 the final commit of the androidx/constraintlayout GitHub repository (core
-1.1.0-alpha04). Development has since moved to the AOSP androidx monorepo. The
-widget model, the dependency-graph resolver, the solver, and `GridCore` are at
-parity with the released core 1.1.1: the upstream changes to them since the
-pin are applied here (a solver pool fix, and the `GridCore` of core 1.1.0,
-unchanged in 1.1.1, whose flags are an int bitmask, whose weight lists are
-padded or trimmed to the track count, and whose spans and skips are sorted by
-position).
+1.1.0-alpha04, ConstraintLayout 2.2.0-alpha04). Development has since moved to
+the AOSP androidx monorepo. The ported scope is at parity with the released
+core 1.1.1 and ConstraintLayout 2.2.1: the one later change to the solver and
+the widgets, a pool-size fix, is applied, `GridCore` follows the released
+file, and the released view layer is code-identical to the pinned one on API
+17 and later.
 
-- **Ported:** the widget model and the dependency-graph resolver (`widgets/`
-  and `widgets/analyzer/`), the `LinearSystem` solver and its supporting
-  classes, the virtual layouts (`VirtualLayout`, `Flow`, and
-  `utils/GridCore`), and `utils/GridEngine`, a standalone grid cell-placement
-  class that `GridCore` does not use.
+- **Ported:** the widget model, the dependency graph and the `Direct` pass
+  (`widgets/` and `widgets/analyzer/`), the `LinearSystem` solver and its
+  supporting classes, the virtual layouts (`VirtualLayout`, `Flow`, and
+  `utils/GridCore`), `utils/GridEngine` (a standalone grid cell-placement
+  class that `GridCore` does not use), and from the view layer
+  (`ConstraintLayout.java`) the measure pass of `onMeasure`, its child
+  `Measurer`, `setChildrenConstraints`' anchor state and Android's
+  `View.MeasureSpec` helpers.
 - **Not ported:** MotionLayout (`motion/`); the `parser/`, `dsl/`, and
   `state/` layers behind JSON constraint sets and Jetpack Compose
   (flutter_constraint_layout plays that role here); `Placeholder`; the
-  `Direct` and `Grouping` optimizers (the graph-first entry plays their role);
-  and `Metrics`.
+  `Grouping` pass and dependency ordering; `Direct.solveChain`, which is dead
+  upstream; and `Metrics`.
 
 Every upstream core unit test for the ported code is ported to Dart under
 [`test/`](https://github.com/BirjuVachhani/flutter_constraint_layout/tree/main/packages/constraint_engine/test),
 with its whole upstream body and upstream's class and method names, and every
-active one passes.
+active one passes with upstream's own assertions (a `closeTo` only where
+upstream's `assertEquals` has a delta).
 [UPSTREAM.md](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/UPSTREAM.md)
 maps each upstream test class to its Dart file and lists the out-of-scope
-ones, each with its reason. It also records the pinned revision, the parity
-check, and every intentional divergence, such as `double` arithmetic where
-upstream uses 32-bit `float` (which moves a few test values by 1 to 2 px) and
-the graph-first entry point.
+ones, each with its reason. It also records the pinned revision and every
+place where the code differs from upstream's.
 
 ## License
 
 BSD 3-Clause License, Copyright (c) 2026, Birju Vachhani.
 
-The files under `lib/src/`, and the tests ported from upstream's core test
-suite (with their `test/support/` classes), are a Dart port of
-androidx.constraintlayout core, Copyright (C) The Android Open Source Project,
-and carry `SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause`: the upstream portions
-remain under the Apache License, Version 2.0, and the modifications are under
-the BSD 3-Clause License. The
+The files ported from upstream, under `lib/src/` and among the tests ported
+from upstream's core test suite (with their `test/support/` classes), are a
+Dart port of androidx.constraintlayout (Copyright (C) The Android Open Source
+Project) and carry `SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause`:
+the upstream portions remain under the Apache License, Version 2.0, and the
+modifications are under the BSD 3-Clause License. Each file's header names its
+license. The
 [LICENSE](https://github.com/BirjuVachhani/flutter_constraint_layout/blob/main/packages/constraint_engine/LICENSE)
 file contains both licenses.

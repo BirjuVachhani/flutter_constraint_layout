@@ -718,8 +718,9 @@ List<Widget> _content(BuildContext context, String id) {
           '**Ids, not order.** Children are identified by a `Symbol` id (like '
               '`#header`) and refer to each other by id, so the order of the list '
               'does not decide position.',
-          '**Solve, not stack.** One engine resolves every edge and size from '
-              'the constraints in a single pass. See **How the engine works**.',
+          '**Solve, not stack.** Android\'s own layout engine, ported to Dart, '
+              'resolves every edge and size from the constraints. See **How '
+              'the engine works**.',
         ]),
         DocProse(
           'The rest of these docs walk the features one at a time, each with a '
@@ -727,7 +728,7 @@ List<Widget> _content(BuildContext context, String id) {
           'is behind a single import. These docs are a guided tour; the '
           'package README on pub.dev is the full guide and also covers '
           'z-order, sizing inside scroll views, the debug overlay, common '
-          'mistakes, and the limitations.',
+          'mistakes, Android parity, performance, and the limitations.',
         ),
       ];
     case 'features':
@@ -780,10 +781,12 @@ List<Widget> _content(BuildContext context, String id) {
         ]),
         DocH3('Under it all'),
         DocBullets([
-          '**A two-strategy engine.** A fast dependency graph for the common '
-              'case, a Cassowary solver for the genuinely simultaneous one.',
-          '**Pure Dart, every platform.** RTL-aware anchors, no native code, and '
-              'a resolver verified at parity with androidx core 1.1.1.',
+          '**Android\'s pipeline.** The same measure passes, `Direct` pass, '
+              'and Cassowary solver as Android\'s ConstraintLayout, in its '
+              '32-bit float arithmetic, so a layout gets Android\'s frames.',
+          '**Pure Dart, every platform.** RTL-aware anchors, no native code, '
+              'and frames checked against Android\'s own code on nearly two '
+              'million layouts.',
         ]),
         DocProse(
           'Each of these has its own section below, with a live example you can '
@@ -933,20 +936,19 @@ List<Widget> _content(BuildContext context, String id) {
               '`contentHorizontalBias` is measured from the start.',
         ]),
         const DocProse(
-          'Two more mirror here, unlike on Android, so that a layout written '
-          'with `start` and `end` mirrors as a whole:',
+          '`ConstraintGrid` mirrors too, which Android\'s grid helpers leave '
+          'unimplemented: its first column is the rightmost, so the cells fill '
+          'from the right. Cell numbers in `spans` and `skips`, and the '
+          'entries of `columnWeights`, still count from the first column, and '
+          'a tile\'s `horizontalBias` is measured from the start edge of its '
+          'cell.',
         ),
-        const DocBullets([
-          '`ConstraintGrid`: its first column is the rightmost, so the cells '
-              'fill from the right. Cell numbers in `spans` and `skips`, and '
-              'the entries of `columnWeights`, still count from the first '
-              'column. A tile\'s `horizontalBias` is measured from the start '
-              'edge of its cell.',
-          'The `margin` of a `.start` or `.end` barrier: a positive value '
-              'moves the barrier toward the end, which is left in '
-              'right-to-left text. A `.left` or `.right` barrier keeps its '
-              'margin as given.',
-        ]),
+        const DocProse(
+          'A barrier\'s own `margin` does not mirror: as on Android, a positive '
+          'value moves every barrier right or down, a `.start` or `.end` one '
+          'included. For a gap that mirrors, put it on the links that target '
+          'the barrier.',
+        ),
       ];
     case 'centering-bias':
       return [
@@ -1073,22 +1075,11 @@ List<Widget> _content(BuildContext context, String id) {
           'Pick the `edge` to track (`start`, `end`, `top`, `bottom`, and the '
           'absolute `left` / `right`) and list the widgets in `referenced`. A '
           'barrier has no size and draws nothing; it only reports a position. '
-          'Its own `margin` moves it: a positive value moves a `start` or '
-          '`end` barrier toward the end, and a `left`, `right`, `top`, or '
-          '`bottom` one right or down.',
-        ),
-        const DocProse(
-          'In a layout bounded on both axes, a barrier resolves on the fast '
-          'dependency graph when, by the engine\'s model of Android\'s layout '
-          'pass, Android would lay the layout out the same way, with each '
-          'barrier on the outermost edge of its widgets plus its `margin`. '
-          'Android places a barrier there whenever it places all of its '
-          'widgets without its solver; any other barrier is the solver\'s, '
-          'which can settle it elsewhere. A layout that sizes to its content, '
-          'such as a list item, takes the Cassowary solver instead, and so '
-          'does one that Android would lay out differently, for example one '
-          'where Android\'s solver settles a barrier elsewhere or Android '
-          'centers a child a pixel away (see **How the engine works**).',
+          'Its own `margin` moves it, and keeps its sign as on Android: a '
+          'positive value moves every barrier right or down, whatever its '
+          'edge and the text direction. For a gap that mirrors in '
+          'right-to-left text, put the margin on the links that target the '
+          'barrier instead.',
         ),
       ];
     case 'circular':
@@ -1150,11 +1141,13 @@ List<Widget> _content(BuildContext context, String id) {
               'whatever its own `visibility` says. When several groups '
               'reference the same child, the one that comes last in '
               '`children` wins.',
-          '**A group is not on screen.** It has no position or size, so no '
-              'link can target it, and no barrier, flow, grid, or other group '
-              'can reference it. It can reference `Constrained` children, '
-              'flows, and grids; guidelines and barriers have no visibility, '
-              'so it leaves them as they are.',
+          '**A group only sets visibility.** Like Android\'s `Group`, it is a '
+              'child of the layout with a widget of its own, laid out at '
+              '0 x 0 at the layout\'s origin, but it never moves or sizes '
+              'anything. No link can target it, and no barrier, flow, grid, or '
+              'other group can reference it. It can reference `Constrained` '
+              'children, flows, and grids; guidelines and barriers have no '
+              'visibility, so it leaves them as they are.',
           '**Changing its `visibility` costs what changing the children\'s '
               'would.** Each referenced child is updated exactly as if its own '
               '`visibility` had changed.',
@@ -1258,95 +1251,102 @@ List<Widget> _content(BuildContext context, String id) {
         DocProse(
           'ConstraintLayout does not position children by nesting boxes; it '
           '**solves** for each child\'s location and size from the constraints '
-          'you declared. It does that with a two-strategy engine, both parts '
-          'faithfully ported from `androidx.constraintlayout.core`.',
+          'you declared. It does that with Android\'s own layout pipeline, '
+          'ported line by line from `androidx.constraintlayout` to pure Dart.',
         ),
-        DocH3('Dependency graph (the fast path)'),
+        DocH3('Android\'s pipeline'),
         DocProse(
-          'Most layouts are deterministic: once the parent size and a widget\'s '
-          'anchors and dimension are known, its position follows by propagation. '
-          'The graph models each measurable quantity as a node, resolves them in '
-          'dependency order, and measures each child exactly once, with no '
-          'iteration and no search. This is the path almost every real screen '
-          'takes, and its cost scales close to linearly with the widget count.',
+          'Each layout pass measures the layout the way Android\'s '
+          '`ConstraintLayout` measures itself. Every child is measured as '
+          'Android\'s view measurer measures a child view: laid out under the '
+          'constraints of the measure spec Android would give it, with its '
+          'size rounded up to whole pixels and its baseline read. In the first '
+          'measure pass, the **`Direct`** pass places everything that follows '
+          'directly from the links, such as a widget linked to edges already '
+          'placed, a centered widget at its bias, a guideline, or a barrier '
+          'once all of its widgets are placed. The **Cassowary solver** '
+          'settles the rest, such as chains, aspect ratios, and percent sizes: '
+          'a port of Android\'s `LinearSystem`, the algorithm family behind '
+          'Apple\'s Auto Layout. Children whose size the solver decided are '
+          'measured again at that size, and the layout is solved again when '
+          'an answer changed.',
         ),
-        DocH3('Cassowary solver (the fallback)'),
         DocProse(
-          'Some layouts are outside what the graph resolves, and for those the '
-          'engine falls back to a linear constraint solver, a port of Android\'s '
-          '`LinearSystem`, which implements the **Cassowary** algorithm (the same '
-          'family behind Apple\'s Auto Layout). A layout takes this path when it '
-          'contains a `circle` link, a `.constrainedWrap` size, a '
-          '`ConstraintFlow` or `ConstraintGrid`, an `aspectRatio` child whose '
-          'width and height are both `.matchConstraint`, a chain with a '
-          '`gone`, aspect-ratio, or `.percent` member (or, in right-to-left '
-          'text, with a margin), or a child that is not `gone` and has a '
-          '`baseline` link but no baseline of its own, such as one without '
-          'text. In a layout bounded on both axes, a barrier sends it there '
-          'when Android\'s solver would settle the barrier away from the '
-          'outermost edge of its widgets plus its margin, or when a chain, a '
-          'baseline link, or an aspect ratio depends on a barrier that Android '
-          'leaves to its solver. In a layout with a barrier, so does a child '
-          'at a negative position or with a negative size, or a child that '
-          'Android would place differently from the graph, such as one '
-          'centered between pixels on a `.percent` size or a chain gap, or '
-          'one centered with a bias other than 0, 0.5, and 1 that Android '
-          'works out a pixel away. A layout that sizes to its content along '
-          'an axis takes this path when it has a guideline, a barrier, a '
-          '`.percent` size, or an aspect ratio anywhere, or along that axis a '
-          'chain, a child anchored on both sides (a `gone` one too), a '
-          '`.matchParent` child, or a child extending outside the layout. So '
-          'does anything else the graph cannot resolve directly.',
+          'Every float operation is the 32-bit one Android performs, in the '
+          'same order, so values round where Android\'s do, and every child is '
+          'placed at the integer frame Android computes.',
         ),
-        DocH3('Persistent, incremental model'),
+        DocH3('Optimization levels'),
         DocProse(
-          'The engine model is built once and kept alive across frames, then '
-          'invalidated in tiers so a steady-state frame does as little as '
-          'possible:',
+          'Android\'s optimization flags are the layout\'s `optimizationLevel`. '
+          'The default, `OptimizationLevel.standard`, is Android\'s default: '
+          'the `Direct` pass and measure caching. `OptimizationLevel.none` '
+          'leaves everything to the solver. The dependency-graph levels, '
+          '`OptimizationLevel.graph` and `OptimizationLevel.graphWrap`, are an '
+          'opt-in, as on Android, and run where Android runs the graph: in a '
+          'layout without chains, flows, or grids that is bounded on both '
+          'axes (with `graphWrap`, also when an axis wraps its content: the '
+          'graph then resolves the bounded axes, and the solver runs too). At '
+          'every level the layout gives Android\'s result at that level, '
+          'apart from layouts Flutter and Android lay out a different number '
+          'of times (see the README\'s limitations).',
+        ),
+        DocH3('Persistent model and replay'),
+        DocProse(
+          'The engine model is built once and kept alive across frames, so a '
+          'frame does only the work its changes need:',
         ),
         DocBullets([
-          '**fast**: nothing layout-affecting changed, the incoming constraints '
-              'are the same, and no child\'s size or position depends on its '
-              'content: no `.wrapContent` or `.constrainedWrap` size, no '
-              '`.matchConstraint`, `.spread`, or `.percent` size missing one of '
-              'its two links, and no baseline alignment. The engine is skipped '
-              'and the previous geometry reused.',
+          '**replay**: the configuration and the incoming constraints are '
+              'those of the last layout, which repeated the one before it. '
+              'Every child is asked again for the measures the last layout '
+              'asked of it, and when every answer is the same, the children '
+              'go back where they were without running the engine.',
           '**in-place**: a link, margin, bias, size, ratio, chain style, '
               'weight, or visibility changed, so the model is updated in place '
-              'and re-resolved without a rebuild. New incoming constraints, and '
-              'any pass the fast tier does not cover, also re-resolve the '
-              'existing model.',
+              'and measured again without a rebuild. New incoming constraints, '
+              'and a child whose content changed size, also measure the '
+              'existing model again.',
           '**rebuild**: the child set or a helper changed structurally, or the '
               'text direction changed, so the model is rebuilt from scratch.',
         ]),
         DocProse(
-          'The graph path resolves a 1200-widget screen in well under a '
-          'millisecond; the solver is heavier and reserved for the layouts that '
-          'genuinely need it.',
+          'Most real layouts are placed by `Direct`, and a measure of one takes '
+          'microseconds. Chains and other simultaneous constraints are the '
+          'solver\'s, and cost more as they grow, so for a large, chain-heavy '
+          'screen, several small layouts are cheaper than one big one. The '
+          'package README has the measured numbers.',
         ),
       ];
     case 'android':
       return const [
         DocProse(
-          'The engine is a line-faithful port of `constraintlayout-core`, pinned '
-          'to a specific upstream revision. Its solver, widget classes, and '
-          'Grid helper are verified at parity with the released core 1.1.1, '
-          'and every upstream core test in its scope is ported and passing, '
-          'so a layout resolves as it does on Android, apart from a few edge '
-          'cases that the package README lists under its limitations. '
-          'Right-to-left text follows Android\'s rules too: the horizontal bias '
-          'of a child linked with start or end mirrors, and so does the '
-          'position of a vertical guideline. `ConstraintGrid` and the margin '
-          'of a start or end barrier mirror as well, which they do not on '
-          'Android (see **Anchors & links**).',
+          'The engine is a line-faithful port of `constraintlayout-core`, and '
+          'of the part of Android\'s `ConstraintLayout` view that drives it, '
+          'pinned to a specific upstream revision. It is checked against '
+          'Android\'s own code at that revision, frame by frame: 60,000 real '
+          '`ConstraintLayout` widget trees laid out by this package, and more '
+          'than 1.8 million engine layouts (realistic screens, targeted edge '
+          'cases, and adversarial ones), give the same frames as Android, with '
+          '0 differences, and on a sample of 2,000 layouts every operation of '
+          'the solver matches Java\'s bit for bit. The package README has the '
+          'details.',
         ),
         DocProse(
-          'The one structural departure is the entry path: by default Android '
-          'places what it can with a `Direct` optimizer and solves the rest '
-          'with the Cassowary solver, with an optional graph optimization. '
-          'This port has no `Direct` optimizer: it tries the dependency graph '
-          'first, which takes that role, and falls back to the solver (see '
-          '**How the engine works**).',
+          'Right-to-left text follows Android\'s rules too: the horizontal bias '
+          'of a child linked with start or end mirrors, so does the position '
+          'of a vertical guideline, and a barrier\'s margin keeps its sign. '
+          '`ConstraintGrid` mirrors as well, which Android\'s grid helpers '
+          'leave unimplemented (see **Anchors & links**).',
+        ),
+        DocProse(
+          'Parity holds for the same measure answers, in logical pixels. A '
+          'Flutter `Text` does not measure like an Android `TextView`, so the '
+          'layout rules match while the content sizes are Flutter\'s. Frames '
+          'are whole logical pixels, which are Android\'s device pixels at a '
+          'device pixel ratio of 1. And `ConstraintGrid`, which follows the '
+          'core grid behind Compose rather than Android\'s view-based grid, '
+          'has no Android result to compare with.',
         ),
       ];
     default:

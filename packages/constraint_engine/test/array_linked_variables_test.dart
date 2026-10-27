@@ -17,6 +17,8 @@
 
 import 'package:constraint_engine/constraint_engine.dart';
 import 'package:constraint_engine/src/array_linked_variables.dart';
+import 'package:constraint_engine/src/debug/solver_trace.dart';
+import 'package:constraint_engine/src/jfloat.dart';
 import 'package:test/test.dart';
 
 /// The row as upstream's ArrayLinkedVariables.display() prints it.
@@ -96,6 +98,94 @@ void main() {
         'dog5(6)5 = 20.0 dog4(7)4 = 20.0 dog11(8)11 = 20.0  }',
       );
       expect([for (final s in v) s!.usageInRowCount], List.filled(9, 1));
+    });
+  });
+
+  // Not upstream: the port's Java semantics in this class.
+  group('binary32 storage', () {
+    late Cache cache;
+    late ArrayLinkedVariables variables;
+    late SolverVariable v;
+
+    setUp(() {
+      cache = Cache();
+      variables = ArrayLinkedVariables(ArrayRow(cache), cache);
+      v = SolverVariable('v', SolverVariableType.unrestricted)..id = 1;
+      cache.mIndexedVariables[1] = v;
+    });
+
+    test('put stores the float value, add sums in float', () {
+      variables.put(v, 0.1);
+      expect(variables.get(v), f32(0.1));
+      variables.add(v, f32(0.2), true);
+      expect(variables.get(v), fadd(f32(0.1), f32(0.2)));
+      expect(variables.get(v), isNot(f32(0.1) + f32(0.2)));
+    });
+
+    test('a sum within 0.001f removes the entry', () {
+      variables.put(v, 0.5);
+      variables.add(v, f32(-0.4995), true);
+      expect(variables.getCurrentSize(), 0);
+      expect(v.usageInRowCount, 0);
+      // 0.001f itself is not within the epsilon.
+      variables.add(v, kEps001, true);
+      expect(variables.get(v), kEps001);
+    });
+  });
+
+  // Not upstream. Java passes a missing variable (a null cache slot, a row
+  // without a subject) straight through, and throws only where it
+  // dereferences it (see "Java null semantics" in UPSTREAM.md).
+  group('Java null semantics', () {
+    late Cache cache;
+    late ArrayLinkedVariables variables;
+    late SolverVariable v;
+
+    setUp(() {
+      cache = Cache();
+      variables = ArrayLinkedVariables(ArrayRow(cache), cache);
+      v = SolverVariable('v', SolverVariableType.unrestricted)..id = 1;
+      cache.mIndexedVariables[1] = v;
+    });
+
+    test('an empty list answers for a missing variable without throwing', () {
+      expect(variables.get(null), 0);
+      expect(variables.remove(null, true), 0);
+      expect(variables.contains(null), isFalse);
+      expect(variables.indexOf(null), -1);
+      // add returns before it looks at the variable for a value within the
+      // epsilon.
+      variables.add(null, f32(0.0005), true);
+      expect(variables.getCurrentSize(), 0);
+    });
+
+    test('use of a definition without a subject, on an empty row', () {
+      final definition = ArrayRow(cache)..variables.put(v, 2);
+      expect(definition.mVariable, isNull);
+      expect(variables.use(definition, false), 0);
+      expect(variables.getCurrentSize(), 0);
+    });
+
+    test('a list that holds variables throws where Java would', () {
+      variables.put(v, 1);
+      Object? error;
+      try {
+        variables.get(null);
+      } catch (e) {
+        error = e;
+      }
+      expect(
+        SolverTrace.javaExceptionClass(error!),
+        'java.lang.NullPointerException',
+      );
+    });
+
+    test('put of a missing variable writes the head slot, then throws', () {
+      // Java: mHead = 0; mArrayValues[0] = value; then variable.id throws.
+      expect(() => variables.put(null, 3), throwsA(isA<TypeError>()));
+      expect(variables.getHead(), 0);
+      expect(variables.getValue(0), 3);
+      expect(variables.getCurrentSize(), 0);
     });
   });
 }

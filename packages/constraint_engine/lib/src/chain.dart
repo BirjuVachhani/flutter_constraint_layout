@@ -10,6 +10,7 @@ import 'chain_head.dart';
 import 'constraint_anchor.dart';
 import 'constraint_widget.dart';
 import 'constraint_widget_container.dart';
+import 'jfloat.dart';
 import 'linear_system.dart';
 import 'solver_variable.dart';
 
@@ -250,7 +251,8 @@ class Chain {
 
         if (chainHead.mHasUndefinedWeights &&
             !chainHead.mHasComplexMatchWeights) {
-          totalWeights = chainHead.mWidgetsMatchCount.toDouble();
+          // An int stored into a float.
+          totalWeights = fi(chainHead.mWidgetsMatchCount);
         }
 
         for (var i = 0; i < count; i++) {

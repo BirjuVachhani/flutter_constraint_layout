@@ -1,6 +1,9 @@
 import 'package:constraint_engine/constraint_engine.dart';
 import 'package:test/test.dart';
 
+import 'support/echo_measurer.dart';
+import 'support/op_replay.dart';
+
 void main() {
   test('pinned top-left', () {
     final root = ConstraintWidgetContainer.rect(0, 0, 600, 800);
@@ -114,19 +117,25 @@ void main() {
     expect([for (final w in v) w.getTop()], [40, 275, 510]);
   });
 
-  // A spread width between two anchors 200 apart, with a min of 300 and a max
-  // of 400: the min wins, overflowing the anchors evenly. Upstream's
-  // WidgetRun.getLimitedDimension drops the min whenever a max is set, so its
-  // graph resolved the width to the 200 between the anchors (see
-  // UPSTREAM.md). Android keeps the min: upstream's Java engine gives w=300,
-  // at x=250 with its solver alone (OPTIMIZATION_NONE), as this engine does
-  // on both paths, and at x=251 at OPTIMIZATION_STANDARD, its default, whose
-  // Direct pass places the widget and truncates its -49.5 px offset towards
-  // zero.
-  for (final solver in [false, true]) {
-    test('a spread min above the space between the anchors wins over its max '
-        '(${solver ? 'solver' : 'graph'})', () {
+  // A spread width between two anchors 200 apart, with a min of 300 and a
+  // max of 400: the min wins on Android's solver path, overflowing the
+  // anchors evenly. Upstream's Java engine gives w=300 at x=250 with its
+  // solver alone (OPTIMIZATION_NONE) and at x=251 at OPTIMIZATION_STANDARD,
+  // its default, whose Direct pass places the widget and truncates its
+  // -49.5 px offset towards zero. At the dependency-graph levels the graph
+  // lays it out: WidgetRun.getLimitedDimension drops the min when a max is
+  // set, so the width resolves to the 200 between the anchors at x=300, and
+  // the measurer (which keeps a size within its match-constraint bounds)
+  // reports 300.
+  test(
+    'a spread min above the space between the anchors wins over its max',
+    () {
+      // Java J0: A: (250, 0) 300 x 40; J257: A: (251, 0) 300 x 40, Direct
+      // (VOpDriver core: R 800 600;w A 0 40;add A;hb A M;hm A 0 300 400 1.0;
+      // c A L root L 300;c A R root R 300;c A T root T 0).
       final root = ConstraintWidgetContainer.rect(0, 0, 800, 600);
+      root.setOptimizationLevel(Optimizer.OPTIMIZATION_NONE);
+      root.setMeasurer(const EchoMeasurer());
       final a = ConstraintWidget()..setDebugName('A');
       root.add(a);
       a.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
@@ -151,26 +160,46 @@ void main() {
         300,
       );
       a.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
-      if (solver) {
-        // An unrelated circular constraint routes the layout through
-        // the solver fallback. (A barrier no longer does: the graph
-        // resolves barriers that sit on their widgets' outermost edge.)
-        final g = ConstraintWidget.size(10, 10)..setDebugName('g');
-        root.add(g);
-        g.connect(ConstraintAnchorType.left, root, ConstraintAnchorType.left);
-        g.connect(ConstraintAnchorType.top, root, ConstraintAnchorType.top);
-        final h = ConstraintWidget.size(10, 10)..setDebugName('h');
-        root.add(h);
-        h.connectCircularConstraint(g, 90, 20);
+
+      root.measure(
+        Optimizer.OPTIMIZATION_NONE,
+        BasicMeasure.EXACTLY,
+        800,
+        BasicMeasure.EXACTLY,
+        600,
+        0,
+        0,
+        0,
+        0,
+      );
+
+      expect(
+        [a.getLeft(), a.getTop(), a.getWidth(), a.getHeight()],
+        [250, 0, 300, 40],
+      );
+    },
+  );
+
+  test(
+    'a spread min above the space between the anchors, at Android\'s '
+    'default and at the dependency-graph levels',
+    () {
+      // Java (VOpDriver v2, core path).
+      const ops =
+          'R 800 600;w A 0 40;add A;hb A M;hm A 0 300 400 1.0;'
+          'c A L root L 300;c A R root R 300;c A T root T 0';
+      expect(
+        replayCore(ops).geometry,
+        'root 800 x 600 | A: (251, 0) 300 x 40',
+        reason: 'Java J257',
+      );
+      for (final level in const [64, 321, 192, 449]) {
+        expect(
+          replayCore(ops, level: level).geometry,
+          'root 800 x 600 | A: (300, 0) 300 x 40',
+          reason: 'Java J$level',
+        );
       }
-
-      root.layout();
-
-      // The solver creates variables; a graph-resolved layout never reaches
-      // it. (Its row count is no probe: a pass whose equations all resolve
-      // directly ends with no rows.)
-      expect(root.mSystem.getNumVariables() > 0, solver);
-      expect([a.getLeft(), a.getWidth()], [250, 300]);
-    });
-  }
+    },
+  );
 }

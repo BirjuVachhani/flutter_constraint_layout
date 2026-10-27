@@ -8,6 +8,7 @@
 import 'dart:math' as math;
 
 import 'package:constraint_engine/constraint_engine.dart';
+import 'package:constraint_engine/src/jfloat.dart';
 import 'package:test/test.dart';
 
 void _checkPositions(ConstraintWidget a, ConstraintWidget b, ConstraintWidget c) {
@@ -300,14 +301,16 @@ void main() {
           ConstraintWidget.MATCH_CONSTRAINT_PERCENT, 0, 0, 0.3);
       root.layout();
       expect(a.getWidth(), 100);
-      expect(b.getWidth(), (0.3 * 600).toInt());
+      // (int) (0.3f * 600), upstream's float expression.
+      expect(b.getWidth(), jint(fmul(f32(0.3), fi(600))));
       expect(a.getLeft(), root.getWidth() - b.getRight());
       expect(b.getLeft(), a.getLeft() + a.getWidth());
       b.setDimensionRatioString('16:9');
       b.setHorizontalMatchStyle(ConstraintWidget.MATCH_CONSTRAINT_RATIO, 0, 0, 1);
       root.layout();
       expect(a.getWidth(), 100);
-      expect(b.getWidth(), closeTo((16 / 9 * 20).toInt(), 1));
+      // (int) (16f / 9f * 20), upstream's float expression.
+      expect(b.getWidth(), closeTo(jint(fmul(fdiv(16, 9), fi(20))), 1));
       expect(a.getLeft(), closeTo(root.getWidth() - b.getRight(), 1));
       expect(b.getLeft(), a.getLeft() + a.getWidth());
       a.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
@@ -401,14 +404,16 @@ void main() {
           ConstraintWidget.MATCH_CONSTRAINT_PERCENT, 0, 0, 0.3);
       root.layout();
       expect(a.getWidth(), 100);
-      expect(b.getWidth(), (0.3 * 600).toInt());
+      // (int) (0.3f * 600), upstream's float expression.
+      expect(b.getWidth(), jint(fmul(f32(0.3), fi(600))));
       expect(a.getLeft(), root.getWidth() - b.getRight());
       expect(b.getLeft(), a.getLeft() + a.getWidth());
       b.setDimensionRatioString('16:9');
       b.setHorizontalMatchStyle(ConstraintWidget.MATCH_CONSTRAINT_RATIO, 0, 0, 1);
       root.layout();
       expect(a.getWidth(), 100);
-      expect(b.getWidth(), closeTo((16 / 9 * 20).toInt(), 1));
+      // (int) (16f / 9f * 20), upstream's float expression.
+      expect(b.getWidth(), closeTo(jint(fmul(fdiv(16, 9), fi(20))), 1));
       expect(a.getLeft(), closeTo(root.getWidth() - b.getRight(), 1));
       expect(b.getLeft(), a.getLeft() + a.getWidth());
       a.setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint);
@@ -542,10 +547,8 @@ void main() {
       b.connect(ConstraintAnchorType.bottom, root, ConstraintAnchorType.bottom);
       root.layout();
       expect(a.getHeight(), closeTo(b.getHeight(), 1));
-      // Tolerance 2 (upstream 1): double-vs-float32 solver rounding, see
-      // UPSTREAM.md.
       expect(a.getTop() - root.getTop(),
-          closeTo(root.getBottom() - b.getBottom(), 2));
+          closeTo(root.getBottom() - b.getBottom(), 1));
       expect(a.getTop() - root.getTop(),
           closeTo(b.getTop() - a.getBottom(), 1));
       a.setVerticalDimensionBehaviour(DimensionBehaviour.matchConstraint);
@@ -1086,10 +1089,8 @@ void main() {
       b.connect(ConstraintAnchorType.bottom, root, ConstraintAnchorType.bottom, 0);
       root.layout();
       final ay = a.getTop();
-      // Tolerance 2 (upstream 1): double-vs-float32 solver rounding, see
-      // UPSTREAM.md.
       expect(a.getTop() - root.getTop(),
-          closeTo(root.getBottom() - b.getBottom(), 2));
+          closeTo(root.getBottom() - b.getBottom(), 1));
       expect(b.getTop() - a.getBottom(),
           closeTo(a.getTop() - root.getTop(), 1));
       root.add(c);
@@ -1396,11 +1397,9 @@ void main() {
       root.layout();
       expect(a.getLeft(), 20);
       expect(b.getLeft(), 207);
-      // closeTo: double-vs-float32 solver rounding, see UPSTREAM.md.
-      expect(c.getLeft(), closeTo(393, 1));
-      // closeTo: double-vs-float32 solver rounding, see UPSTREAM.md.
-      expect(a.getWidth(), closeTo(187, 1));
-      expect(b.getWidth(), closeTo(186, 1));
+      expect(c.getLeft(), 393);
+      expect(a.getWidth(), 187);
+      expect(b.getWidth(), 186);
       expect(c.getWidth(), 187);
       c.setVisibility(ConstraintWidget.GONE);
       root.layout();
@@ -1657,6 +1656,59 @@ void main() {
       expect(c.getRight(), root.getWidth() - marginOut);
       expect(b.getLeft(),
           a.getRight() + (c.getLeft() - a.getRight() - b.getWidth()) ~/ 2);
+    });
+  });
+
+  // Not upstream tests: upstream's weights are Java floats, stored as such
+  // and summed in float (ChainHead.mTotalWeight += weight, in chain order).
+  // The expected bits come from upstream's ChainHead at the pin, run on the
+  // JDK with the same weights; summing in double and rounding once at the
+  // end gives the bits in the comments, one ulp away.
+  group('Java float weights', () {
+    int totalWeightBits(List<double> weights) {
+      final root = ConstraintWidgetContainer.rect(0, 0, 1000, 100);
+      final widgets = <ConstraintWidget>[];
+      for (final weight in weights) {
+        final w = ConstraintWidget.size(10, 10)
+          ..setHorizontalDimensionBehaviour(DimensionBehaviour.matchConstraint)
+          ..setHorizontalWeight(weight);
+        root.add(w);
+        widgets.add(w);
+      }
+      widgets.first.connect(
+          ConstraintAnchorType.left, root, ConstraintAnchorType.left);
+      for (var i = 0; i < widgets.length - 1; i++) {
+        widgets[i].connect(
+            ConstraintAnchorType.right, widgets[i + 1], ConstraintAnchorType.left);
+        widgets[i + 1].connect(
+            ConstraintAnchorType.left, widgets[i], ConstraintAnchorType.right);
+      }
+      widgets.last.connect(
+          ConstraintAnchorType.right, root, ConstraintAnchorType.right);
+      final head = ChainHead(widgets.first, ConstraintWidget.HORIZONTAL, false)
+        ..define();
+      return f32Bits(head.getTotalWeight());
+    }
+
+    test('a weight is stored as a float', () {
+      final w = ConstraintWidget.size(10, 10)
+        ..setHorizontalWeight(7.7)
+        ..setVerticalWeight(0.1);
+      expect(f32Bits(w.mWeight[ConstraintWidget.HORIZONTAL]), 0x40f66666);
+      expect(f32Bits(w.mWeight[ConstraintWidget.VERTICAL]), 0x3dcccccd);
+      // The stored double is 7.7f itself, widened exactly.
+      expect(w.mWeight[ConstraintWidget.HORIZONTAL], 7.699999809265137);
+    });
+
+    test('the total weight is a float sum in chain order', () {
+      expect(totalWeightBits([7.7, 5.29, 0.367, 0.16]), 0x415845a1); // 0x415845a2
+      expect(totalWeightBits([9.42, 9.3, 9.6, 5.34, 6.09]), 0x421f0001); // 0x421f0000
+      expect(
+        totalWeightBits([6.7, 4.6, 0.325, 0.549, 2.159, 0.021]),
+        0x4165a9fa, // 0x4165a9fc
+      );
+      // An unset weight (-1) is left out of the sum.
+      expect(totalWeightBits([7.11, -1, 3.08, 3.1]), 0x4154a3d8); // 0x4154a3d7
     });
   });
 }

@@ -11,14 +11,31 @@
 // No upstream test exercises the override, so every expected value here was
 // taken from upstream's Java engine at the pinned commit (see UPSTREAM.md),
 // run on the same layouts: the results, solve counts included, are the same
-// at OPTIMIZATION_NONE and OPTIMIZATION_STANDARD.
+// at OPTIMIZATION_NONE and OPTIMIZATION_STANDARD, through layout() alone,
+// without a measurer.
 
 import 'dart:isolate';
 
 import 'package:constraint_engine/constraint_engine.dart';
 import 'package:test/test.dart';
 
-import 'support/solver_parity.dart';
+import 'support/echo_measurer.dart';
+import 'support/op_replay.dart';
+
+/// A container that counts the iterations of its solver loop: layout() adds
+/// the children to the solver once per iteration.
+class _CountingContainer extends ConstraintWidgetContainer {
+  _CountingContainer(int width, int height) : super.rect(0, 0, width, height);
+
+  /// Iterations of the solver loop, over every layout().
+  int solves = 0;
+
+  @override
+  bool addChildrenToSolver(LinearSystem system) {
+    solves++;
+    return super.addChildrenToSolver(system);
+  }
+}
 
 String frame(ConstraintWidget w) =>
     '${w.getX()}, ${w.getY()}, ${w.getWidth()} x ${w.getHeight()}';
@@ -109,7 +126,7 @@ void main() {
       // minimum. The second solve fixes it at 320 and centers it with its
       // 0.3 bias, overflowing the space by 60: 130 - 0.3 * 60 = 112. c
       // follows b's right edge.
-      final root = SolveCountingContainer(400, 300);
+      final root = _CountingContainer(400, 300);
       final a = ConstraintWidget.sizeNamed('a', 100, 20);
       final b = ConstraintWidget.sizeNamed('b', 0, 20);
       final c = ConstraintWidget.sizeNamed('c', 30, 20);
@@ -136,7 +153,7 @@ void main() {
 
     test('a fill shorter than its minimum height is placed at that '
         'height', () {
-      final root = SolveCountingContainer(300, 200);
+      final root = _CountingContainer(300, 200);
       final top = ConstraintWidget.sizeNamed('top', 50, 120);
       final mid = ConstraintWidget.sizeNamed('mid', 50, 0);
       final below = ConstraintWidget.sizeNamed('below', 50, 10);
@@ -164,7 +181,7 @@ void main() {
       // (int) (value + 0.5)). Its width then reads as 149, below the
       // minimum again, so every solve records a new override until
       // layout() stops after its ninth.
-      final root = SolveCountingContainer(100, 100);
+      final root = _CountingContainer(100, 100);
       final a = ConstraintWidget.sizeNamed('a', 0, 20);
       root.add(a);
       a.setHorizontalDimensionBehaviour(.matchConstraint);
@@ -181,7 +198,7 @@ void main() {
     });
 
     test('a minimum the space already meets needs no second solve', () {
-      final root = SolveCountingContainer(400, 100);
+      final root = _CountingContainer(400, 100);
       final a = ConstraintWidget.sizeNamed('a', 0, 20);
       root.add(a);
       a.setHorizontalDimensionBehaviour(.matchConstraint);
@@ -196,25 +213,64 @@ void main() {
       expect(a.hasDimensionOverride(), isFalse);
     });
 
-    test('the graph leaves those layouts to the solver', () {
-      final passes = layoutBothWays(width: 400, height: 300, (root) {
-        final a = ConstraintWidget.sizeNamed('a', 100, 20);
-        final b = ConstraintWidget.sizeNamed('b', 0, 20);
-        root.addAll([a, b]);
-        a.connect(.left, root, .left, 10);
-        b.setHorizontalDimensionBehaviour(.matchConstraint);
-        b.setMinWidth(320);
-        b.connect(.left, a, .right, 20);
-        b.connect(.right, root, .right, 10);
-      });
-      expect(passes.single.differences, isEmpty);
-      expect(passes.single.graphResolved, isFalse);
+    // At the dependency-graph levels the graph lays such a fill out on its
+    // own, as upstream's does: it resolves the fill between its anchors
+    // (260 px, at x 130) and measures it at that width, which setWidth raises
+    // to the minimum, so the fill keeps x 130 at 320 px and nothing solves.
+    // Android's default level places it at x 130 too (Direct); level 0
+    // centers the overflow (x 100). Java (VOpDriver v2, core path).
+    test('at the dependency-graph levels the graph lays the fill out', () {
+      const ops =
+          'R 400 300;w a 100 20;add a;w b 0 20;add b;c a L root L 10;'
+          'hb b M;mw b 320;c b L a R 20;c b R root R 10';
+      const graph =
+          'root 400 x 300 | a: (10, 0) 100 x 20 | b: (130, 0) 320 x 20';
+      expect(replayCore(ops).geometry, graph, reason: 'Java J257');
+      expect(
+        replayCore(ops, level: 0).geometry,
+        'root 400 x 300 | a: (10, 0) 100 x 20 | b: (100, 0) 320 x 20',
+        reason: 'Java J0',
+      );
+      for (final level in const [64, 321, 192, 449]) {
+        expect(
+          replayCore(ops, level: level).geometry,
+          graph,
+          reason: 'Java J$level',
+        );
+      }
+
+      // The same layout through the engine API: at OPTIMIZATION_GRAPH the
+      // graph resolves both axes, so no solve runs.
+      final root = _CountingContainer(400, 300);
+      final a = ConstraintWidget.sizeNamed('a', 100, 20);
+      final b = ConstraintWidget.sizeNamed('b', 0, 20);
+      root.addAll([a, b]);
+      a.connect(.left, root, .left, 10);
+      b.setHorizontalDimensionBehaviour(.matchConstraint);
+      b.setMinWidth(320);
+      b.connect(.left, a, .right, 20);
+      b.connect(.right, root, .right, 10);
+      root.setMeasurer(const EchoMeasurer());
+      root.setOptimizationLevel(Optimizer.OPTIMIZATION_GRAPH);
+      root.measure(
+        Optimizer.OPTIMIZATION_GRAPH,
+        BasicMeasure.EXACTLY,
+        400,
+        BasicMeasure.EXACTLY,
+        300,
+        0,
+        0,
+        0,
+        0,
+      );
+      expect(frame(b), '130, 0, 320 x 20');
+      expect(root.solves, 0);
     });
   });
 
   group('an override left pending', () {
     test('is applied by the next pass, then never again', () {
-      final root = SolveCountingContainer(100, 100);
+      final root = _CountingContainer(100, 100);
       final a = ConstraintWidget.sizeNamed('a', 0, 20);
       root.add(a);
       a.setHorizontalDimensionBehaviour(.matchConstraint);

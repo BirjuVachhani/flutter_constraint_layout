@@ -6,6 +6,7 @@
 // pinned in UPSTREAM.md).
 
 import 'constraint_widget.dart';
+import 'jfloat.dart';
 
 /// Class to represent a chain by its main elements.
 class ChainHead {
@@ -93,7 +94,8 @@ class ChainHead {
             mWidgetsMatchCount++;
             final weight = widget.mWeight[_orientation];
             if (weight > 0) {
-              mTotalWeight += widget.mWeight[_orientation];
+              // mTotalWeight += weight: a float sum, in chain order.
+              mTotalWeight = fadd(mTotalWeight, widget.mWeight[_orientation]);
             }
 
             if (_isMatchConstraintEqualityCandidate(widget, _orientation)) {

@@ -34,7 +34,8 @@ class DependencyNode implements Dependency {
 
   DependencyNode(this.mRun);
 
-  /// Whether one of RunGroup's wrap-size traversals is inside this node.
+  /// Whether one of RunGroup's wrap-size traversals is inside this node
+  /// (port only: the loop guard of [RunGroup.computeWrapSize]).
   bool traversing = false;
 
   final List<Dependency> mDependencies = [];
@@ -51,6 +52,9 @@ class DependencyNode implements Dependency {
     }
     resolved = true;
     this.value = value;
+    // Iterates a copy: nothing adds a dependency while the graph resolves,
+    // and where something did, upstream's iterator would throw a
+    // ConcurrentModificationException.
     for (final node in List<Dependency>.of(mDependencies)) {
       node.update(node);
     }
@@ -120,17 +124,5 @@ class DependencyNode implements Dependency {
     value = 0;
     readyToSolve = false;
     delegateToWidgetRun = false;
-    // Divergence from upstream, whose clear() keeps the margin, its factor,
-    // its dimension dependency and the update delegate of the last graph.
-    // Every node is cleared before the graph is wired again, so it must come
-    // out as a fresh node does: a margin dependency left behind makes
-    // update() recompute the margin from a stale dimension even after
-    // apply() set a plain one. On a container laid out again, a widget on
-    // the baseline of a sibling that turned gone sat as far below as that
-    // sibling's last measured baseline. UPSTREAM.md.
-    mMargin = 0;
-    mMarginFactor = 1;
-    mMarginDependency = null;
-    updateDelegate = null;
   }
 }

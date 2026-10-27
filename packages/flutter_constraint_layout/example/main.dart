@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 
 /// A small example showing the `ConstraintLayout` API.
 ///
-/// Positions are resolved by the pure-Dart dependency-graph engine in
-/// `package:constraint_engine`.
+/// Positions are resolved by `package:constraint_engine`, a pure-Dart port of
+/// the engine behind Android's ConstraintLayout, run as Android runs it.
 void main() => runApp(const ExampleApp());
 
 class ExampleApp extends StatelessWidget {

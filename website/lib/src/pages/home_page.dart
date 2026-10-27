@@ -271,8 +271,9 @@ class _FeaturesOverview extends StatelessWidget {
     (
       Icons.public_rounded,
       'Pure Dart, every platform',
-      'RTL-aware start and end anchors, no native code, and a resolver '
-          'verified at parity with androidx core 1.1.1.',
+      'RTL-aware start and end anchors, no native code, and Android\'s '
+          'frames, checked against its own code on nearly two million '
+          'layouts.',
     ),
   ];
 
@@ -695,10 +696,11 @@ class _InteractiveFeature extends StatelessWidget {
   }
 }
 
-/// The "Constraints Engine" section: educates the reader on both strategies the
-/// engine uses (the dependency graph and the Cassowary solver) and the
-/// persistent model that keeps steady-state frames cheap, mirroring the engine
-/// section in the package READMEs and the docs.
+/// The "Constraints Engine" section: educates the reader on the pipeline the
+/// engine runs (Android's measure passes, its `Direct` pass, and its Cassowary
+/// solver), the parity check behind it, and the persistent model that keeps
+/// steady-state frames cheap, mirroring the engine section in the package
+/// READMEs and the docs.
 class _EngineFeature extends StatelessWidget {
   const _EngineFeature();
 
@@ -715,55 +717,52 @@ class _EngineFeature extends StatelessWidget {
   Widget build(BuildContext context) {
     final compact = context.isCompact;
 
-    const graph = _EngineCard(
+    const pipeline = _EngineCard(
       icon: Icons.account_tree_rounded,
-      tag: 'Fast path',
-      title: 'Dependency graph',
+      tag: 'Every measure',
+      title: 'Android\'s pipeline',
       body:
-          'Most layouts are deterministic: once the parent size and a child\'s '
-          'anchors are known, its position follows by propagation. The graph '
-          'resolves each measurable quantity in dependency order and measures '
-          'every child exactly once, with no iteration and no search. This is '
-          'the path almost every real screen takes.',
+          'Each child is measured as Android measures a child view. Android\'s '
+          'Direct pass then places everything that follows straight from the '
+          'links, and its Cassowary solver, the algorithm family behind '
+          'Apple\'s Auto Layout, settles the rest: chains, aspect ratios, and '
+          'percent sizes. The same passes, in the same order, with the same '
+          '32-bit float arithmetic.',
     );
-    const solver = _EngineCard(
-      icon: Icons.functions_rounded,
-      tag: 'Fallback',
-      title: 'Cassowary solver',
+    const parity = _EngineCard(
+      icon: Icons.verified_rounded,
+      tag: 'Measured',
+      title: 'Android\'s pixels',
       body:
-          'Some layouts go beyond what the graph resolves: circular links, Flow '
-          'and Grid, a chain with a gone, aspect-ratio, or percent member, a '
-          'barrier layout that Android would lay out differently from the '
-          'graph, or a layout that sizes to its content and holds a guideline, '
-          'a barrier, or a chain along that axis. For those the engine falls '
-          'back to a linear constraint solver, the same Cassowary algorithm '
-          'behind Apple\'s Auto Layout.',
+          'Checked against Android\'s own code on 60,000 real widget trees and '
+          'more than 1.8 million engine layouts: realistic screens, targeted '
+          'edge cases, and adversarial ones. Every frame matches Android\'s, '
+          'to the pixel.',
     );
 
     final cards = compact
         ? const Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [graph, SizedBox(height: 16), solver],
+            children: [pipeline, SizedBox(height: 16), parity],
           )
         : const IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(child: graph),
+                Expanded(child: pipeline),
                 SizedBox(width: 16),
-                Expanded(child: solver),
+                Expanded(child: parity),
               ],
             ),
           );
 
     return _FeatureBlock(
-      title: 'Two engines under one layout.',
+      title: 'Android\'s engine, in Dart.',
       subtitle:
-          'The engine resolves most layouts with a fast dependency graph and '
-          'falls back to a Cassowary constraint solver for the genuinely '
-          'simultaneous ones. Both parts are pure Dart, ported from androidx, '
-          'so the layout runs on every platform Flutter targets.',
-      subtitleLink: ('Cassowary', Links.androidxCore),
+          'Every layout runs Android\'s own ConstraintLayout pipeline, ported '
+          'line by line from androidx to pure Dart, so the same layout lands '
+          'on the same pixels on every platform Flutter targets.',
+      subtitleLink: ('androidx', Links.androidxCore),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -772,14 +771,13 @@ class _EngineFeature extends StatelessWidget {
           const _EngineCard(
             icon: Icons.cached_rounded,
             tag: 'Every frame',
-            title: 'Persistent, incremental model',
+            title: 'Persistent model and replay',
             body:
-                'The model is built once and kept alive across frames, then '
-                'invalidated in tiers. A steady-state frame reuses the previous '
-                'geometry (carrying scrolling and animation for free); a changed '
-                'margin or dimension re-resolves in place; only a structural '
-                'change rebuilds. A 1200-widget screen resolves in well under a '
-                'millisecond.',
+                'The model is built once and kept alive across frames. A frame '
+                'whose children answer as before replays the last result '
+                'without running the engine; a changed margin or dimension is '
+                'applied in place; only a structural change rebuilds. Most '
+                'real layouts measure in microseconds.',
           ),
           const SizedBox(height: 28),
           Wrap(
@@ -798,7 +796,8 @@ class _EngineFeature extends StatelessWidget {
 
 /// One engine card in the [_EngineFeature] section: an accent icon and a small
 /// tag pill over a title and an explanatory paragraph, on the site's card
-/// surface. Used for both the two strategy cards and the persistent-model card.
+/// surface. Used for the pipeline and parity cards and the persistent-model
+/// card.
 class _EngineCard extends StatelessWidget {
   const _EngineCard({
     required this.icon,

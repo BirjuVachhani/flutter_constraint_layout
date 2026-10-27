@@ -7,6 +7,7 @@
 import '../constraint_anchor.dart';
 import '../constraint_widget.dart';
 import '../helper.dart';
+import '../jfloat.dart';
 import 'baseline_dimension_dependency.dart';
 import 'dependency.dart';
 import 'dependency_node.dart';
@@ -42,12 +43,6 @@ class VerticalWidgetRun extends WidgetRun {
   @override
   void reset() {
     mResolved = false;
-    // Divergence from upstream, which keeps the run type of an earlier
-    // graph: apply() only sets it for a widget linked on both sides, so on a
-    // container laid out again a widget that lost one of those links since
-    // updates as centered and reads the missing target (a null check that
-    // throws out of layout()).
-    mRunType = RunType.none;
     start.clear();
     start.resolved = false;
     end.clear();
@@ -55,13 +50,6 @@ class VerticalWidgetRun extends WidgetRun {
     baseline.clear();
     baseline.resolved = false;
     mDimension.resolved = false;
-    // Divergence from upstream, which keeps the baseline dimension of an
-    // earlier graph: apply() only creates a new one while the height is
-    // unresolved, and the graph never measures a gone widget, so a widget
-    // that turned gone on a container laid out again kept the baseline of its
-    // last visible measure, and a widget on its baseline sat that far below
-    // where a fresh container (and Android) puts it. A fresh run has none.
-    mBaselineDimension = null;
   }
 
   @override
@@ -106,25 +94,37 @@ class VerticalWidgetRun extends WidgetRun {
                 final ratioSide = mWidget.getDimensionRatioSide();
                 switch (ratioSide) {
                   case ConstraintWidget.HORIZONTAL:
-                    size =
-                        (0.5 +
-                                mWidget.mHorizontalRun!.mDimension.value *
-                                    mWidget.getDimensionRatio())
-                            .toInt();
+                    size = jint(
+                      fadd(
+                        0.5,
+                        fmul(
+                          fi(mWidget.mHorizontalRun!.mDimension.value),
+                          mWidget.getDimensionRatio(),
+                        ),
+                      ),
+                    );
                     break;
                   case ConstraintWidget.VERTICAL:
-                    size =
-                        (0.5 +
-                                mWidget.mHorizontalRun!.mDimension.value /
-                                    mWidget.getDimensionRatio())
-                            .toInt();
+                    size = jint(
+                      fadd(
+                        0.5,
+                        fdiv(
+                          fi(mWidget.mHorizontalRun!.mDimension.value),
+                          mWidget.getDimensionRatio(),
+                        ),
+                      ),
+                    );
                     break;
                   case ConstraintWidget.UNKNOWN:
-                    size =
-                        (0.5 +
-                                mWidget.mHorizontalRun!.mDimension.value /
-                                    mWidget.getDimensionRatio())
-                            .toInt();
+                    size = jint(
+                      fadd(
+                        0.5,
+                        fdiv(
+                          fi(mWidget.mHorizontalRun!.mDimension.value),
+                          mWidget.getDimensionRatio(),
+                        ),
+                      ),
+                    );
                     break;
                   default:
                     break;
@@ -139,16 +139,11 @@ class VerticalWidgetRun extends WidgetRun {
                   final percent = mWidget.mMatchConstraintPercentHeight;
                   final targetDimensionValue =
                       parent.mVerticalRun!.mDimension.value;
-                  final size = (0.5 + targetDimensionValue * percent).toInt();
-                  // Divergence from upstream: percent is clamped by the
-                  // matchConstraint min/max here. Upstream leaves this resolve
-                  // unclamped and relies on its solver-first entry to apply
-                  // the bounds; this engine resolves percent in the graph, so
-                  // the clamp has to happen at the resolve site. See
-                  // UPSTREAM.md.
-                  mDimension.resolve(
-                    getLimitedDimension(size, ConstraintWidget.VERTICAL),
+                  // (int) (0.5f + targetDimensionValue * percent), in floats.
+                  final size = jint(
+                    fadd(0.5, fmul(fi(targetDimensionValue), percent)),
                   );
+                  mDimension.resolve(size);
                 }
               }
               break;
@@ -165,6 +160,7 @@ class VerticalWidgetRun extends WidgetRun {
       return;
     }
 
+    // Upstream reads the width's match-constraint default here.
     if (!mDimension.resolved &&
         mDimensionBehavior == DimensionBehaviour.matchConstraint &&
         mWidget.mMatchConstraintDefaultWidth ==
@@ -214,7 +210,10 @@ class VerticalWidgetRun extends WidgetRun {
         bias = 0.5;
       }
       final distance = endPos - startPos - mDimension.value;
-      start.resolve((0.5 + startPos + distance * bias).toInt());
+      // (int) (0.5f + startPos + distance * bias), in floats.
+      start.resolve(
+        jint(fadd(fadd(0.5, fi(startPos)), fmul(fi(distance), bias))),
+      );
       end.resolve(start.value + mDimension.value);
     }
   }
@@ -357,11 +356,8 @@ class VerticalWidgetRun extends WidgetRun {
           mWidget.mListAnchors[ConstraintWidget.ANCHOR_BASELINE],
         );
         if (target != null) {
-          // Divergence from upstream, which links the baseline with no
-          // margin: Direct.verticalSolvingPass (setFinalBaseline) and
-          // ConstraintWidget.addToSolver both add the link's margin, so
-          // Android's default path does too. UPSTREAM.md.
-          addTarget(baseline, target, mWidget.mBaseline.getMargin());
+          // As upstream, the baseline link's margin is not applied here.
+          addTarget(baseline, target, 0);
           addTarget(start, baseline, -mWidget.getBaselineDistance());
           addTarget(end, start, mDimension.value);
         }
@@ -497,17 +493,19 @@ class VerticalWidgetRun extends WidgetRun {
         final target = getTarget(
           mWidget.mListAnchors[ConstraintWidget.ANCHOR_BASELINE],
         );
-        // Divergence from upstream, which reads mBaselineDimension here
-        // unconditionally and throws (NullPointerException) for a widget
-        // that had no baseline when the graph was built: its top stays
-        // unresolved, and DependencyGraph.directMeasure declines the layout
-        // for the solver, which ignores the baseline link of a widget without
-        // a baseline as Android does. UPSTREAM.md.
-        if (target != null && mBaselineDimension != null) {
-          // The link's margin, as above (a divergence from upstream).
-          addTarget(baseline, target, mWidget.mBaseline.getMargin());
-          addTargetDimension(start, baseline, -1, mBaselineDimension!);
-          addTargetDimension(end, start, 1, mDimension);
+        if (target != null) {
+          addTarget(baseline, target, 0);
+          // Port-only guard: upstream reads mBaselineDimension here
+          // unconditionally and throws a NullPointerException for a widget
+          // whose run never got a baseline dimension (apply creates one for a
+          // widget with a baseline whose height is not resolved yet, and the
+          // run keeps it from one graph to the next; BasicMeasure does not
+          // catch the exception). The widget's top and bottom stay unwired,
+          // and unresolved.
+          if (mBaselineDimension != null) {
+            addTargetDimension(start, baseline, -1, mBaselineDimension!);
+            addTargetDimension(end, start, 1, mDimension);
+          }
         }
       } else {
         // no connections

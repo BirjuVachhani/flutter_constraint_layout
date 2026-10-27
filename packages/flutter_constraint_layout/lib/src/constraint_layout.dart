@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:constraint_engine/constraint_engine.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, listEquals;
 import 'package:flutter/rendering.dart';
 // The engine also declares a class named Flow (the virtual layout).
 import 'package:flutter/widgets.dart' hide Flow;
@@ -15,16 +15,139 @@ import 'dimension.dart';
 import 'link.dart';
 import 'types.dart';
 
+part 'render/engine_model.dart';
+part 'render/measurers.dart';
+
 /// Refers to the [ConstraintLayout] container itself when used as an anchor
 /// target, for example `top: .topOf(parent)`.
 const Symbol parent = #parent;
+
+/// Whether every replay also runs the full pipeline and checks that it gives
+/// the same result (`--dart-define=cl.verifyReplay=true`): a replayed layout
+/// ([RenderConstraintLayout.debugReplayMismatches]), a replayed dry query
+/// ([RenderConstraintLayout.debugDryReplayMismatches]), and a child baseline
+/// a debug build answers again without asking the child
+/// ([RenderConstraintLayout.debugReusedBaselineMismatches]).
+const bool _verifyReplay = bool.fromEnvironment('cl.verifyReplay');
+
+/// Android's ConstraintLayout optimization flags
+/// (`app:layout_optimizationLevel`, `ConstraintLayout.setOptimizationLevel`),
+/// combined with `|`.
+///
+/// The values are Android's, which are also the engine's [Optimizer]
+/// constants. The default, [standard], is Android's default: [direct] and
+/// [cacheMeasures]. The dependency graph ([graph], [graphWrap]) is an
+/// opt-in, as on Android, and runs exactly where Android runs it.
+///
+/// Some flags are accepted for parity only. Android reads [barrier],
+/// [chains], [dimensions], [ratio] and [groups] nowhere, and the passes of
+/// [dependencyOrdering] and [grouping] are not ported, so these change
+/// nothing.
+///
+/// ```dart
+/// ConstraintLayout(
+///   optimizationLevel: OptimizationLevel.standard | OptimizationLevel.graph,
+///   children: [
+///     // ...
+///   ],
+/// )
+/// ```
+extension type const OptimizationLevel._(int value) implements Object {
+  /// No optimization (`OPTIMIZATION_NONE`, 0): the solver resolves every
+  /// layout and the children's measures are never answered from a cache.
+  static const OptimizationLevel none = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_NONE,
+  );
+
+  /// Direct resolution (`OPTIMIZATION_DIRECT`, 1): in the first measure
+  /// pass, everything that follows directly from the links is resolved
+  /// before the solver runs, and the children it sizes are measured then.
+  static const OptimizationLevel direct = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_DIRECT,
+  );
+
+  /// `OPTIMIZATION_BARRIER` (2). Android reads it nowhere; it changes
+  /// nothing.
+  static const OptimizationLevel barrier = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_BARRIER,
+  );
+
+  /// `OPTIMIZATION_CHAIN` (4). Android reads it nowhere; it changes
+  /// nothing.
+  static const OptimizationLevel chains = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_CHAIN,
+  );
+
+  /// `OPTIMIZATION_DIMENSIONS` (8). Android reads it nowhere; it changes
+  /// nothing.
+  static const OptimizationLevel dimensions = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_DIMENSIONS,
+  );
+
+  /// `OPTIMIZATION_RATIO` (16). Android reads it nowhere; it changes
+  /// nothing.
+  static const OptimizationLevel ratio = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_RATIO,
+  );
+
+  /// `OPTIMIZATION_GROUPS` (32). Android reads it nowhere; it changes
+  /// nothing.
+  static const OptimizationLevel groups = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_GROUPS,
+  );
+
+  /// The dependency graph (`OPTIMIZATION_GRAPH`, 64), an opt-in: when no
+  /// child is in a chain or is a flow or a grid, and both of the layout's
+  /// axes are bounded, the graph resolves the layout first, and the solver
+  /// runs only for what it leaves unresolved, as on Android.
+  static const OptimizationLevel graph = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_GRAPH,
+  );
+
+  /// The dependency graph whatever the layout's constraints
+  /// (`OPTIMIZATION_GRAPH_WRAP`, 128), an opt-in: as [graph], and also when
+  /// an axis is unbounded, where the graph resolves only the bounded axes
+  /// and the solver runs as well, as on Android.
+  static const OptimizationLevel graphWrap = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_GRAPH_WRAP,
+  );
+
+  /// Measure caching (`OPTIMIZATION_CACHE_MEASURES`, 256): a child already
+  /// measured at its current size under an equivalent request keeps that
+  /// size without being measured again.
+  static const OptimizationLevel cacheMeasures = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_CACHE_MEASURES,
+  );
+
+  /// `OPTIMIZATION_DEPENDENCY_ORDERING` (512). Not ported; it changes
+  /// nothing.
+  static const OptimizationLevel dependencyOrdering = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_DEPENDENCY_ORDERING,
+  );
+
+  /// `OPTIMIZATION_GROUPING` (1024). Not ported; it changes nothing.
+  static const OptimizationLevel grouping = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_GROUPING,
+  );
+
+  /// Android's default (`OPTIMIZATION_STANDARD`, 257): [direct] and
+  /// [cacheMeasures].
+  static const OptimizationLevel standard = OptimizationLevel._(
+    Optimizer.OPTIMIZATION_STANDARD,
+  );
+
+  /// Both levels' flags.
+  OptimizationLevel operator |(OptimizationLevel other) =>
+      OptimizationLevel._(value | other.value);
+}
 
 /// A layout that positions its children using constraint anchors, inspired by
 /// Android's ConstraintLayout.
 ///
 /// Wrap each child in a `Constrained` to describe how it is positioned and
-/// sized relative to [parent] or to sibling ids. Positions are resolved by the
-/// pure-Dart dependency-graph engine in `package:constraint_engine`.
+/// sized relative to [parent] or to sibling ids. The layout measures and
+/// places its children as Android's ConstraintLayout does, with the pure-Dart
+/// port of its engine in `package:constraint_engine`.
 class ConstraintLayout extends MultiChildRenderObjectWidget {
   /// Whether [debugShowChains] and [debugShowBlueprint] are honored at all.
   ///
@@ -48,6 +171,7 @@ class ConstraintLayout extends MultiChildRenderObjectWidget {
   const ConstraintLayout({
     super.key,
     this.textDirection,
+    this.optimizationLevel = OptimizationLevel.standard,
     this.debugShowChains = false,
     this.debugShowBlueprint = false,
     this.debugChainColor,
@@ -57,6 +181,11 @@ class ConstraintLayout extends MultiChildRenderObjectWidget {
 
   /// Resolves `start`/`end` links. Defaults to the ambient [Directionality].
   final TextDirection? textDirection;
+
+  /// Android's optimization flags for this layout: [OptimizationLevel.standard]
+  /// (Android's default) unless set. The dependency graph is an opt-in
+  /// ([OptimizationLevel.graph]).
+  final OptimizationLevel optimizationLevel;
 
   /// Paints an Android Studio design-surface overlay on top of the children:
   /// constraint connections, chain links, springs, margin values, anchors,
@@ -91,6 +220,7 @@ class ConstraintLayout extends MultiChildRenderObjectWidget {
   RenderConstraintLayout createRenderObject(BuildContext context) {
     return RenderConstraintLayout(
       textDirection: _resolveDirection(context),
+      optimizationLevel: optimizationLevel,
       debugShowChains: debugShowChains,
       debugShowBlueprint: debugShowBlueprint,
       debugChainColor: debugChainColor,
@@ -105,6 +235,7 @@ class ConstraintLayout extends MultiChildRenderObjectWidget {
   ) {
     renderObject
       ..textDirection = _resolveDirection(context)
+      ..optimizationLevel = optimizationLevel
       ..debugShowChains = debugShowChains
       ..debugShowBlueprint = debugShowBlueprint
       ..debugChainColor = debugChainColor
@@ -114,32 +245,73 @@ class ConstraintLayout extends MultiChildRenderObjectWidget {
 
 /// The render object backing [ConstraintLayout].
 ///
-/// Keeps a persistent engine model (one `ConstraintWidget` per child plus the
-/// container) alive across layout passes and keeps it in sync incrementally:
+/// ## Layout
 ///
-///  * Child list changes (insert/remove/move), id renames, and text-direction
-///    changes rebuild the model.
-///  * Other `Constrained` config changes are applied to the affected engine
-///    widgets in place. A `ConstraintGroup`'s visibility reaches each child
-///    it references the way a change of the child's own visibility would.
-///  * When nothing layout-affecting changed and no child's size can depend on
-///    its content, a re-layout under identical constraints skips the engine
-///    entirely and reuses the resolved geometry.
+/// The render object keeps a persistent engine model: a container standing
+/// for the layout, holding one engine widget per child in child order. It
+/// keeps the model in sync incrementally. Child list changes (insert, remove,
+/// move), id renames, and text-direction changes rebuild it; every other
+/// configuration change is applied to the affected engine widgets in place,
+/// and a `ConstraintGroup`'s visibility reaches each child it references the
+/// way a change of the child's own visibility would.
 ///
-/// Every engine pass resolves through `container.layout()`, the same code path
-/// a freshly built model uses, so incremental updates cannot drift from a
-/// from-scratch layout.
+/// Each layout then does what Android's ConstraintLayout view does, at the
+/// layout's [optimizationLevel]:
+///
+///  * It measures the layout under the measure specs Android's parent would
+///    give it: a bounded axis is EXACTLY its maximum (rounded to a whole
+///    pixel), so the layout fills it, and an unbounded axis is UNSPECIFIED,
+///    so the layout wraps its children there, with the incoming minimum as
+///    the layout's minimum size. Every child is measured as Android's view
+///    measurer measures it: laid out under the box constraints its measure
+///    spec stands for (EXACTLY is tight, AT_MOST is loose, UNSPECIFIED is
+///    unbounded), its size rounded up to whole pixels, and its baseline read.
+///  * It places every child at its integer frame. A child whose last layout
+///    during the measure already has exactly the frame's size keeps that
+///    layout; any other child is laid out again, tight at its frame.
+///  * Its size is the measured size, constrained by the incoming constraints.
+///
+/// ## Replaying a layout
+///
+/// Android measures the whole layout again whenever it is asked to. Here a
+/// layout that repeats one of the two layouts before it is replayed instead:
+/// when the configuration and the incoming constraints are those of the last
+/// layout, and that layout gave the same result as the one before it, every
+/// child is asked again for each measure the last layout asked of it, and
+/// when every answer is the same, the children are placed where the last
+/// layout placed them without running the engine. A replay therefore saves
+/// the engine's work, not the children's layouts. With
+/// `--dart-define=cl.verifyReplay=true` a replayed layout also runs in full
+/// and reports any difference (see [debugReplayMismatches]).
+///
+/// Every measure reads the child's baseline. In a debug build, where each
+/// read costs a timeline event even when Flutter has the value cached, a
+/// child that has not needed layout since the layout last read its baseline
+/// under the same constraints answers that read again without being asked:
+/// the value Flutter's cache holds (see [debugReusedBaselines]).
 ///
 /// ## Dry layout, intrinsic sizes, and baseline
 ///
 /// [getDryLayout] returns the size [performLayout] gives the layout under the
 /// same constraints. On a bounded axis that is the maximum, whatever the
-/// children. On an unbounded axis it comes from an engine pass over a
-/// throwaway model of the children, which measures each child with its own
-/// [RenderBox.getDryLayout] (and [RenderBox.getDryBaseline] for baseline
-/// links) instead of laying it out. So a dry query lays out no child and
-/// leaves the persistent model untouched, and costs about as much as a layout
-/// that has to run the engine.
+/// children. On an unbounded axis it comes from a measure of a throwaway
+/// model of the children, which measures each child with its own
+/// [RenderBox.getDryLayout] and [RenderBox.getDryBaseline] instead of laying
+/// it out. That model is new, so the query gives the size of a first layout
+/// of the configuration. A later layout keeps what Android's keeps from the
+/// layout before it, so where Android's second layout differs from its first
+/// the laid-out size can differ from the dry one, as Android's own second
+/// measure differs from its first: on some degenerate flows at the default
+/// level, and more often without [OptimizationLevel.direct], where a barrier
+/// that resolves without the solver (every widget it references gone and not
+/// counted) stays at 0 from its second layout on, and at the graph levels. A
+/// dry query lays out no child and leaves the persistent model untouched,
+/// and costs about as much as a layout that has to run the engine.
+/// A query that repeats the last one that ran the engine (the same
+/// configuration and constraints) is replayed as a layout is: every child is
+/// asked again for each measure that query asked of it, and when every answer
+/// is the same, the query gives that query's result without running the
+/// engine (also checked by `--dart-define=cl.verifyReplay=true`).
 ///
 /// The intrinsic sizes are defined by that dry layout:
 ///
@@ -147,8 +319,8 @@ class ConstraintLayout extends MultiChildRenderObjectWidget {
 ///    an unbounded width and, when the height is finite, that height as a
 ///    tight constraint: the width the layout wraps its children to.
 ///    [getMaxIntrinsicHeight] is the same on the other axis.
-///  * [getMinIntrinsicWidth] runs the same pass, but measures each child that
-///    sizes to its content horizontally at no more than the child's own
+///  * [getMinIntrinsicWidth] runs the same measure, but measures each child
+///    that sizes to its content horizontally at no more than the child's own
 ///    minimum intrinsic width, so wrapping text counts its longest word rather
 ///    than its whole line. It is never more than the maximum.
 ///    [getMinIntrinsicHeight] is the same on the other axis.
@@ -161,9 +333,9 @@ class ConstraintLayout extends MultiChildRenderObjectWidget {
 ///
 /// The layout's baseline is the highest (smallest) baseline among its visible
 /// children, measured from the layout's top, as a [Stack]'s is. Invisible and
-/// gone children, and helpers (guidelines, barriers, flows, and grids), do not
-/// count, and without a child that has a baseline the layout has none.
-/// Android's ConstraintLayout reports no baseline of its own.
+/// gone children, and helpers (guidelines, barriers, groups, flows, and
+/// grids), do not count, and without a child that has a baseline the layout
+/// has none. Android's ConstraintLayout reports no baseline of its own.
 class RenderConstraintLayout extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, ConstraintParentData>,
@@ -174,6 +346,7 @@ class RenderConstraintLayout extends RenderBox
   // formals cannot be used here.
   RenderConstraintLayout({
     required TextDirection textDirection,
+    OptimizationLevel optimizationLevel = OptimizationLevel.standard,
     bool debugShowChains = false,
     bool debugShowBlueprint = false,
     Color? debugChainColor,
@@ -181,6 +354,8 @@ class RenderConstraintLayout extends RenderBox
   })
     // ignore: prefer_initializing_formals
     : _textDirection = textDirection,
+       // ignore: prefer_initializing_formals
+       _optimizationLevel = optimizationLevel,
        // ignore: prefer_initializing_formals
        _debugShowChains = debugShowChains,
        // ignore: prefer_initializing_formals
@@ -204,6 +379,19 @@ class RenderConstraintLayout extends RenderBox
   }
 
   bool get _ltr => _textDirection != TextDirection.rtl;
+
+  OptimizationLevel _optimizationLevel;
+
+  /// Android's optimization flags the layout is measured with.
+  OptimizationLevel get optimizationLevel => _optimizationLevel;
+  set optimizationLevel(OptimizationLevel value) {
+    if (_optimizationLevel == value) return;
+    _optimizationLevel = value;
+    // The model does not change, but the next layout must not replay one
+    // measured at the old level.
+    _configEpoch++;
+    markNeedsLayout();
+  }
 
   // Debug-overlay configuration. Paint-only: the setters never touch the
   // layout or the persistent engine model, and the overlay itself is gated by
@@ -242,12 +430,21 @@ class RenderConstraintLayout extends RenderBox
     markNeedsPaint();
   }
 
-  // Persistent engine model, kept in sync with the children across layouts.
-  // Non-null whenever _needsModelRebuild is false.
+  // The persistent engine model, kept in sync with the children across
+  // layouts, with its measurer and the host that measures it. All three are
+  // non-null whenever _needsModelRebuild is false.
   _EngineModel? _model;
   _FlutterMeasurer? _measurer;
+  ViewHost? _host;
   bool _needsModelRebuild = true;
-  BoxConstraints? _lastConstraints;
+
+  /// Advances whenever the configuration the engine measures changes: a
+  /// model build, an in-place apply, and an optimization level change. Part
+  /// of a layout's replay key.
+  int _configEpoch = 0;
+
+  /// The last full run of the engine, the one a replay repeats.
+  _ReplayRun? _lastRun;
 
   /// Number of [performLayout] executions. Test instrumentation.
   @visibleForTesting
@@ -257,28 +454,84 @@ class RenderConstraintLayout extends RenderBox
   @visibleForTesting
   int debugModelBuilds = 0;
 
-  /// Number of layouts that resolved through the engine. Test instrumentation.
+  /// Number of layouts whose result came from a measure of the engine.
+  /// Test instrumentation.
   @visibleForTesting
   int debugEnginePasses = 0;
 
-  /// Number of layouts that reused resolved geometry without running the
-  /// engine. Test instrumentation.
+  /// Number of layouts whose result came from a replay of the last layout,
+  /// without running the engine. Test instrumentation.
+  ///
+  /// With `--dart-define=cl.verifyReplay=true` a replayed layout also runs
+  /// the engine, and counts in [debugEnginePasses] too.
   @visibleForTesting
-  int debugFastPasses = 0;
+  int debugReplayPasses = 0;
+
+  /// Number of replayed layouts whose full run, with
+  /// `--dart-define=cl.verifyReplay=true`, gave a different result. Each one
+  /// is also reported as an error, and the layout takes the full run's
+  /// result. It must stay 0. Test instrumentation.
+  @visibleForTesting
+  int debugReplayMismatches = 0;
 
   /// Number of children whose config was re-applied to the persistent model
   /// in place. Test instrumentation.
   @visibleForTesting
   int debugConfigApplies = 0;
 
-  /// The persistent engine container, for probing which engine resolved the
-  /// last layout: on a freshly built model, `mSystem.getNumVariables()` is
-  /// non-zero only if that layout ran the solver. The row count is no proof,
-  /// because a solve can end with no rows, and `mSystem` keeps its state until
-  /// the next solve, so a later layout of the same model on the graph still
-  /// shows the earlier solve. Test instrumentation.
+  /// Number of dry queries (a dry layout, an intrinsic size or a dry
+  /// baseline whose measure Flutter had not cached) that measured a new
+  /// throwaway model with the engine. Test instrumentation.
+  ///
+  /// With `--dart-define=cl.verifyReplay=true` a replayed query also runs
+  /// the engine, and counts here too.
+  @visibleForTesting
+  int debugDryEnginePasses = 0;
+
+  /// Number of dry queries answered by a replay of the last one that ran the
+  /// engine, without running it (see [_DryRun]). Test instrumentation.
+  @visibleForTesting
+  int debugDryReplayPasses = 0;
+
+  /// Number of replayed dry queries whose full run, with
+  /// `--dart-define=cl.verifyReplay=true`, gave a different result. Each one
+  /// is also reported as an error, and the query takes the full run's
+  /// result. It must stay 0. Test instrumentation.
+  @visibleForTesting
+  int debugDryReplayMismatches = 0;
+
+  /// Number of child baselines a layout answered again in a debug build
+  /// without asking the child, as Flutter's cache would answer (see
+  /// [_FlutterMeasurer.childBaseline]). Test instrumentation.
+  @visibleForTesting
+  int debugReusedBaselines = 0;
+
+  /// Number of reused child baselines whose dual run, with
+  /// `--dart-define=cl.verifyReplay=true`, asked the child and got another
+  /// value. Each one is also reported as an error, and the measure takes the
+  /// child's answer. It must stay 0. Test instrumentation.
+  @visibleForTesting
+  int debugReusedBaselineMismatches = 0;
+
+  /// Whether a model build gives its measurer a request transcript
+  /// ([ViewMeasurer.transcript]), which then holds the measure requests of
+  /// the last layout that ran the engine, in the parity oracle's format.
+  /// Test instrumentation: set it before the layout is built, and reset it
+  /// afterwards.
+  @visibleForTesting
+  static bool debugRecordTranscripts = false;
+
+  /// The persistent engine container: the layout's engine widget, whose
+  /// children are the children's engine widgets in child order. Null before
+  /// the first layout and after a layout without children. Test
+  /// instrumentation.
   @visibleForTesting
   ConstraintWidgetContainer? get debugEngineContainer => _model?.container;
+
+  /// The host that measures the persistent model, whose
+  /// [ViewHost.measurer] is the children's measurer. Test instrumentation.
+  @visibleForTesting
+  ViewHost? get debugViewHost => _host;
 
   /// Builds the debug-overlay scene from the current engine state.
   ///
@@ -302,35 +555,50 @@ class RenderConstraintLayout extends RenderBox
     }
   }
 
+  // A structural change also drops the kept dry queries, which reference the
+  // children: a query cannot replay them before the next build anyway.
   @override
   void insert(RenderBox child, {RenderBox? after}) {
     _needsModelRebuild = true;
+    _forgetDryRuns();
     super.insert(child, after: after);
   }
 
   @override
   void remove(RenderBox child) {
     _needsModelRebuild = true;
+    _forgetDryRuns();
     super.remove(child);
   }
 
   @override
   void removeAll() {
     _needsModelRebuild = true;
+    _forgetDryRuns();
     super.removeAll();
   }
 
   @override
   void move(RenderBox child, {RenderBox? after}) {
     _needsModelRebuild = true;
+    _forgetDryRuns();
     super.move(child, after: after);
+  }
+
+  @override
+  void detach() {
+    // A detached layout keeps no throwaway model alive.
+    _forgetDryRuns();
+    super.detach();
   }
 
   void _discardModel() {
     _model = null;
     _measurer = null;
+    _host = null;
+    _lastRun = null;
+    _forgetDryRuns();
     _needsModelRebuild = true;
-    _lastConstraints = null;
   }
 
   @override
@@ -340,7 +608,7 @@ class RenderConstraintLayout extends RenderBox
 
     if (childCount == 0) {
       _discardModel();
-      size = constraints.smallest;
+      size = _sizeWithoutEngine(constraints);
       return;
     }
 
@@ -378,202 +646,267 @@ class RenderConstraintLayout extends RenderBox
       _passGroupChangesToMembers(_model!);
     }
 
-    // Fast path: nothing layout-affecting changed, the incoming constraints
-    // are identical, and no child's size or position can depend on its
-    // content (no wrap/underconstrained-match dimensions, no baselines).
-    // The resolved geometry is then still exact; skip the engine and re-place.
-    // Children are still laid out so an independently dirty child re-layouts
-    // within its unchanged tight size.
-    if (!_needsModelRebuild &&
-        !anyConfigDirty &&
-        _lastConstraints == constraints &&
-        !_model!.hasContentDependentChild &&
-        _model!.needsBaseline.isEmpty) {
-      debugFastPasses++;
-      final model = _model!;
-      for (var i = 0; i < model.children.length; i++) {
-        final w = model.widgets[i];
-        model.children[i].layout(BoxConstraints.tight(_placedSize(w)));
-        model.childData[i].offset = Offset(
-          w.getX().toDouble(),
-          w.getY().toDouble(),
-        );
-      }
-      size = _resolvedSize(model.container, constraints);
-      return;
-    }
-
     if (_needsModelRebuild) {
       _buildModel(constraints);
       debugModelBuilds++;
     } else if (anyConfigDirty) {
-      final model = _model!;
-      // Set until every change is applied. Applying one can throw (an
-      // unknown id, in a debug build) after resetting its widget, and as in
-      // _buildModel, the half-applied model must not stay behind looking
-      // clean: the next layout rebuilds and reports the problem again.
-      _needsModelRebuild = true;
-      // Derived state must be recomputed before connects are re-applied:
-      // baseline connects only validate when both endpoints are already
-      // marked baseline-capable (see _computeDerivedState).
-      _computeDerivedState(model);
-      _publishGroupOverrides(model);
-      for (var i = 0; i < model.children.length; i++) {
-        final pd = model.childData[i];
-        if (!pd.configDirty) continue;
-        pd.configDirty = false;
-        _applyWidgetConfig(model, model.widgets[i], pd);
-        debugConfigApplies++;
-      }
-      _reportLinkLoop(model);
-      _needsModelRebuild = false;
+      _applyConfigInPlace(_model!);
     }
     final model = _model!;
-
-    // Normalize stored sizes before every engine pass: a fresh widget enters
-    // the engine with 0 on any non-fixed axis, but a persistent widget can
-    // carry a size written by a previous pass (notably the solver fallback's
-    // wrap re-measure of underconstrained matchConstraint children). The
-    // graph feeds stored sizes back as measure hints, so a leaked size would
-    // change the result relative to a freshly built model. Positions are
-    // reset to a fresh widget's (0, 0) for the same reason: a position the
-    // previous pass resolved is the engine's input on an axis nothing
-    // anchors, such as a widget a flow places, and where a layout has more
-    // than one solution (a match-constraint flow between the edges of a
-    // wrapping axis) it decides which one the solver lands on.
-    for (var i = 0; i < model.widgets.length; i++) {
-      final pd = model.childData[i];
-      if (pd.helperKind != HelperKind.none) continue;
-      final w = model.widgets[i];
-      if (pd.width is! FixedDimension) w.setWidth(0);
-      if (pd.height is! FixedDimension) w.setHeight(0);
-      w.setX(0);
-      w.setY(0);
-      // The baseline too, to a fresh widget's: distance 0, flagged only for
-      // the endpoints of baseline links (as _computeDerivedState seeds them).
-      // The graph does not measure a gone widget, so a baseline target that
-      // turned gone in place would otherwise keep the baseline of its last
-      // measure, and a widget baseline-linked to it would sit where a fresh
-      // model (and Android, which resets every widget on a hierarchy change
-      // and measures a gone view with baseline 0) does not put it.
-      w.setBaselineDistance(0);
-      w.setHasBaseline(model.needsBaseline.contains(w));
-    }
-
-    final container = model.container;
-    _prepareContainer(container, constraints);
-
-    // Resolve the graph, measuring intrinsic child sizes through
-    // RenderBox.layout.
     final measurer = _measurer!;
-    measurer.beginPass(constraints);
-    debugEnginePasses++;
-    container.layout();
 
-    // Place and size each child from the resolved coordinates.
+    final last = _lastRun;
+    if (last != null &&
+        last.confirmed &&
+        last.epoch == _configEpoch &&
+        last.constraints == constraints &&
+        _replays(measurer, last)) {
+      debugReplayPasses++;
+      if (!_verifyReplay) {
+        _place(model, measurer, last.frames);
+        size = constraints.constrain(last.measuredSize);
+        return;
+      }
+      final run = _runEngine(model, measurer, constraints);
+      final same = run.repeats(last);
+      if (!same) {
+        debugReplayMismatches++;
+        _reportReplayMismatch(last, run);
+      }
+      run.confirmed = same;
+      _lastRun = run;
+      return;
+    }
+
+    final run = _runEngine(model, measurer, constraints);
+    // A run is replayed only once the run after it gave the same result: see
+    // _ReplayRun.confirmed.
+    run.confirmed = last != null && run.repeats(last);
+    _lastRun = run;
+  }
+
+  /// Applies the configuration of every child marked dirty to its engine
+  /// widget in [model], in place.
+  void _applyConfigInPlace(_EngineModel model) {
+    // Set until every change is applied. Applying one can throw (an unknown
+    // id, in a debug build) after resetting its widget, and as in
+    // _buildModel, the half-applied model must not stay behind looking
+    // clean: the next layout rebuilds and reports the problem again.
+    _needsModelRebuild = true;
+    _computeDerivedState(model);
+    _publishGroupOverrides(model);
     for (var i = 0; i < model.children.length; i++) {
-      final w = model.widgets[i];
-      final rb = model.children[i];
-      final relayout = _placementConstraints(w, measurer.laidOut[w]);
-      if (relayout != null) {
-        rb.layout(relayout);
-      }
-      // A capped child can need tight constraints on both axes. Flutter then
-      // makes it a relayout boundary, even though its next content change can
-      // change the size this container resolves for it. A baseline query
-      // establishes a layout dependency across that boundary (including when
-      // there is no real baseline), so the change still re-runs the engine.
-      // Fixed-size children keep their independent relayout boundaries.
-      if (rb.constraints.isTight && _isContentDependent(model.childData[i])) {
-        rb.getDistanceToBaseline(TextBaseline.alphabetic, onlyReal: true);
-      }
-      model.childData[i].offset = Offset(
-        w.getX().toDouble(),
-        w.getY().toDouble(),
+      final pd = model.childData[i];
+      if (!pd.configDirty) continue;
+      pd.configDirty = false;
+      _applyWidgetConfig(model, model.widgets[i], pd);
+      debugConfigApplies++;
+    }
+    _reportLinkLoop(model);
+    _needsModelRebuild = false;
+    _configEpoch++;
+  }
+
+  /// Measures the persistent [model] with the engine under [constraints],
+  /// recording the run, then places the children and sizes the layout.
+  _ReplayRun _runEngine(
+    _EngineModel model,
+    _FlutterMeasurer measurer,
+    BoxConstraints constraints,
+  ) {
+    // A run that throws leaves the engine and the children's measure state
+    // partly updated, which a replay of an earlier run would not repeat.
+    _lastRun = null;
+    final host = _host!;
+    _syncModelForMeasure(model);
+    final specs = _hostSpecsFor(constraints);
+    host
+      ..setRtl(!_ltr)
+      ..optimizationLevel = _optimizationLevel.value
+      ..minWidth = specs.minWidth
+      ..minHeight = specs.minHeight;
+    measurer.beginPass(record: true);
+    host.measure(specs.widthSpec, specs.heightSpec);
+    debugEnginePasses++;
+    final transcript = measurer.recording!;
+    measurer.recording = null;
+
+    final run = _ReplayRun(
+      epoch: _configEpoch,
+      constraints: constraints,
+      transcript: transcript,
+      frames: _framesOf(model),
+      measuredWidth: host.getMeasuredWidth(),
+      measuredHeight: host.getMeasuredHeight(),
+    );
+    _place(model, measurer, run.frames);
+    size = constraints.constrain(run.measuredSize);
+    return run;
+  }
+
+  /// Whether every child answers each content measure of [run] as it did
+  /// in [run], asked again in the same order.
+  ///
+  /// The engine's run is a function of the configuration, the specs, these
+  /// answers, and the state the run before it left; [run] being confirmed
+  /// makes that state the one a full run would leave. So when every answer
+  /// is the same, a full run would repeat [run] exactly.
+  bool _replays(_FlutterMeasurer measurer, _ReplayRun run) {
+    measurer.beginPass(record: false);
+    for (final request in run.transcript.contents) {
+      final answer = measurer._measureContent(
+        request.widget,
+        request.content,
+        request.widthSpec,
+        request.heightSpec,
       );
+      if (answer.width != request.width ||
+          answer.height != request.height ||
+          answer.baseline != request.baseline) {
+        return false;
+      }
     }
-
-    _lastConstraints = constraints;
-    size = _resolvedSize(container, constraints);
+    return true;
   }
 
-  /// Sets [container] up as the root of an engine pass under [constraints].
-  ///
-  /// The root mirrors the incoming constraints: a bounded axis is fixed at its
-  /// maximum (the layout fills the space it is given, even when the
-  /// constraints are loose), and an unbounded axis wraps the children.
-  void _prepareContainer(
-    ConstraintWidgetContainer container,
-    BoxConstraints constraints,
-  ) {
-    final boundedW = constraints.hasBoundedWidth;
-    final boundedH = constraints.hasBoundedHeight;
-    container.setRtl(!_ltr);
-    container.setHorizontalDimensionBehaviour(
-      boundedW ? DimensionBehaviour.fixed : DimensionBehaviour.wrapContent,
-    );
-    container.setVerticalDimensionBehaviour(
-      boundedH ? DimensionBehaviour.fixed : DimensionBehaviour.wrapContent,
-    );
-    container.setWidth(boundedW ? constraints.maxWidth.round() : 0);
-    container.setHeight(boundedH ? constraints.maxHeight.round() : 0);
-  }
-
-  /// The layout's size once an engine pass prepared by [_prepareContainer]
-  /// has resolved [container].
-  static Size _resolvedSize(
-    ConstraintWidgetContainer container,
-    BoxConstraints constraints,
-  ) => constraints.constrain(
-    Size(container.getWidth().toDouble(), container.getHeight().toDouble()),
-  );
-
-  /// The constraints that place the child of [w] at the size the engine
-  /// resolved for it, or null when its latest [measured] layout from the
-  /// engine pass already has (effectively) that size.
-  ///
-  /// That layout is then kept instead of forcing a tight one: the measure
-  /// pass uses loose constraints on wrap axes, which leaves the child a
-  /// non-boundary so a later content change propagates back here and
-  /// triggers re-resolution.
-  static BoxConstraints? _placementConstraints(
-    ConstraintWidget w,
-    _MeasuredLayout? measured,
-  ) {
-    final placed = _placedSize(w);
-    if (measured != null &&
-        (measured.size.width - placed.width).abs() < 1 &&
-        (measured.size.height - placed.height).abs() < 1) {
-      return null;
+  /// The frame of every child of [model] as the engine left it: `x, y,
+  /// width, height` per child, in child order.
+  static List<int> _framesOf(_EngineModel model) {
+    final widgets = model.widgets;
+    final frames = List<int>.filled(widgets.length * 4, 0);
+    for (var i = 0; i < widgets.length; i++) {
+      final w = widgets[i];
+      frames[4 * i] = w.getX();
+      frames[4 * i + 1] = w.getY();
+      frames[4 * i + 2] = w.getWidth();
+      frames[4 * i + 3] = w.getHeight();
     }
-    return BoxConstraints.tight(placed);
+    return frames;
   }
 
-  /// The size a child is placed at: the size the engine resolved for its
-  /// widget [w], except that a negative size (margins that add up to more
-  /// than the space between two anchors) places it at a size of 0.
-  static Size _placedSize(ConstraintWidget w) => Size(
-    math.max(0, w.getWidth()).toDouble(),
-    math.max(0, w.getHeight()).toDouble(),
-  );
+  /// Places every child of [model] at its frame in [frames] (CL 2001-2070).
+  ///
+  /// A child whose last layout by [measurer] in this pass has exactly the
+  /// frame's size keeps that layout, under the constraints it was measured
+  /// with; every other child is laid out tight at its frame. Gone children,
+  /// helpers and groups are placed too, at 0 x 0. A box cannot be smaller
+  /// than 0, so a negative engine size places the child at 0 on that axis
+  /// (Android's setFrame already zeroes the frame of a child whose solved
+  /// edges cross).
+  ///
+  /// A child keeps its offset object when the frame's position equals it
+  /// (offsets are values, read by value).
+  static void _place(
+    _EngineModel model,
+    _FlutterMeasurer measurer,
+    List<int> frames,
+  ) {
+    for (var i = 0; i < model.children.length; i++) {
+      final width = math.max(0, frames[4 * i + 2]).toDouble();
+      final height = math.max(0, frames[4 * i + 3]).toDouble();
+      final content = model.contentAt[i];
+      if (!measurer._laidOutAt(content, width, height)) {
+        measurer.placeChild(
+          model.children[i],
+          content,
+          BoxConstraints.tight(Size(width, height)),
+        );
+      }
+      final pd = model.childData[i];
+      final x = frames[4 * i].toDouble();
+      final y = frames[4 * i + 1].toDouble();
+      if (pd.offset.dx != x || pd.offset.dy != y) {
+        pd.offset = Offset(x, y);
+      }
+    }
+  }
+
+  void _reportReplayMismatch(_ReplayRun replayed, _ReplayRun full) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: FlutterError.fromParts(<DiagnosticsNode>[
+          ErrorSummary(
+            'A replayed ConstraintLayout layout differs from its full run.',
+          ),
+          ErrorDescription(
+            'The replay placed the children at ${replayed.frames} in a '
+            '${replayed.measuredSize} layout, after '
+            '${replayed.transcript.requests.length} measure requests and '
+            '${replayed.transcript.contents.length} content measures. The '
+            'full run placed them at ${full.frames} in a '
+            '${full.measuredSize} layout, after '
+            '${full.transcript.requests.length} measure requests and '
+            '${full.transcript.contents.length} content measures.',
+          ),
+          ErrorHint('The layout takes the full run\'s result.'),
+        ]),
+        library: 'flutter_constraint_layout',
+        context: ErrorDescription('while verifying a replayed layout'),
+        informationCollector: () => <DiagnosticsNode>[
+          describeForError('The ConstraintLayout was'),
+        ],
+      ),
+    );
+  }
+
+  void _reportDryReplayMismatch(_DryRun replayed, _DryRun? full) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: FlutterError.fromParts(<DiagnosticsNode>[
+          ErrorSummary(
+            'A replayed ConstraintLayout dry query differs from its full run.',
+          ),
+          ErrorDescription(
+            'The replay measured the layout at ${replayed.measuredSize}, '
+            'after ${replayed.transcript.contents.length} content measures. '
+            '${full == null ? 'The full run threw.' : 'The full run '
+                      'measured it at ${full.measuredSize}, after '
+                      '${full.transcript.contents.length} content measures.'}',
+          ),
+          ErrorHint('The query takes the full run\'s result.'),
+        ]),
+        library: 'flutter_constraint_layout',
+        context: ErrorDescription('while verifying a replayed dry query'),
+        informationCollector: () => <DiagnosticsNode>[
+          describeForError('The ConstraintLayout was'),
+        ],
+      ),
+    );
+  }
+
+  /// The size the layout takes under [constraints] when the engine does not
+  /// need to run: what Android's layout view measures without a child, and
+  /// with children when both axes are bounded. A bounded axis is its spec
+  /// size (the maximum, rounded); an unbounded axis is its minimum, which
+  /// the engine's container would only exceed to fit children.
+  static Size _sizeWithoutEngine(BoxConstraints constraints) {
+    final specs = _hostSpecsFor(constraints);
+    double extent(int spec, int min) =>
+        ((MeasureSpec.getMode(spec) == MeasureSpec.EXACTLY
+                    ? MeasureSpec.getSize(spec)
+                    : math.max(0, min)) &
+                MeasureSpec.MEASURED_SIZE_MASK)
+            .toDouble();
+    return constraints.constrain(
+      Size(
+        extent(specs.widthSpec, specs.minWidth),
+        extent(specs.heightSpec, specs.minHeight),
+      ),
+    );
+  }
 
   @override
   @protected
   Size computeDryLayout(covariant BoxConstraints constraints) {
-    if (childCount == 0) return constraints.smallest;
-    // A bounded axis is fixed at its maximum whatever the children (see
-    // _prepareContainer), so only an unbounded axis needs an engine pass.
-    if (constraints.hasBoundedWidth && constraints.hasBoundedHeight) {
-      return constraints.constrain(
-        Size(
-          constraints.maxWidth.round().toDouble(),
-          constraints.maxHeight.round().toDouble(),
-        ),
-      );
+    // With both axes bounded, both specs are EXACTLY, and the measured size
+    // is exactly the spec sizes whatever the children: no engine run.
+    if (childCount == 0 ||
+        (constraints.hasBoundedWidth && constraints.hasBoundedHeight)) {
+      return _sizeWithoutEngine(constraints);
     }
     final resolved = _resolveDry(constraints);
     if (resolved == null) return constraints.smallest;
-    return _resolvedSize(resolved.model.container, constraints);
+    return constraints.constrain(_measuredSizeOf(resolved.host));
   }
 
   @override
@@ -585,16 +918,21 @@ class RenderConstraintLayout extends RenderBox
     if (childCount == 0) return null;
     final resolved = _resolveDry(constraints);
     if (resolved == null) return null;
-    final (:model, :measurer) = resolved;
+    final (:model, :measurer, host: _) = resolved;
     var result = BaselineOffset.noBaseline;
     for (var i = 0; i < model.children.length; i++) {
       if (!_contributesBaseline(model, model.childData[i])) continue;
       final w = model.widgets[i];
-      // The constraints the child ends up with after the placement pass of
+      // The constraints the child ends up with after the placement of
       // performLayout, where its baseline is read.
-      final measured = measurer.laidOut[w];
-      final placed =
-          _placementConstraints(w, measured) ?? measured!.constraints;
+      final frame = Size(
+        math.max(0, w.getWidth()).toDouble(),
+        math.max(0, w.getHeight()).toDouble(),
+      );
+      final measured = measurer.laidOutOf(w);
+      final placed = measured != null && measured.size == frame
+          ? measured.constraints
+          : BoxConstraints.tight(frame);
       final childBaseline = measurer.dryBaseline(
         model.children[i],
         placed,
@@ -677,46 +1015,182 @@ class RenderConstraintLayout extends RenderBox
     final constraints = _intrinsicConstraints(axis, crossExtent);
     final resolved = _resolveDry(constraints, minimumAxis: axis);
     if (resolved == null) return 0;
-    final size = _resolvedSize(resolved.model.container, constraints);
+    final size = constraints.constrain(_measuredSizeOf(resolved.host));
     return switch (axis) {
       Axis.horizontal => size.width,
       Axis.vertical => size.height,
     };
   }
 
-  /// Resolves a throwaway engine model of the children under [constraints],
-  /// as [performLayout] resolves the persistent one, but with a measurer that
+  /// The size [host] measured its layout at.
+  static Size _measuredSizeOf(ViewHost host) => Size(
+    host.getMeasuredWidth().toDouble(),
+    host.getMeasuredHeight().toDouble(),
+  );
+
+  /// Measures a throwaway engine model of the children under [constraints],
+  /// as [performLayout] measures the persistent one, but with a measurer that
   /// sizes each child with its dry layout instead of laying it out.
   ///
   /// With [minimumAxis], each child that sizes to its content along that axis
   /// measures at no more than its own minimum intrinsic size there.
   ///
-  /// Returns null, after reporting the error, if resolving the model throws.
+  /// Returns null, after reporting the error, if measuring the model throws.
   /// A dry query must not throw: Flutter clears the flag that marks a dry
   /// layout or dry baseline in progress only when the computation returns,
   /// so an exception would leave this render object failing assertions in
   /// every later layout. For the same reason the throwaway model skips
   /// unknown ids, which the layout pass reports.
-  ({_EngineModel model, _DryMeasurer measurer})? _resolveDry(
+  ///
+  /// A query that repeats the last one of its kind that ran the engine
+  /// ([_dryRuns]: the same configuration, constraints and [minimumAxis]) is
+  /// replayed when every child answers each of its content measures as
+  /// before: see [_DryRun].
+  ({_EngineModel model, _DryMeasurer measurer, ViewHost host})? _resolveDry(
     BoxConstraints constraints, {
     Axis? minimumAxis,
   }) {
+    final slot = _drySlotOf(minimumAxis);
+    final settled = _configSettled();
+    final last = _dryRuns[slot];
+    assert(
+      last == null || last.minimumAxis == minimumAxis,
+      'each slot of _dryRuns keeps the queries of one minimum-intrinsic axis, '
+      'which the replay needs: the axis decides how every child is measured',
+    );
+    if (settled &&
+        last != null &&
+        last.epoch == _configEpoch &&
+        last.constraints == constraints &&
+        _dryReplays(last)) {
+      debugDryReplayPasses++;
+      if (!_verifyReplay) return last.resolved;
+      final full = _runDry(constraints, minimumAxis);
+      if (full == null || !full.sameResultAs(last)) {
+        debugDryReplayMismatches++;
+        _reportDryReplayMismatch(last, full);
+        _dryRuns[slot] = full != null && full.measurer._failed.isEmpty
+            ? full
+            : null;
+        return full?.resolved;
+      }
+      return last.resolved;
+    }
+    final run = _runDry(constraints, minimumAxis);
+    if (run == null) return null;
+    // A query in which a child failed reported it; it is not kept, so the
+    // next query asks and reports again, as every query does.
+    if (settled && run.measurer._failed.isEmpty) {
+      _dryRuns[slot] = run;
+    }
+    return run.resolved;
+  }
+
+  /// The last dry query of each kind that ran the engine, kept for a replay
+  /// by [_resolveDry]: at [_drySlotOf] its minimum-intrinsic axis, as a
+  /// minimum intrinsic size asks two kinds (see [computeMinIntrinsicWidth]).
+  /// Each holds a throwaway model, so a layout that is asked keeps up to
+  /// three besides its own.
+  final List<_DryRun?> _dryRuns = List<_DryRun?>.filled(3, null);
+
+  /// The index in [_dryRuns] of a query with [minimumAxis].
+  static int _drySlotOf(Axis? minimumAxis) => switch (minimumAxis) {
+    null => 0,
+    Axis.horizontal => 1,
+    Axis.vertical => 2,
+  };
+
+  /// Drops every kept dry query ([_dryRuns]).
+  void _forgetDryRuns() => _dryRuns.fillRange(0, _dryRuns.length, null);
+
+  /// Whether every configuration change has reached the persistent model, so
+  /// that [_configEpoch] names the configuration a model built now has: no
+  /// rebuild pending, the model's children are the children in order, and no
+  /// child's parent data holds a change the next layout would apply. (A query
+  /// before that layout reads the change; see [_resolveDry].)
+  bool _configSettled() {
+    final model = _model;
+    if (_needsModelRebuild || model == null) return false;
+    final modelChildren = model.children;
+    var i = 0;
+    RenderBox? child = firstChild;
+    while (child != null) {
+      final pd = child.parentData! as ConstraintParentData;
+      if (i >= modelChildren.length ||
+          !identical(modelChildren[i], child) ||
+          pd.configDirty ||
+          pd.structuralDirty) {
+        return false;
+      }
+      child = pd.nextSibling;
+      i++;
+    }
+    return i == modelChildren.length;
+  }
+
+  /// Whether every child answers each content measure of the dry query [run]
+  /// as it did in [run], asked again in the same order through [run]'s
+  /// measurer (which notes each child's latest dry layout again, as the run
+  /// left it when every answer is the same). A child that throws ends the
+  /// replay without a report: the full query that follows asks it and
+  /// reports, as it always does.
+  bool _dryReplays(_DryRun run) {
+    final measurer = run.measurer
+      ..beginPass(record: false)
+      .._probing = true
+      .._probeFailed = false;
     try {
-      // A fresh model needs none of the normalization performLayout gives
-      // the persistent one: its widgets enter the engine as a rebuilt
-      // model's do.
+      for (final request in run.transcript.contents) {
+        final answer = measurer._measureContent(
+          request.widget,
+          request.content,
+          request.widthSpec,
+          request.heightSpec,
+        );
+        if (measurer._probeFailed ||
+            answer.width != request.width ||
+            answer.height != request.height ||
+            answer.baseline != request.baseline) {
+          return false;
+        }
+      }
+      return true;
+    } finally {
+      measurer._probing = false;
+    }
+  }
+
+  /// Measures a new throwaway model under [constraints] (see [_resolveDry]),
+  /// recording its content measures for a replay. Returns null, after
+  /// reporting the error, if measuring the model throws.
+  _DryRun? _runDry(BoxConstraints constraints, Axis? minimumAxis) {
+    try {
+      // A new model: what Android's first layout of the configuration
+      // measures. The persistent one also carries what its last measure left
+      // (see the class doc).
       final model = _createModel(constraints, reportsUnknownIds: false);
-      final measurer = _DryMeasurer(
-        this,
-        model.renderOf,
-        model.needsBaseline,
+      final measurer = _DryMeasurer(this, model, minimumAxis: minimumAxis);
+      final host = ViewHost(model.container, measurer);
+      final specs = _hostSpecsFor(constraints);
+      host
+        ..setRtl(!_ltr)
+        ..optimizationLevel = _optimizationLevel.value
+        ..minWidth = specs.minWidth
+        ..minHeight = specs.minHeight;
+      measurer.beginPass(record: true, requests: false);
+      host.measure(specs.widthSpec, specs.heightSpec);
+      debugDryEnginePasses++;
+      final transcript = measurer.recording!;
+      measurer.recording = null;
+      return _DryRun(
+        epoch: _configEpoch,
+        constraints: constraints,
         minimumAxis: minimumAxis,
+        model: model,
+        measurer: measurer,
+        host: host,
+        transcript: transcript,
       );
-      final container = model.container..setMeasurer(measurer);
-      _prepareContainer(container, constraints);
-      measurer.beginPass(constraints);
-      container.layout();
-      return (model: model, measurer: measurer);
     } catch (exception, stack) {
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -736,7 +1210,8 @@ class RenderConstraintLayout extends RenderBox
     }
   }
 
-  /// Rebuilds the persistent engine model from scratch.
+  /// Rebuilds the persistent engine model from scratch, with a new measurer
+  /// and host.
   void _buildModel(BoxConstraints constraints) {
     // Dropped before the build: applying config can throw (an unresolvable
     // link id reports through an assert), and a half-built or stale model
@@ -745,812 +1220,28 @@ class RenderConstraintLayout extends RenderBox
     // problem instead of resolving a model that looks clean.
     _model = null;
     _measurer = null;
+    _host = null;
+    _lastRun = null;
+    _forgetDryRuns();
     final model = _createModel(constraints, reportsUnknownIds: true);
     _publishGroupOverrides(model);
     for (final pd in model.childData) {
       pd.configDirty = false;
       pd.structuralDirty = false;
     }
-    final measurer = _FlutterMeasurer(model.renderOf, model.needsBaseline);
-    model.container.setMeasurer(measurer);
+    final measurer = _FlutterMeasurer(this, model);
+    // Installs the measurer on the container before anything measures: a
+    // flow keeps the measurer it first finds there.
+    final host = ViewHost(model.container, measurer);
+    if (debugRecordTranscripts) {
+      measurer.transcript = StringBuffer();
+    }
     _model = model;
     _measurer = measurer;
+    _host = host;
     _needsModelRebuild = false;
+    _configEpoch++;
   }
-
-  /// Builds an engine model of the current children: one `ConstraintWidget`
-  /// per child, configured from its parent data.
-  ///
-  /// Touches nothing but the new model, so it builds both the persistent
-  /// model ([_buildModel]) and the throwaway ones of the dry-layout queries
-  /// ([_resolveDry]). See [_EngineModel.reportsUnknownIds].
-  _EngineModel _createModel(
-    BoxConstraints constraints, {
-    required bool reportsUnknownIds,
-  }) {
-    final model = _EngineModel(
-      ConstraintWidgetContainer.rect(
-        0,
-        0,
-        constraints.hasBoundedWidth ? constraints.maxWidth.round() : 0,
-        constraints.hasBoundedHeight ? constraints.maxHeight.round() : 0,
-      ),
-      reportsUnknownIds: reportsUnknownIds,
-    );
-
-    RenderBox? child = firstChild;
-    while (child != null) {
-      final pd = child.parentData! as ConstraintParentData;
-      model.children.add(child);
-      model.childData.add(pd);
-      child = pd.nextSibling;
-    }
-
-    // Create every widget and register ids before applying config, so links
-    // can target later siblings. Helper children map to their dedicated
-    // engine types.
-    for (var i = 0; i < model.children.length; i++) {
-      final pd = model.childData[i];
-      final w = switch (pd.helperKind) {
-        HelperKind.none => ConstraintWidget(),
-        // Oriented now, before any sibling links to it: a guideline only has
-        // the left and right edges that links to a vertical one target once
-        // it is vertical, and a sibling earlier in the child list connects
-        // before the guideline's own config. Android sets the orientation
-        // when it validates the guideline's layout params, before any
-        // constraint, so the child order does not matter there either.
-        HelperKind.guideline =>
-          Guideline()..setOrientation(
-            pd.guidelineAxis == Axis.horizontal
-                ? Guideline.horizontal
-                : Guideline.vertical,
-          ),
-        HelperKind.barrier => Barrier(),
-        HelperKind.flow => Flow(),
-        HelperKind.grid => GridCore(),
-        // Only keeps the model lists index-aligned (and the group's child
-        // placed at 0 x 0 at the origin): it is never added to the container.
-        HelperKind.group => ConstraintWidget(),
-      };
-      model.widgets.add(w);
-      if (pd.helperKind == HelperKind.none) {
-        model.renderOf[w] = model.children[i];
-      }
-      final id = pd.id;
-      if (pd.helperKind == HelperKind.group) {
-        if (id != null) {
-          model.groupIds.add(id);
-        }
-        continue;
-      }
-      if (id != null) {
-        model.byId[id] = w;
-        model.indexById[id] = i;
-      }
-      model.container.add(w);
-    }
-    // Derived state (and its baseline seeding) must precede the connects.
-    _computeDerivedState(model);
-    for (var i = 0; i < model.widgets.length; i++) {
-      _applyWidgetConfig(model, model.widgets[i], model.childData[i]);
-    }
-    _reportLinkLoop(model);
-    return model;
-  }
-
-  /// Applies the full `Constrained` config from [pd] to engine widget [w] of
-  /// [model], whose ids and container its links resolve against.
-  ///
-  /// Also used to update a persistent widget in place, so it first resets any
-  /// state a previous configuration (or the engine's GONE zeroing in
-  /// updateFromRuns) may have left behind; after the reset, re-applying is
-  /// equivalent to configuring a fresh widget.
-  void _applyWidgetConfig(
-    _EngineModel model,
-    ConstraintWidget w,
-    ConstraintParentData pd,
-  ) {
-    if (pd.helperKind == HelperKind.guideline ||
-        pd.helperKind == HelperKind.barrier) {
-      _applyHelperConfig(model, w, pd);
-      return;
-    }
-    if (pd.helperKind == HelperKind.group) {
-      _applyGroupConfig(model, pd);
-      return;
-    }
-    // Flows fall through: they are positioned and sized like a regular child
-    // (links, dimensions, bias, visibility) and get their flow configuration
-    // applied on top at the end.
-
-    // resetAnchors() clears each anchor's incoming-dependents set, but
-    // siblings still targeting this widget keep their connections; the
-    // solver's GONE handling gates on hasDependencies(), so the incoming
-    // bookkeeping must survive an in-place re-apply.
-    final savedDependents = [
-      for (final anchor in w.mAnchors) anchor.mDependents,
-    ];
-    w.resetAnchors();
-    for (var i = 0; i < w.mAnchors.length; i++) {
-      w.mAnchors[i].mDependents = savedDependents[i];
-    }
-    w.setDimensionRatio(0, ConstraintWidget.UNKNOWN);
-    // Match styles carry min/max/percent; reset to pristine spread defaults.
-    w.setHorizontalMatchStyle(
-      ConstraintWidget.MATCH_CONSTRAINT_SPREAD,
-      0,
-      0,
-      1,
-    );
-    w.setVerticalMatchStyle(ConstraintWidget.MATCH_CONSTRAINT_SPREAD, 0, 0, 1);
-    // A circular constraint is an anchor connect plus this angle; the connect
-    // is cleared by resetAnchors, the angle must be cleared here.
-    w.mCircleConstraintAngle = double.nan;
-    // The stored position is the engine's input for an unanchored axis, so a
-    // value resolved under a removed link must not survive the re-apply.
-    w.setX(0);
-    w.setY(0);
-
-    w.setHorizontalDimensionBehaviour(_behaviourOf(pd.width));
-    w.setVerticalDimensionBehaviour(_behaviourOf(pd.height));
-    // Non-fixed axes reset the stored size to 0, matching a fresh widget.
-    // Visible widgets get measured every pass either way, but a GONE widget
-    // skips measurement and the engine then reads the stored size during
-    // graph building, so a stale value would shift its resolved position.
-    final width = pd.width;
-    w.setWidth(width is FixedDimension ? width.pixels.round() : 0);
-    final height = pd.height;
-    w.setHeight(height is FixedDimension ? height.pixels.round() : 0);
-    if (width is MatchConstraintDimension) {
-      w.setHorizontalMatchStyle(
-        _matchStyleOf(width),
-        width.min?.round() ?? 0,
-        width.max?.round() ?? 0,
-        width.percent ?? 1,
-      );
-    }
-    if (height is MatchConstraintDimension) {
-      w.setVerticalMatchStyle(
-        _matchStyleOf(height),
-        height.min?.round() ?? 0,
-        height.max?.round() ?? 0,
-        height.percent ?? 1,
-      );
-    }
-    // Resolved as Android's LayoutParams.resolveLayoutDirection does: in a
-    // right-to-left layout, a child with any start/end link uses
-    // 1 - horizontalBias, so its bias counts from its start (right) edge. A
-    // child linked only with absolute left/right keeps the bias as given.
-    // A widget a grid places counts as start/end-linked: the grid's columns
-    // count from the start edge, so its position in its cell does too, and
-    // the grid mirrors as a whole.
-    final id = pd.id;
-    final mirrorBias =
-        !_ltr &&
-        (pd.start != null ||
-            pd.end != null ||
-            (id != null && model.gridMembers.contains(id)));
-    w.setHorizontalBiasPercent(
-      mirrorBias ? 1 - pd.horizontalBias : pd.horizontalBias,
-    );
-    w.setVerticalBiasPercent(pd.verticalBias);
-    final ratio = pd.aspectRatio;
-    if (ratio != null && ratio > 0) {
-      w.setDimensionRatioString(ratio.toString());
-    }
-    w.setHorizontalChainStyle(_chainStyleOf(pd.horizontalChainStyle));
-    w.setVerticalChainStyle(_chainStyleOf(pd.verticalChainStyle));
-    w.setHorizontalWeight(
-      pd.horizontalWeight ?? ConstraintWidget.UNKNOWN.toDouble(),
-    );
-    w.setVerticalWeight(
-      pd.verticalWeight ?? ConstraintWidget.UNKNOWN.toDouble(),
-    );
-    // A group that references this child overrides its own visibility.
-    w.setVisibility(switch (model.visibilityOf(pd)) {
-      ConstraintVisibility.visible => ConstraintWidget.VISIBLE,
-      ConstraintVisibility.invisible => ConstraintWidget.INVISIBLE,
-      ConstraintVisibility.gone => ConstraintWidget.GONE,
-    });
-
-    // Android resolves start/end as a pair: when either is set, all absolute
-    // left/right links are ignored, not just the link on the same side.
-    if (pd.start != null || pd.end != null) {
-      _connectH(model, w, HorizontalEdge.start, pd.start);
-      _connectH(model, w, HorizontalEdge.end, pd.end);
-    } else {
-      _connectH(model, w, HorizontalEdge.left, pd.left);
-      _connectH(model, w, HorizontalEdge.right, pd.right);
-    }
-    _connectV(model, w, VerticalEdge.top, pd.top);
-    _connectV(model, w, VerticalEdge.bottom, pd.bottom);
-    _connectV(model, w, VerticalEdge.baseline, pd.baseline);
-
-    final circle = pd.circle;
-    if (circle != null) {
-      final target = _resolveTarget(model, circle.target);
-      if (target == null) {
-        _reportUnknownId(
-          model,
-          'CircularLink targets ${_describeUnresolved(model, circle.target)}. '
-          'Targets must be `parent` or the id of a sibling in the same '
-          'ConstraintLayout.',
-        );
-      } else {
-        w.connectCircularConstraint(
-          target,
-          circle.angle,
-          circle.radius.round(),
-        );
-      }
-    }
-
-    if (w is Flow) {
-      _applyFlowConfig(model, w, pd);
-    } else if (w is GridCore) {
-      _applyGridConfig(model, w, pd);
-    }
-
-    // The connects above reset anchors of this widget again: a top or bottom
-    // link resets its baseline, and a baseline link its top and bottom, which
-    // drops the incoming links restored after resetAnchors. Android applies
-    // these links without resetting anything, so whatever still points at
-    // one of this widget's anchors is registered with it again. Without this
-    // a widget whose baseline another one links to lost that link whenever
-    // it was re-applied in place (or configured after the widget linking to
-    // it), and the layout differed from a fresh build.
-    for (var i = 0; i < w.mAnchors.length; i++) {
-      final saved = savedDependents[i];
-      final anchor = w.mAnchors[i];
-      if (saved == null || identical(saved, anchor.mDependents)) continue;
-      for (final dependent in saved) {
-        if (identical(dependent.mTarget, anchor)) {
-          (anchor.mDependents ??= <ConstraintAnchor>{}).add(dependent);
-        }
-      }
-    }
-  }
-
-  /// Applies grid configuration on top of the regular widget config. Only
-  /// called from model builds (grid changes are structural), so referenced
-  /// widgets never need clearing.
-  ///
-  /// Nothing here depends on the text direction: the engine's grid mirrors
-  /// its columns itself, following the container's `setRtl` from
-  /// [_prepareContainer].
-  void _applyGridConfig(
-    _EngineModel model,
-    GridCore w,
-    ConstraintParentData pd,
-  ) {
-    w.setRows(pd.gridRows ?? 0);
-    w.setColumns(pd.gridColumns ?? 0);
-    w.setOrientation(
-      pd.gridOrientation == Axis.horizontal
-          ? GridCore.HORIZONTAL
-          : GridCore.VERTICAL,
-    );
-    w.setHorizontalGaps(pd.gridHorizontalGap);
-    w.setVerticalGaps(pd.gridVerticalGap);
-    final rowWeights = pd.gridRowWeights;
-    if (rowWeights != null) {
-      w.setRowWeights(rowWeights.join(','));
-    }
-    final columnWeights = pd.gridColumnWeights;
-    if (columnWeights != null) {
-      w.setColumnWeights(columnWeights.join(','));
-    }
-    final spans = pd.gridSpans;
-    if (spans != null) {
-      w.setSpans(spans);
-    }
-    final skips = pd.gridSkips;
-    if (skips != null) {
-      w.setSkips(skips);
-    }
-    for (final id in pd.gridReferenced) {
-      final target = model.byId[id];
-      if (target == null) {
-        _reportUnknownId(
-          model,
-          'ConstraintGrid references ${_describeUnresolved(model, id)}. '
-          'Referenced ids must belong to siblings in the same '
-          'ConstraintLayout.',
-        );
-        continue;
-      }
-      w.add(target);
-    }
-  }
-
-  /// Applies flow configuration on top of the regular widget config. Only
-  /// called from model builds (flow changes are structural), so referenced
-  /// widgets never need clearing.
-  void _applyFlowConfig(_EngineModel model, Flow w, ConstraintParentData pd) {
-    w.setOrientation(
-      pd.flowOrientation == Axis.horizontal
-          ? ConstraintWidget.HORIZONTAL
-          : ConstraintWidget.VERTICAL,
-    );
-    w.setWrapMode(switch (pd.flowWrap) {
-      FlowWrap.none => Flow.WRAP_NONE,
-      FlowWrap.chain => Flow.WRAP_CHAIN,
-      FlowWrap.aligned => Flow.WRAP_ALIGNED,
-    });
-    w.setHorizontalGap(pd.flowHorizontalGap.round());
-    w.setVerticalGap(pd.flowVerticalGap.round());
-    w.setHorizontalStyle(_chainStyleOf(pd.flowHorizontalStyle));
-    w.setVerticalStyle(_chainStyleOf(pd.flowVerticalStyle));
-    w.setHorizontalBias(pd.flowHorizontalBias);
-    w.setVerticalBias(pd.flowVerticalBias);
-    w.setHorizontalAlign(switch (pd.flowHorizontalAlign) {
-      FlowHorizontalAlign.start => Flow.HORIZONTAL_ALIGN_START,
-      FlowHorizontalAlign.end => Flow.HORIZONTAL_ALIGN_END,
-      FlowHorizontalAlign.center => Flow.HORIZONTAL_ALIGN_CENTER,
-    });
-    w.setVerticalAlign(switch (pd.flowVerticalAlign) {
-      FlowVerticalAlign.top => Flow.VERTICAL_ALIGN_TOP,
-      FlowVerticalAlign.bottom => Flow.VERTICAL_ALIGN_BOTTOM,
-      FlowVerticalAlign.center => Flow.VERTICAL_ALIGN_CENTER,
-      FlowVerticalAlign.baseline => Flow.VERTICAL_ALIGN_BASELINE,
-    });
-    w.setMaxElementsWrap(pd.flowMaxElementsWrap ?? ConstraintWidget.UNKNOWN);
-    w.setPadding(pd.flowPadding.round());
-    // setPadding sets the horizontal sides as start/end, which become the
-    // left/right padding the flow wraps and places with only once resolved
-    // for the text direction (as Android's ConstraintHelper.resolveRtl does).
-    w.applyRtl(!_ltr);
-    for (final id in pd.flowReferenced) {
-      final target = model.byId[id];
-      if (target == null) {
-        _reportUnknownId(
-          model,
-          'ConstraintFlow references ${_describeUnresolved(model, id)}. '
-          'Referenced ids must belong to siblings in the same '
-          'ConstraintLayout.',
-        );
-        continue;
-      }
-      w.add(target);
-    }
-  }
-
-  /// Applies guideline/barrier configuration to the dedicated engine widget.
-  /// Only called from model builds: helper config changes are structural, so
-  /// [w] is always freshly constructed and needs no reset.
-  void _applyHelperConfig(
-    _EngineModel model,
-    ConstraintWidget w,
-    ConstraintParentData pd,
-  ) {
-    if (w is Guideline) {
-      w.setOrientation(
-        pd.guidelineAxis == Axis.horizontal
-            ? Guideline.horizontal
-            : Guideline.vertical,
-      );
-      // Resolved as Android's LayoutParams.resolveLayoutDirection does with
-      // guidelineUseRtl at its default (true): in a right-to-left layout a
-      // vertical guideline counts from the right, so percent becomes
-      // 1 - percent and begin and end trade edges. Horizontal guidelines are
-      // unaffected.
-      final mirror = !_ltr && pd.guidelineAxis == Axis.vertical;
-      final percent = pd.guidelinePercent;
-      final begin = pd.guidelineBegin;
-      final end = pd.guidelineEnd;
-      if (percent != null) {
-        w.setGuidePercent(mirror ? 1 - percent : percent);
-      } else if (begin != null) {
-        if (mirror) {
-          w.setGuideEnd(begin.round());
-        } else {
-          w.setGuideBegin(begin.round());
-        }
-      } else if (end != null) {
-        if (mirror) {
-          w.setGuideBegin(end.round());
-        } else {
-          w.setGuideEnd(end.round());
-        }
-      }
-    } else if (w is Barrier) {
-      w.setBarrierType(switch (pd.barrierEdge) {
-        BarrierEdge.left => Barrier.left,
-        BarrierEdge.right => Barrier.right,
-        BarrierEdge.top => Barrier.top,
-        BarrierEdge.bottom => Barrier.bottom,
-        BarrierEdge.start => _ltr ? Barrier.left : Barrier.right,
-        BarrierEdge.end => _ltr ? Barrier.right : Barrier.left,
-      });
-      w.setAllowsGoneWidget(pd.barrierAllowsGone);
-      // Deliberate difference from Android, whose view-layer Barrier resolves
-      // start and end to left and right but keeps the margin's sign, so a
-      // positive margin moves every barrier right. Here a right-to-left
-      // layout is the exact mirror of its left-to-right twin: a start or end
-      // barrier tracks the mirrored edge, so it takes the mirrored margin
-      // too. Absolute left/right barriers and top/bottom barriers keep it.
-      final margin = pd.barrierMargin.round();
-      final directional =
-          pd.barrierEdge == BarrierEdge.start ||
-          pd.barrierEdge == BarrierEdge.end;
-      w.setMargin(!_ltr && directional ? -margin : margin);
-      for (final id in pd.barrierReferenced) {
-        final target = model.byId[id];
-        if (target == null) {
-          _reportUnknownId(
-            model,
-            'Barrier references ${_describeUnresolved(model, id)}. '
-            'Referenced ids must belong to siblings in the same '
-            'ConstraintLayout.',
-          );
-          continue;
-        }
-        w.add(target);
-      }
-    }
-  }
-
-  /// Validates a group's referenced ids, reporting those that resolve to no
-  /// sibling as Barrier does. A group puts nothing into the engine: its
-  /// visibility reaches the referenced children through
-  /// [_EngineModel.groupOverrides], set in [_computeDerivedState].
-  void _applyGroupConfig(_EngineModel model, ConstraintParentData pd) {
-    for (final id in pd.groupReferenced) {
-      if (model.indexById.containsKey(id)) continue;
-      _reportUnknownId(
-        model,
-        'ConstraintGroup references ${_describeUnresolved(model, id)}. '
-        'Referenced ids must belong to siblings in the same '
-        'ConstraintLayout.',
-      );
-    }
-  }
-
-  /// Marks the children referenced by a group whose visibility changed as if
-  /// their own visibility had changed: a `Constrained` child is updated in
-  /// place, while a flow or grid, whose configuration is applied at model
-  /// build time, rebuilds the model. The group's own flag is cleared, since
-  /// it has no engine configuration to apply.
-  void _passGroupChangesToMembers(_EngineModel model) {
-    for (final pd in model.childData) {
-      if (pd.helperKind != HelperKind.group || !pd.configDirty) continue;
-      pd.configDirty = false;
-      for (final id in pd.groupReferenced) {
-        final index = model.indexById[id];
-        if (index == null) continue;
-        final member = model.childData[index];
-        switch (member.helperKind) {
-          case HelperKind.none:
-            member.configDirty = true;
-          case HelperKind.flow || HelperKind.grid:
-            _needsModelRebuild = true;
-          case HelperKind.guideline || HelperKind.barrier || HelperKind.group:
-            break;
-        }
-      }
-    }
-  }
-
-  /// Hands [model]'s group overrides to the children's parent data, where
-  /// painting, hit testing, semantics, and the debug overlay read them. Only
-  /// for the persistent model: a dry-layout query must leave parent data
-  /// alone.
-  static void _publishGroupOverrides(_EngineModel model) {
-    for (final pd in model.childData) {
-      pd.groupOverride = model.groupOverrides[pd];
-    }
-  }
-
-  /// How an error names an [id] that resolves to no sibling that takes part
-  /// in the layout: as a group, which nothing can link to or reference, or as
-  /// an unknown id.
-  static String _describeUnresolved(_EngineModel model, Symbol id) =>
-      model.groupIds.contains(id)
-      ? '$id, which is a ConstraintGroup. A group has no position or size, '
-            'so nothing can link to or reference it'
-      : 'unknown id $id';
-
-  int _matchStyleOf(MatchConstraintDimension d) {
-    if (d.wrap) return ConstraintWidget.MATCH_CONSTRAINT_WRAP;
-    if (d.percent != null) return ConstraintWidget.MATCH_CONSTRAINT_PERCENT;
-    return ConstraintWidget.MATCH_CONSTRAINT_SPREAD;
-  }
-
-  int _chainStyleOf(ChainStyle? style) => switch (style) {
-    null || ChainStyle.spread => ConstraintWidget.CHAIN_SPREAD,
-    ChainStyle.spreadInside => ConstraintWidget.CHAIN_SPREAD_INSIDE,
-    ChainStyle.packed => ConstraintWidget.CHAIN_PACKED,
-  };
-
-  /// Recomputes state derived from the whole of [model]: the visibility
-  /// groups impose on their referenced children, which widgets need a real
-  /// baseline measured, and whether any child's geometry can depend on its
-  /// content (which disables the engine-skipping fast path).
-  ///
-  /// Writes only to [model]: the persistent model's group overrides reach
-  /// the parent data through [_publishGroupOverrides].
-  void _computeDerivedState(_EngineModel model) {
-    // As Android's Group, each group sets its visibility on every child it
-    // references, in child order, so the last group to reference a child
-    // wins. The overrides are rebuilt from scratch, so a child that no group
-    // references any more is laid out with its own visibility again.
-    // Unresolvable ids are skipped here and reported by _applyGroupConfig.
-    final groupOverrides = model.groupOverrides..clear();
-    for (final pd in model.childData) {
-      if (pd.helperKind != HelperKind.group) continue;
-      for (final id in pd.groupReferenced) {
-        final index = model.indexById[id];
-        if (index == null) continue;
-        final member = model.childData[index];
-        // Guidelines and barriers have no visibility to set.
-        if (member.helperKind == HelperKind.none ||
-            member.helperKind == HelperKind.flow ||
-            member.helperKind == HelperKind.grid) {
-          groupOverrides[member] = pd.groupVisibility;
-        }
-      }
-    }
-
-    // The widgets a grid that takes part in the layout places: their
-    // horizontal bias counts from the start edge (see _applyWidgetConfig).
-    final gridMembers = model.gridMembers..clear();
-    for (final pd in model.childData) {
-      if (pd.helperKind != HelperKind.grid) continue;
-      if (model.visibilityOf(pd) == ConstraintVisibility.gone) continue;
-      gridMembers.addAll(pd.gridReferenced);
-    }
-
-    // Cleared and refilled in place: the model's measurer holds this set.
-    final needsBaseline = model.needsBaseline..clear();
-    var contentDependent = false;
-    for (var i = 0; i < model.childData.length; i++) {
-      final pd = model.childData[i];
-      final link = pd.baseline;
-      if (link != null) {
-        needsBaseline.add(model.widgets[i]);
-        final target = link.target == parent ? null : model.byId[link.target];
-        if (target != null) {
-          needsBaseline.add(target);
-        }
-      }
-      // A baseline-aligned flow needs real baselines for every widget it
-      // arranges.
-      if (pd.helperKind == HelperKind.flow &&
-          pd.flowVerticalAlign == FlowVerticalAlign.baseline) {
-        for (final id in pd.flowReferenced) {
-          final target = model.byId[id];
-          if (target != null) {
-            needsBaseline.add(target);
-          }
-        }
-      }
-      contentDependent = contentDependent || _isContentDependent(pd);
-    }
-    model.hasContentDependentChild = contentDependent;
-
-    // Baseline connects only validate when both endpoints already report a
-    // baseline (upstream parity: Android sets hasBaseline from the view while
-    // applying LayoutParams, before connecting). Seed the participants now;
-    // the next measure pass overwrites the flag with the real value.
-    for (final w in needsBaseline) {
-      w.setHasBaseline(true);
-    }
-  }
-
-  /// Whether this child's resolved size can depend on its content: a wrap
-  /// dimension, a constrained-wrap match dimension, or a matchConstraint
-  /// dimension the engine measures as wrap because an opposing anchor is
-  /// missing. Helper children (guidelines, barriers) have no content.
-  bool _isContentDependent(ConstraintParentData pd) {
-    if (pd.helperKind != HelperKind.none) return false;
-    final directional = pd.start != null || pd.end != null;
-    final hasLeft = directional
-        ? (_ltr ? pd.start : pd.end) != null
-        : pd.left != null;
-    final hasRight = directional
-        ? (_ltr ? pd.end : pd.start) != null
-        : pd.right != null;
-    final hasTop = pd.top != null;
-    final hasBottom = pd.bottom != null;
-
-    bool depends(Dimension d, bool hasA, bool hasB) => switch (d) {
-      WrapContentDimension() => true,
-      MatchConstraintDimension(:final wrap) => wrap || !(hasA && hasB),
-      _ => false,
-    };
-
-    return depends(pd.width, hasLeft, hasRight) ||
-        depends(pd.height, hasTop, hasBottom);
-  }
-
-  void _connectH(
-    _EngineModel model,
-    ConstraintWidget w,
-    HorizontalEdge sourceEdge,
-    HorizontalLink? link,
-  ) {
-    if (link == null) return;
-    final target = _resolveTarget(model, link.target);
-    if (target == null) {
-      _reportUnknownLinkTarget(model, link.target);
-      return;
-    }
-    final from = _hAnchor(sourceEdge);
-    w.connect(from, target, _hAnchor(link.edge), link.margin.round());
-    if (link.goneMargin != 0) {
-      w.setGoneMargin(from, link.goneMargin.round());
-    }
-  }
-
-  void _connectV(
-    _EngineModel model,
-    ConstraintWidget w,
-    VerticalEdge sourceEdge,
-    VerticalLink? link,
-  ) {
-    if (link == null) return;
-    final target = _resolveTarget(model, link.target);
-    if (target == null) {
-      _reportUnknownLinkTarget(model, link.target);
-      return;
-    }
-    final from = _vAnchor(sourceEdge);
-    w.connect(from, target, _vAnchor(link.edge), link.margin.round());
-    if (link.goneMargin != 0) {
-      w.setGoneMargin(from, link.goneMargin.round());
-    }
-  }
-
-  ConstraintWidget? _resolveTarget(_EngineModel model, Symbol target) {
-    if (target == parent) return model.container;
-    return model.byId[target];
-  }
-
-  void _reportUnknownLinkTarget(_EngineModel model, Symbol target) =>
-      _reportUnknownId(
-        model,
-        'Constrained link targets ${_describeUnresolved(model, target)}. '
-        'Targets must be `parent` or the id of a sibling Constrained in the '
-        'same ConstraintLayout.',
-      );
-
-  /// Reports a reference to an id that no sibling has, described by
-  /// [message].
-  ///
-  /// In a debug build the persistent model's build throws it, abandoning the
-  /// layout pass so the mistake cannot go unnoticed; release builds skip the
-  /// reference. A throwaway model (see [_EngineModel.reportsUnknownIds])
-  /// skips it in every build: the layout pass reports it, and a dry query
-  /// must not throw (see [_resolveDry]).
-  void _reportUnknownId(_EngineModel model, String message) {
-    assert(() {
-      if (model.reportsUnknownIds) throw FlutterError(message);
-      return true;
-    }());
-  }
-
-  /// Reports, like an unknown id (see [_reportUnknownId]), links that loop
-  /// back on themselves: two children whose same edges link to each other
-  /// (both tops, or both ends), an edge linked to itself, two children linked
-  /// both ways on both sides, or a chain whose first child's start links one
-  /// way to its last child while the last child's end links back to the
-  /// first child. No child of such a loop has a position to start from.
-  /// Android's ConstraintLayout never finishes laying out a layout with the
-  /// last kind. It lays out the others, at the layout's left or top edge in
-  /// either text direction when nothing else anchors the loop, and the engine
-  /// lays out every kind, the others as Android does. Baseline links are not
-  /// followed, so two baselines linked to each other are not reported.
-  void _reportLinkLoop(_EngineModel model) {
-    assert(() {
-      if (!model.reportsUnknownIds) return true;
-      final loop = _linkLoop(model);
-      if (loop == null) return true;
-      String edge(ConstraintAnchor anchor) {
-        final index = model.widgets.indexOf(anchor.mOwner);
-        final pd = model.childData[index];
-        final name = switch (anchor.mType) {
-          ConstraintAnchorType.left when pd.start != null || pd.end != null =>
-            _ltr ? 'start' : 'end',
-          ConstraintAnchorType.right when pd.start != null || pd.end != null =>
-            _ltr ? 'end' : 'start',
-          final type => type.name,
-        };
-        return '${pd.id} $name';
-      }
-
-      final links = [
-        for (final anchor in loop)
-          '${edge(anchor)} to ${edge(anchor.mTarget!)}',
-      ];
-      throw FlutterError(
-        'Constrained links loop back on themselves: ${links.join(', ')}. '
-        'None of these children has a position to start from. Link one of '
-        'these edges to `parent` or to a child outside the loop instead.',
-      );
-    }());
-  }
-
-  /// The links of a loop that [_reportLinkLoop] reports, or null. It follows
-  /// the engine's two chain walks along each axis: the dependency graph's,
-  /// through every edge whose target links straight back to it, and the
-  /// solver's, from a chain's first child to each next child whose start
-  /// links to the one before.
-  static List<ConstraintAnchor>? _linkLoop(_EngineModel model) {
-    ConstraintAnchor? linkedBack(ConstraintAnchor anchor) {
-      final target = anchor.mTarget;
-      return target != null && identical(target.mTarget, anchor)
-          ? target
-          : null;
-    }
-
-    for (final widget in model.widgets) {
-      for (final horizontal in const [true, false]) {
-        ConstraintAnchor startOf(ConstraintWidget w) =>
-            horizontal ? w.mLeft : w.mTop;
-        ConstraintAnchor endOf(ConstraintWidget w) =>
-            horizontal ? w.mRight : w.mBottom;
-        // The graph's walk: back through linked-back starts, then forward
-        // through linked-back ends.
-        for (final forward in const [false, true]) {
-          final links = <ConstraintAnchor>[];
-          final seen = <ConstraintWidget>{widget};
-          var current = widget;
-          while (true) {
-            final anchor = forward ? endOf(current) : startOf(current);
-            final back = linkedBack(anchor);
-            if (back == null) break;
-            links.add(anchor);
-            if (!seen.add(back.mOwner)) return links;
-            current = back.mOwner;
-          }
-        }
-        // The solver's walk, from a chain's first child.
-        final start = startOf(widget).mTarget;
-        if (start == null ||
-            identical(start.mTarget, startOf(widget)) ||
-            linkedBack(endOf(widget)) == null) {
-          continue;
-        }
-        final links = <ConstraintAnchor>[];
-        var current = widget;
-        while (true) {
-          final end = endOf(current);
-          final next = end.mTarget?.mOwner;
-          if (next == null ||
-              !identical(startOf(next).mTarget?.mOwner, current)) {
-            break;
-          }
-          links.add(end);
-          if (identical(next, widget)) return links;
-          if (links.length > model.widgets.length) break;
-          current = next;
-        }
-      }
-    }
-    return null;
-  }
-
-  ConstraintAnchorType _hAnchor(HorizontalEdge edge) => switch (edge) {
-    HorizontalEdge.left => ConstraintAnchorType.left,
-    HorizontalEdge.right => ConstraintAnchorType.right,
-    HorizontalEdge.start =>
-      _ltr ? ConstraintAnchorType.left : ConstraintAnchorType.right,
-    HorizontalEdge.end =>
-      _ltr ? ConstraintAnchorType.right : ConstraintAnchorType.left,
-  };
-
-  ConstraintAnchorType _vAnchor(VerticalEdge edge) => switch (edge) {
-    VerticalEdge.top => ConstraintAnchorType.top,
-    VerticalEdge.bottom => ConstraintAnchorType.bottom,
-    VerticalEdge.baseline => ConstraintAnchorType.baseline,
-  };
-
-  DimensionBehaviour _behaviourOf(Dimension d) => switch (d) {
-    WrapContentDimension() => DimensionBehaviour.wrapContent,
-    MatchParentDimension() => DimensionBehaviour.matchParent,
-    MatchConstraintDimension() => DimensionBehaviour.matchConstraint,
-    FixedDimension() => DimensionBehaviour.fixed,
-  };
 
   /// Children in paint order: ascending [ConstraintParentData.zIndex], with
   /// document order as the default key and as the tiebreaker.
@@ -1650,542 +1341,175 @@ class RenderConstraintLayout extends RenderBox
   }
 }
 
-/// An engine model of a [RenderConstraintLayout]'s children: a container
-/// holding one engine widget per child, configured from the child's parent
-/// data.
+/// One full run of the engine on the persistent model: its keys, its
+/// transcript, the frames it gave the children, and the layout's measured
+/// size.
 ///
-/// The render object keeps one alive across layout passes; the dry-layout,
-/// intrinsic-size, and dry-baseline queries each resolve a throwaway one, so
-/// they never disturb it.
-class _EngineModel {
-  _EngineModel(this.container, {required this.reportsUnknownIds});
-
-  /// The root, which stands in for the layout itself.
-  final ConstraintWidgetContainer container;
-
-  /// Whether building this model throws, in a debug build, on a reference to
-  /// an id that no sibling has. True for the persistent model; a throwaway
-  /// one skips the reference, as release builds do. See
-  /// [RenderConstraintLayout._reportUnknownId].
-  final bool reportsUnknownIds;
-
-  /// The children, in child-list order.
-  final List<RenderBox> children = <RenderBox>[];
-
-  /// The parent data of each child, by index in [children].
-  final List<ConstraintParentData> childData = <ConstraintParentData>[];
-
-  /// The engine widget of each child, by index in [children].
-  final List<ConstraintWidget> widgets = <ConstraintWidget>[];
-
-  /// Engine widgets by child id, for resolving links and helper references:
-  /// the children that take part in the layout, every kind but a group.
-  final Map<Symbol, ConstraintWidget> byId = <Symbol, ConstraintWidget>{};
-
-  /// The index in [children] of each child in [byId].
-  final Map<Symbol, int> indexById = <Symbol, int>{};
-
-  /// The ids of the groups, kept apart from [byId]: nothing can link to or
-  /// reference a group.
-  final Set<Symbol> groupIds = <Symbol>{};
-
-  /// The visibility a `ConstraintGroup` imposes on each child it references,
-  /// by the child's parent data. Derived state; see
-  /// [RenderConstraintLayout._computeDerivedState].
-  final Map<ConstraintParentData, ConstraintVisibility> groupOverrides =
-      <ConstraintParentData, ConstraintVisibility>{};
-
-  /// The visibility the child with parent data [pd] is laid out with: that of
-  /// the last group that references it, otherwise its own.
-  ConstraintVisibility visibilityOf(ConstraintParentData pd) =>
-      groupOverrides[pd] ?? pd.visibility;
-
-  /// The RenderBox of each content child (every child but the helpers), by
-  /// engine widget: the children a measurer measures.
-  final Map<ConstraintWidget, RenderBox> renderOf =
-      <ConstraintWidget, RenderBox>{};
-
-  /// Widgets whose real baseline must be measured; see
-  /// [_FlutterMeasurer._needsBaseline].
-  final Set<ConstraintWidget> needsBaseline = <ConstraintWidget>{};
-
-  /// The ids of the children a `ConstraintGrid` that is not gone places.
-  /// Derived state; see [RenderConstraintLayout._computeDerivedState].
-  final Set<Symbol> gridMembers = <Symbol>{};
-
-  /// Whether any child's geometry can depend on its content, which rules out
-  /// the layout's engine-skipping fast path.
-  bool hasContentDependentChild = false;
-}
-
-/// The latest layout a measurer gave a child during an engine pass: its
-/// constraints, and the size the child took under them (or, for a
-/// [_DryMeasurer], would take).
-typedef _MeasuredLayout = ({BoxConstraints constraints, Size size});
-
-/// Bridges the engine's intrinsic-measurement seam to Flutter: measures a child
-/// by laying out its [RenderBox]. Follows the same contract as the engine's
-/// default measurer (wrap axes report the child's natural size; fixed/match/
-/// match-parent axes echo the size the graph resolved), except that a
-/// WRAP-styled match axis measured again after a solve is measured at the size
-/// the solver capped it to, and that, as in Android's view measurer, every
-/// measured size is kept within the widget's match-constraint min and max.
-///
-/// [_DryMeasurer] measures the same way without laying anything out.
-class _FlutterMeasurer implements Measurer {
-  _FlutterMeasurer(this._renderOf, this._needsBaseline);
-
-  final Map<ConstraintWidget, RenderBox> _renderOf;
-
-  /// Widgets whose real baseline must be measured: those with a baseline link
-  /// and the targets of baseline links. Baselines are only queried for these
-  /// because querying a child's baseline makes Flutter propagate that child's
-  /// future layout dirtiness to this container, which would stop fixed-size
-  /// children from acting as relayout boundaries.
-  final Set<ConstraintWidget> _needsBaseline;
-
-  BoxConstraints _rootConstraints = const BoxConstraints();
-
-  /// Widgets whose RenderBox was laid out through this measurer during the
-  /// current engine pass, with the latest such layout. Placement uses this to
-  /// keep the measure-pass layout when it already matches the resolved size.
-  final Map<ConstraintWidget, _MeasuredLayout> laidOut =
-      <ConstraintWidget, _MeasuredLayout>{};
-
-  void beginPass(BoxConstraints rootConstraints) {
-    _rootConstraints = rootConstraints;
-    laidOut.clear();
-  }
-
-  /// Lays [child] out under [constraints] and returns its size.
-  Size layoutChild(RenderBox child, BoxConstraints constraints) {
-    child.layout(constraints, parentUsesSize: true);
-    return child.size;
-  }
-
-  /// The alphabetic baseline of [child], which [layoutChild] last laid out
-  /// under [constraints], or null if it has none.
-  double? baselineOf(RenderBox child, BoxConstraints constraints) =>
-      child.getDistanceToBaseline(TextBaseline.alphabetic, onlyReal: true);
-
-  /// The constraints [child] is measured under, from the [constraints] that
-  /// size it to its content on each axis where [wrapWidth] or [wrapHeight] is
-  /// set. Unchanged here; [_DryMeasurer] lowers them for the minimum
-  /// intrinsic sizes.
-  BoxConstraints limitContent(
-    RenderBox child,
-    BoxConstraints constraints, {
-    required bool wrapWidth,
-    required bool wrapHeight,
-  }) => constraints;
-
-  @override
-  void measure(ConstraintWidget widget, Measure measure) {
-    // Virtual layouts (Flow) are measured through their own measure pass,
-    // which internally measures the referenced widgets back through this
-    // measurer. Mirrors Android's view-side measurer.
-    if (widget is VirtualLayout) {
-      var widthMode = BasicMeasure.UNSPECIFIED;
-      var heightMode = BasicMeasure.UNSPECIFIED;
-      var widthSize = 0;
-      var heightSize = 0;
-      // matchConstraint axes measure against the available space first
-      // (SELF_DIMENSIONS) and against the solver-assigned size on later
-      // strategies, mirroring Android's view measurer.
-      final givenStrategy =
-          measure.measureStrategy == Measure.TRY_GIVEN_DIMENSIONS ||
-          measure.measureStrategy == Measure.USE_GIVEN_DIMENSIONS;
-      if (widget.getHorizontalDimensionBehaviour() ==
-          DimensionBehaviour.matchParent) {
-        widthSize = widget.getParent()?.getWidth() ?? 0;
-        widthMode = BasicMeasure.EXACTLY;
-      } else if (measure.horizontalBehavior == DimensionBehaviour.fixed) {
-        widthSize = measure.horizontalDimension;
-        widthMode = BasicMeasure.EXACTLY;
-      } else if (measure.horizontalBehavior ==
-              DimensionBehaviour.matchConstraint &&
-          givenStrategy) {
-        widthSize = measure.horizontalDimension;
-        widthMode = BasicMeasure.EXACTLY;
-      } else if (_rootConstraints.hasBoundedWidth) {
-        widthSize = _rootConstraints.maxWidth.round();
-        widthMode = BasicMeasure.AT_MOST;
-      }
-      if (widget.getVerticalDimensionBehaviour() ==
-          DimensionBehaviour.matchParent) {
-        heightSize = widget.getParent()?.getHeight() ?? 0;
-        heightMode = BasicMeasure.EXACTLY;
-      } else if (measure.verticalBehavior == DimensionBehaviour.fixed) {
-        heightSize = measure.verticalDimension;
-        heightMode = BasicMeasure.EXACTLY;
-      } else if (measure.verticalBehavior ==
-              DimensionBehaviour.matchConstraint &&
-          givenStrategy) {
-        heightSize = measure.verticalDimension;
-        heightMode = BasicMeasure.EXACTLY;
-      } else if (_rootConstraints.hasBoundedHeight) {
-        heightSize = _rootConstraints.maxHeight.round();
-        heightMode = BasicMeasure.AT_MOST;
-      }
-      widget.measure(widthMode, widthSize, heightMode, heightSize);
-      measure.measuredWidth = widget.getMeasuredWidth();
-      measure.measuredHeight = widget.getMeasuredHeight();
-      measure.measuredHasBaseline = false;
-      measure.measuredBaseline = 0;
-      widget.setMeasureRequested(false);
-      return;
-    }
-
-    final child = _renderOf[widget];
-    // The Measure object is reused across widgets, so every output field must
-    // be written on every call or a previous widget's values leak through.
-    if (child == null) {
-      // Helper widgets (guidelines, barriers) have no RenderBox to measure.
-      measure.measuredWidth = measure.horizontalDimension;
-      measure.measuredHeight = measure.verticalDimension;
-      measure.measuredHasBaseline = false;
-      measure.measuredBaseline = 0;
-      widget.setMeasureRequested(false);
-      return;
-    }
-
-    // A WRAP-styled matchConstraint axis sizes to content capped by the
-    // constraints, so its content is measured like wrapContent and the engine
-    // then applies the cap. The re-measures that follow a solve measure it at
-    // the size the solver gave it instead, so content that reflows (wrapping
-    // text) sizes its other axis at the capped size. Android's view measurer
-    // does the same.
-    final wrapW =
-        measure.horizontalBehavior == DimensionBehaviour.wrapContent ||
-        (measure.horizontalBehavior == DimensionBehaviour.matchConstraint &&
-            widget.mMatchConstraintDefaultWidth ==
-                ConstraintWidget.MATCH_CONSTRAINT_WRAP &&
-            !_measuresAtGivenSize(widget, measure, horizontal: true));
-    final wrapH =
-        measure.verticalBehavior == DimensionBehaviour.wrapContent ||
-        (measure.verticalBehavior == DimensionBehaviour.matchConstraint &&
-            widget.mMatchConstraintDefaultHeight ==
-                ConstraintWidget.MATCH_CONSTRAINT_WRAP &&
-            !_measuresAtGivenSize(widget, measure, horizontal: false));
-
-    // A size the solver resolved can be negative, when margins add up to more
-    // than the space between two anchors; a box cannot be smaller than 0.
-    final double minW, maxW, minH, maxH;
-    if (wrapW) {
-      minW = 0;
-      maxW = _rootConstraints.maxWidth;
-    } else {
-      minW = maxW = math.max(0, measure.horizontalDimension).toDouble();
-    }
-    if (wrapH) {
-      minH = 0;
-      maxH = _rootConstraints.maxHeight;
-    } else {
-      minH = maxH = math.max(0, measure.verticalDimension).toDouble();
-    }
-    final constraints = limitContent(
-      child,
-      BoxConstraints(
-        minWidth: minW,
-        maxWidth: maxW,
-        minHeight: minH,
-        maxHeight: maxH,
-      ),
-      wrapWidth: wrapW,
-      wrapHeight: wrapH,
-    );
-
-    // A re-measure that only pins the child to the size it already took in
-    // this pass would lay it out again for the same result, and the tight
-    // layout would make it a relayout boundary, cutting its later content
-    // changes off from this container. Skip it, as Android's measure cache
-    // skips a similar measure spec.
-    final last = laidOut[widget];
-    final givenStrategy =
-        measure.measureStrategy == Measure.TRY_GIVEN_DIMENSIONS ||
-        measure.measureStrategy == Measure.USE_GIVEN_DIMENSIONS;
-    if (!givenStrategy ||
-        last == null ||
-        !_isSimilarLayout(last.constraints, last.size, constraints)) {
-      laidOut[widget] = (
-        constraints: constraints,
-        size: layoutChild(child, constraints),
-      );
-    }
-    var measured = laidOut[widget]!;
-
-    var measuredWidth = wrapW
-        ? measured.size.width.round()
-        : measure.horizontalDimension;
-    var measuredHeight = wrapH
-        ? measured.size.height.round()
-        : measure.verticalDimension;
-
-    // Android's view measurer (ConstraintLayout.Measurer.measure) keeps every
-    // measured size within the widget's match-constraint min and max, and
-    // when that changes a size, measures the child again at it so its other
-    // axis can follow, as wrapping text grows taller at a capped width. The
-    // graph relies on it for a match-constraint axis with a single link,
-    // which it measures as wrap content and resolves at the measured size;
-    // the solver applies the same bounds itself, so with the clamp here both
-    // paths agree. Only match-constraint dimensions carry a min or max.
-    final width = _limit(
-      measuredWidth,
-      widget.mMatchConstraintMinWidth,
-      widget.mMatchConstraintMaxWidth,
-    );
-    final height = _limit(
-      measuredHeight,
-      widget.mMatchConstraintMinHeight,
-      widget.mMatchConstraintMaxHeight,
-    );
-    if (width != measuredWidth || height != measuredHeight) {
-      final clampW = width != measuredWidth;
-      final clampH = height != measuredHeight;
-      // Limited again from the unlowered bounds, since a minimum intrinsic
-      // size on the axis the clamp leaves alone depends on the clamped size
-      // (wrapping text grows taller at a capped width). The identity for
-      // _FlutterMeasurer, so a real layout is unchanged.
-      final clamped = limitContent(
-        child,
-        BoxConstraints(
-          minWidth: clampW ? width.toDouble() : minW,
-          maxWidth: clampW ? width.toDouble() : maxW,
-          minHeight: clampH ? height.toDouble() : minH,
-          maxHeight: clampH ? height.toDouble() : maxH,
-        ),
-        wrapWidth: wrapW && !clampW,
-        wrapHeight: wrapH && !clampH,
-      );
-      measured = (constraints: clamped, size: layoutChild(child, clamped));
-      laidOut[widget] = measured;
-      measuredWidth = clampW
-          ? width
-          : wrapW
-          ? measured.size.width.round()
-          : measure.horizontalDimension;
-      measuredHeight = clampH
-          ? height
-          : wrapH
-          ? measured.size.height.round()
-          : measure.verticalDimension;
-    }
-    measure.measuredWidth = measuredWidth;
-    measure.measuredHeight = measuredHeight;
-
-    measure.measuredHasBaseline = false;
-    measure.measuredBaseline = 0;
-    if (_needsBaseline.contains(widget)) {
-      final baseline = baselineOf(child, measured.constraints);
-      if (baseline != null) {
-        measure.measuredHasBaseline = true;
-        measure.measuredBaseline = baseline.round();
-      }
-    }
-
-    widget.setMeasureRequested(false);
-  }
-
-  /// Whether a re-measure sizes a WRAP-styled matchConstraint axis at the size
-  /// the solver gave it rather than around its content.
-  ///
-  /// Mirrors Android's view measurer: always on USE_GIVEN_DIMENSIONS, and on
-  /// TRY_GIVEN_DIMENSIONS once the other axis is stable (the child's size on
-  /// it, from its layout earlier in this pass, is the one the solver kept) or
-  /// this axis is already resolved. While the other axis is still settling,
-  /// the content is measured again so that both sizes can follow it.
-  bool _measuresAtGivenSize(
-    ConstraintWidget widget,
-    Measure measure, {
-    required bool horizontal,
-  }) {
-    if (measure.measureStrategy == Measure.USE_GIVEN_DIMENSIONS) return true;
-    if (measure.measureStrategy != Measure.TRY_GIVEN_DIMENSIONS) return false;
-    // The child's size is only known once this measurer has laid it out in
-    // this pass.
-    final measured = laidOut[widget];
-    final otherDimensionStable =
-        measured != null &&
-        (horizontal
-            ? measured.size.height.round() == widget.getHeight()
-            : measured.size.width.round() == widget.getWidth());
-    return otherDimensionStable ||
-        (horizontal
-            ? widget.isResolvedHorizontally()
-            : widget.isResolvedVertically());
-  }
-
-  /// [size] raised to [min] and then lowered to [max], each only when it is
-  /// positive: the order and the zero-means-unset convention of Android's
-  /// measurer, so a [max] below [min] wins.
-  static int _limit(int size, int min, int max) {
-    var limited = size;
-    if (min > 0 && limited < min) limited = min;
-    if (max > 0 && limited > max) limited = max;
-    return limited;
-  }
-
-  /// Whether laying a child out under [next] repeats its layout under [last],
-  /// in which it took [size]: on each axis [next] either equals [last] or pins
-  /// the child to the size it already has. Android's `isSimilarSpec`, for box
-  /// constraints.
-  static bool _isSimilarLayout(
-    BoxConstraints last,
-    Size size,
-    BoxConstraints next,
-  ) {
-    bool similar(
-      double lastMin,
-      double lastMax,
-      double min,
-      double max,
-      double extent,
-    ) =>
-        (min == lastMin && max == lastMax) ||
-        (min == max && max == extent.roundToDouble());
-    return similar(
-          last.minWidth,
-          last.maxWidth,
-          next.minWidth,
-          next.maxWidth,
-          size.width,
-        ) &&
-        similar(
-          last.minHeight,
-          last.maxHeight,
-          next.minHeight,
-          next.maxHeight,
-          size.height,
-        );
-  }
-
-  @override
-  void didMeasures() {}
-}
-
-/// Measures children for the dry-layout queries: the dry layout, the
-/// intrinsic sizes, and the dry baseline of a [RenderConstraintLayout].
-///
-/// Sizes each child with [RenderBox.getDryLayout] and reads its baseline with
-/// [RenderBox.getDryBaseline] instead of laying it out, so a query changes no
-/// child. A child under tight constraints is not asked for its size, which
-/// the constraints already fix.
-///
-/// A child that cannot answer (in a debug build, a `LayoutBuilder` throws,
-/// since it cannot compute a dry layout) has its error reported once per
-/// query, and then measures at the smallest size its constraints allow and
-/// without a baseline, so the query still returns a result.
-class _DryMeasurer extends _FlutterMeasurer {
-  _DryMeasurer(
-    this._layout,
-    super.renderOf,
-    super.needsBaseline, {
-    this.minimumAxis,
+/// A run is a function of the configuration (fixed by [epoch]), the specs
+/// (fixed by [constraints]), the children's answers to its content measures,
+/// and the state the run before it left: the children's last measured sizes
+/// and baselines, which the measure strategies and the measure cache read,
+/// a flow's state from its last measure, and what the engine keeps of a
+/// widget from one measure to the next, as Android's `reset()` keeps it (a
+/// barrier's resolved flag, the dependency graph's runs and nodes). A run
+/// rewrites each of these from its own requests and answers, or leaves it as
+/// it was. So when a run repeats the run before it (the same keys,
+/// transcript, frames and size), it also left the state that run left, and a
+/// later run with the same keys and the same answers repeats it exactly: it
+/// is [confirmed]. The first run after a build is never confirmed, because
+/// Android's own second layout of a layout can differ from its first.
+final class _ReplayRun {
+  _ReplayRun({
+    required this.epoch,
+    required this.constraints,
+    required this.transcript,
+    required this.frames,
+    required this.measuredWidth,
+    required this.measuredHeight,
   });
 
-  /// The layout whose query this measures for, named in error reports.
-  final RenderConstraintLayout _layout;
+  /// The configuration epoch the run measured.
+  final int epoch;
 
-  /// When set, each child that sizes to its content along this axis measures
-  /// at no more than its own minimum intrinsic size along it.
+  /// The incoming constraints the run measured under.
+  final BoxConstraints constraints;
+
+  /// Every measure request of the run and every content measure.
+  final _ReplayTranscript transcript;
+
+  /// `x, y, width, height` of every child, in child order, as the engine
+  /// left them.
+  final List<int> frames;
+
+  /// The layout's measured width.
+  final int measuredWidth;
+
+  /// The layout's measured height.
+  final int measuredHeight;
+
+  /// Whether the run repeated the run before it, so that a layout with the
+  /// same keys whose children answer the same may replay it.
+  bool confirmed = false;
+
+  /// The layout's measured size.
+  Size get measuredSize =>
+      Size(measuredWidth.toDouble(), measuredHeight.toDouble());
+
+  /// Whether this run has the keys of [other] and gave the same result.
+  bool repeats(_ReplayRun other) =>
+      epoch == other.epoch &&
+      constraints == other.constraints &&
+      measuredWidth == other.measuredWidth &&
+      measuredHeight == other.measuredHeight &&
+      listEquals(frames, other.frames) &&
+      transcript.sameAs(other.transcript);
+}
+
+/// A dry query that ran the engine, kept for a replay: its keys, the
+/// throwaway model it measured with its measurer and host, and its content
+/// measures.
+///
+/// Exact (a replay justified by determinism, with the dual run of
+/// `--dart-define=cl.verifyReplay=true`): a dry query measures a new model,
+/// built from the configuration, with a new measurer and host, so nothing
+/// carries over from an earlier measure, and the engine's run is a function
+/// of the configuration (fixed by [epoch] once [RenderConstraintLayout.
+/// _configSettled]), the constraints, [minimumAxis] and the children's
+/// answers to its content measures, each of which is a function of the
+/// request and of what the measurer reads from the child: its dry layout and
+/// dry baseline, its minimum intrinsic size for [minimumAxis], and whether
+/// its last layout found a baseline. Asking every child again for each
+/// content measure of the run, in order, through the same measurer, reads
+/// all of these as a new run would, so when every answer is the same a new
+/// run would make the same requests and get the same answers, and give the
+/// same model, frames and size. The replay returns them without measuring a
+/// new model.
+final class _DryRun {
+  _DryRun({
+    required this.epoch,
+    required this.constraints,
+    required this.minimumAxis,
+    required this.model,
+    required this.measurer,
+    required this.host,
+    required this.transcript,
+  });
+
+  /// The configuration epoch the query's model was built at.
+  final int epoch;
+
+  /// The query's constraints.
+  final BoxConstraints constraints;
+
+  /// The query's minimum-intrinsic axis, if any.
   final Axis? minimumAxis;
 
-  /// Children whose dry measurement threw during this query.
-  final Set<RenderBox> _failed = <RenderBox>{};
+  /// The throwaway model the query measured.
+  final _EngineModel model;
 
-  @override
-  Size layoutChild(RenderBox child, BoxConstraints constraints) {
-    if (constraints.isTight) return constraints.smallest;
-    final size =
-        _ask(child, () => child.getDryLayout(constraints)) ??
-        constraints.smallest;
-    // A child that expands to fill an unbounded axis could not be laid out
-    // under these constraints at all. A query (for an intrinsic size, say)
-    // measures it collapsed on that axis instead, which is also the intrinsic
-    // size an expanding box reports.
-    return Size(
-      size.width.isFinite ? size.width : constraints.minWidth,
-      size.height.isFinite ? size.height : constraints.minHeight,
-    );
-  }
+  /// The query's measurer.
+  final _DryMeasurer measurer;
 
-  @override
-  double? baselineOf(RenderBox child, BoxConstraints constraints) =>
-      dryBaseline(child, constraints, TextBaseline.alphabetic);
+  /// The query's host.
+  final ViewHost host;
 
-  /// The [baseline] of [child] under [constraints], or null if it has none.
-  double? dryBaseline(
-    RenderBox child,
-    BoxConstraints constraints,
-    TextBaseline baseline,
-  ) => _ask(child, () => child.getDryBaseline(constraints, baseline));
+  /// The query's content measures (its measure requests are not kept).
+  final _ReplayTranscript transcript;
 
-  @override
-  BoxConstraints limitContent(
-    RenderBox child,
-    BoxConstraints constraints, {
-    required bool wrapWidth,
-    required bool wrapHeight,
-  }) {
-    if (minimumAxis == Axis.horizontal && wrapWidth) {
-      final minimum = _ask(
-        child,
-        () => child.getMinIntrinsicWidth(constraints.maxHeight),
-      );
-      if (minimum != null && minimum < constraints.maxWidth) {
-        return constraints.copyWith(
-          maxWidth: math.max(constraints.minWidth, minimum),
-        );
-      }
-    } else if (minimumAxis == Axis.vertical && wrapHeight) {
-      final minimum = _ask(
-        child,
-        () => child.getMinIntrinsicHeight(constraints.maxWidth),
-      );
-      if (minimum != null && minimum < constraints.maxHeight) {
-        return constraints.copyWith(
-          maxHeight: math.max(constraints.minHeight, minimum),
-        );
+  /// What [RenderConstraintLayout._resolveDry] returns for the query.
+  ({_EngineModel model, _DryMeasurer measurer, ViewHost host}) get resolved =>
+      (model: model, measurer: measurer, host: host);
+
+  /// The measured size of the layout.
+  Size get measuredSize => Size(
+    host.getMeasuredWidth().toDouble(),
+    host.getMeasuredHeight().toDouble(),
+  );
+
+  /// Whether [other], a query with the same keys on another model, gave the
+  /// same result: the same measured size, the same frame for each widget of
+  /// the container (by index), the same latest dry layout of each child, and
+  /// the same content measures (each widget by its index in its container).
+  bool sameResultAs(_DryRun other) {
+    if (host.getMeasuredWidth() != other.host.getMeasuredWidth() ||
+        host.getMeasuredHeight() != other.host.getMeasuredHeight()) {
+      return false;
+    }
+    final a = model.container.mChildren;
+    final b = other.model.container.mChildren;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final wa = a[i];
+      final wb = b[i];
+      if (wa.getX() != wb.getX() ||
+          wa.getY() != wb.getY() ||
+          wa.getWidth() != wb.getWidth() ||
+          wa.getHeight() != wb.getHeight() ||
+          measurer.laidOutOf(wa) != other.measurer.laidOutOf(wb)) {
+        return false;
       }
     }
-    return constraints;
-  }
-
-  /// Runs [query] against [child] and returns its result, or null if it
-  /// throws or the child already threw during this query.
-  ///
-  /// What it throws is reported rather than rethrown, so that one child that
-  /// cannot be measured without a layout does not fail the whole query.
-  T? _ask<T extends Object>(RenderBox child, T? Function() query) {
-    if (_failed.contains(child)) return null;
-    try {
-      return query();
-    } catch (exception, stack) {
-      _failed.add(child);
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: exception,
-          stack: stack,
-          library: 'flutter_constraint_layout',
-          context: ErrorDescription(
-            'while measuring a child of a ConstraintLayout for a dry layout, '
-            'intrinsic size, or dry baseline',
-          ),
-          informationCollector: () => <DiagnosticsNode>[
-            _layout.describeForError('The ConstraintLayout was'),
-            child.describeForError('The child was'),
-            ErrorHint(
-              'The ConstraintLayout measured the child at the smallest size '
-              'its constraints allow, so the size it computed may be wrong. '
-              'Flutter does not recover a render object whose dry layout '
-              'threw, so such a child can report more errors when it is next '
-              'laid out. A child with a fixed size is never asked for its '
-              'size: give it one, or use a widget that supports dry layout.',
-            ),
-          ],
-        ),
-      );
-      return null;
+    final ca = transcript.contents;
+    final cb = other.transcript.contents;
+    if (ca.length != cb.length) return false;
+    final indexA = <ConstraintWidget, int>{
+      for (var i = 0; i < a.length; i++) a[i]: i,
+    };
+    final indexB = <ConstraintWidget, int>{
+      for (var i = 0; i < b.length; i++) b[i]: i,
+    };
+    for (var i = 0; i < ca.length; i++) {
+      final x = ca[i];
+      final y = cb[i];
+      if (indexA[x.widget] != indexB[y.widget] ||
+          x.widthSpec != y.widthSpec ||
+          x.heightSpec != y.heightSpec ||
+          x.width != y.width ||
+          x.height != y.height ||
+          x.baseline != y.baseline) {
+        return false;
+      }
     }
+    return true;
   }
 }

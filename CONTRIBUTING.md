@@ -114,6 +114,125 @@ A change to the engine can move the widget package's layouts and the website's
 examples, so run those suites too after touching
 `packages/constraint_engine`.
 
+### Android parity
+
+The engine and the widgets must give the frames Android's own code gives. Three
+checked-in gates hold a sample of the parity corpora together with the frames
+the parity oracle (Android's code, below) computes for them, and they run with
+the suites above:
+
+| Gate | What it checks |
+| --- | --- |
+| [packages/constraint_engine/test/parity/engine_corpus_test.dart](packages/constraint_engine/test/parity/engine_corpus_test.dart) | 2,000 layouts replayed through the engine at `OPTIMIZATION_STANDARD` (257) and at level 0, on the core path and through `ViewHost`, against Android's frames and its printed-exception status |
+| [packages/constraint_engine/test/parity/graph_corpus_test.dart](packages/constraint_engine/test/parity/graph_corpus_test.dart) | 560 layouts at the dependency-graph levels (64, 321, 192, and 449) |
+| [packages/flutter_constraint_layout/test/parity/android_parity_test.dart](packages/flutter_constraint_layout/test/parity/android_parity_test.dart) | 1,600 real `ConstraintLayout` widget trees laid out by the widget package, against Android's frames at 257 |
+
+Run them on their own after a change to the engine or to the widget package's
+measuring and placement:
+
+```sh
+(cd packages/constraint_engine && dart test test/parity)
+(cd packages/flutter_constraint_layout && flutter test test/parity)
+```
+
+A failure means the port has moved away from Android. The expected values are
+Android's output, so never edit one to make a test pass: fix the port. The
+same holds for every other test that cites a Java value (a `probe` id or a
+`J257` comment).
+
+Two switches check what the suites cannot see on their own:
+
+- `flutter test --dart-define=cl.verifyReplay=true`, in
+  `packages/flutter_constraint_layout`, runs every replayed layout, every
+  replayed dry query, and every reused baseline in full as well, and reports a
+  difference as an error. The whole suite must pass with it.
+- `dart -Dcl.trace=true test -c source test/solver_float_test.dart`, in
+  `packages/constraint_engine`, compiles the solver trace in and runs its
+  end-to-end test, which is skipped otherwise. Keep `-c source`: the test
+  runner's default compiler does not see the `-D` define, so without it the
+  test stays skipped.
+
+**The full parity gates.** The checked-in gates are a sample. The full gates
+run the engine and the widget package over the whole parity corpora, about two
+million layouts, against the parity oracle: upstream's Java core at the pin in
+[UPSTREAM.md](packages/constraint_engine/UPSTREAM.md), driven by `VOpDriver`,
+a Java port of the `ConstraintLayout` view layer (`onMeasure`, the child
+measurer, `MeasureSpec`). They take hours, need a JDK 17 or later, and are not
+run in CI. The tools are in
+[packages/constraint_engine/tool/parity](packages/constraint_engine/tool/parity),
+with the Flutter harness in
+[packages/flutter_constraint_layout/tool/parity](packages/flutter_constraint_layout/tool/parity);
+the README in `packages/constraint_engine/tool/parity` describes them in full.
+In outline, from `packages/constraint_engine/tool/parity`:
+
+1. Every script sources `env.sh`, which names the locations it reads and
+   writes, all outside the repository under `CL_PARITY_WORK` (by default
+   `${TMPDIR:-/tmp}/cl_parity`). Set `CL_HEAVY` to a command that runs one
+   heavy step at a time, such as a lock; without it, heavy steps run at
+   `nice 10`.
+2. Build the oracle. Check out upstream's androidx/constraintlayout at the
+   pinned commit into `CL_UPSTREAM`, then run `java/build_core.sh` (upstream's
+   core) and `java/build.sh` (`VOpDriver`). `java/trace/build_trace.sh` builds
+   the core with solver-trace hooks, and `java/dirty/build_dirty.sh` the
+   emulation of Android's dirty second layout.
+3. Build the Dart tools into `CL_BIN` (`dart/vfuzz.dart` and
+   `dart/vtrace.dart` with `-Dcl.trace=true`, and `dart/gclass.dart`), and set
+   up the Flutter harness, outside the repository, with
+   `packages/flutter_constraint_layout/tool/parity/fl_harness/setup.sh`.
+4. `gates/corpora.sh` writes the corpora, and `gates/java_refs.sh` runs the
+   oracle on them.
+5. Run the gates, each into an output directory of its own:
+   `gates/corpus_gates.sh` (levels 257 and 0, on the core path and through
+   `ViewHost`, plus the second layout and the solver trace),
+   `gates/graph_gates.sh` (the graph levels), `gates/inplace_gates.sh`
+   (in-place sequences on Android's live views and through `ViewHost`, at
+   every level), `gates/fl_gates.sh` (real widget trees: frames, dry layouts,
+   in-place changes, and replay), and `gates/exc.sh` (caught and thrown
+   exceptions on the adversarial corpus).
+   The target is 0 differences in every report. `gates/nd.sh` finds the
+   differing layouts whose Java result depends on hash order, so that the next
+   run leaves them out.
+6. For a change that must not move a pixel, `gates/ref_runs.sh` hashes a
+   build's outputs, and two builds then compare line for line by their
+   `SHA256SUMS.content` files.
+7. `view/fetch.sh` and `view/roborun.sh` run the same layouts on real Android
+   views (Robolectric 4.16, SDK 35, ConstraintLayout 2.2.1), which checks the
+   oracle itself and is the in-place gate's reference.
+
+Never rebuild the oracle while a run is going, and never change an expected
+value or a comparison to reach 0.
+
+**Regenerating the checked-in corpora.** They come from the full corpora and
+the oracle's results:
+
+- for the engine,
+  [select_corpus.py](packages/constraint_engine/test/parity/select_corpus.py)
+  picks `engine_corpus.json`, and with `--export` and `--check` writes the
+  oracle's batch input for a corpus file and compares the oracle's output
+  with it;
+  [select_graph_corpus.py](packages/constraint_engine/test/parity/select_graph_corpus.py)
+  picks `graph_corpus.json`;
+- for the widget package,
+  [tool/parity/export_android_corpus.dart](packages/flutter_constraint_layout/tool/parity/export_android_corpus.dart)
+  writes `android_corpus.json`, with
+  [tool/parity/fl_model.dart](packages/flutter_constraint_layout/tool/parity/fl_model.dart)
+  turning each op list into a widget tree, and with `--ops` and `--check`
+  writes the oracle's batch input for the checked-in file and compares the
+  oracle's output with it:
+
+  ```sh
+  cd packages/flutter_constraint_layout
+  dart run tool/parity/export_android_corpus.dart --ops test/parity/android_corpus.json <dir>/fl.in
+  # run the oracle on <dir>/fl.in at level 257 (java/jrun.sh), writing <dir>/fl.java
+  dart run tool/parity/export_android_corpus.dart --check test/parity/android_corpus.json <dir>/fl.java
+  ```
+
+The two `test/parity/README.md` files, in
+[the engine](packages/constraint_engine/test/parity/README.md) and in
+[the widget package](packages/flutter_constraint_layout/test/parity/README.md),
+describe each corpus, how its layouts were chosen, and the oracle's exact
+options.
+
 ### Goldens
 
 The golden images live beside their tests under
@@ -159,7 +278,8 @@ python3 tool/uncovered.py lib/src/constraint_layout.dart
 Neither benchmark runs in CI.
 
 ```sh
-# The resolver alone, compiled AOT (closest to a Flutter release build) or JIT.
+# The engine alone (Android's pipeline at 257 on chained and one-way rows, and
+# the graph at 321), compiled AOT (closest to a Flutter release build) or JIT.
 (cd packages/constraint_engine && dart compile exe benchmark/resolver_benchmark.dart -o /tmp/bench) && /tmp/bench AOT
 (cd packages/constraint_engine && dart run benchmark/resolver_benchmark.dart)
 
@@ -261,6 +381,9 @@ ported. To move the port forward:
 3. Record the new commit, and any new divergence, in UPSTREAM.md.
 4. Run the engine suite (`dart test`), then the widget package and website
    suites, which exercise the engine through real layouts.
+5. Move the parity oracle to the new revision as well, and regenerate the
+   parity corpora from it (see [Android parity](#android-parity)): the
+   checked-in frames describe Android at the old pin.
 
 ## Docs
 
@@ -275,7 +398,9 @@ ported. To move the port forward:
   [website/lib/src/data/examples.dart](website/lib/src/data/examples.dart), is
   the source of truth for the documentation.
   [website/web/docs.md](website/web/docs.md) mirrors it as one Markdown file
-  (served at `/docs.md`), so update both together.
+  (served at `/docs.md`), so update both together: every paragraph, list,
+  table, and example of the page appears in it, in the same order and with
+  the same text.
   [website/web/llms.txt](website/web/llms.txt) summarizes the docs for AI
   assistants.
 - [docs/](docs) holds design notes:

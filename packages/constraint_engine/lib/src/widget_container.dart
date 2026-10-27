@@ -47,10 +47,12 @@ class WidgetContainer extends ConstraintWidget {
     // Upstream resets the widget here instead (ConstraintWidget.reset(), not
     // ported), clearing its connections, size, and other attributes, and so
     // does [add] when it re-adds a widget that already has a parent. GridCore
-    // re-adds its box widgets on every measure, as upstream does, and this
-    // engine measures virtual layouts again in layout()'s solver fallback, so
-    // a reset would wipe the boxes' setup. Upstream's own grid collapses the
-    // second time it is measured, for the same reason.
+    // re-adds its box widgets on every measure, as upstream does, and a
+    // measure measures virtual layouts more than once (BasicMeasure's
+    // re-measure loop), so a reset would wipe the boxes' setup. Upstream's
+    // own grid collapses the second time it is measured, for the same
+    // reason. ConstraintWidget's resetMeasureState is the measure subset of
+    // reset() that the view layer needs; it keeps the configuration.
     widget.setParent(null);
   }
 

@@ -1,0 +1,31 @@
+# The Flutter harness of the parity tooling (cl_fl_harness): ContentModelBox,
+# the FL corpus builder (ftree) and runner, and the adapter benchmarks. It is
+# not a package of this repository: setup.sh copies it out of the repository
+# and writes this file there as pubspec.yaml, with @TREE@ replaced by the
+# checkout it resolves. See packages/flutter_constraint_layout/tool/parity/
+# README.md in the repository.
+name: cl_fl_harness
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_constraint_layout:
+    path: @TREE@/packages/flutter_constraint_layout
+  constraint_engine:
+    path: @TREE@/packages/constraint_engine
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+# The adapter asks for constraint_engine ^1.0.0, which the repository's
+# workspace resolves to its own member; outside the workspace the override
+# does that.
+dependency_overrides:
+  constraint_engine:
+    path: @TREE@/packages/constraint_engine
